@@ -1,24 +1,114 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useMemo } from "react";
+import { CommandBar } from "@/components/rah/CommandBar";
+import { useRah } from "@/lib/rah/context";
+import { AGENTS, agentById } from "@/lib/rah/agents";
+import { RavenMark } from "@/components/rah/RavenMark";
 
-// No head() here: the home route inherits title/description/og/twitter from
-// __root.tsx, and ships no og:image so serve-time hosting can inject the
-// project's social preview (explicit og:image or latest screenshot).
 export const Route = createFileRoute("/")({
-  component: Index,
+  component: CommandCenter,
 });
 
-// IMPORTANT: Replace this placeholder. See ./README.md for routing conventions.
-function Index() {
+function Stat({ label, value, hint }: { label: string; value: string | number; hint?: string }) {
   return (
-    <div
-      className="flex min-h-screen items-center justify-center"
-      style={{ backgroundColor: "#fcfbf8" }}
-    >
-      <img
-        data-lovable-blank-page-placeholder="REMOVE_THIS"
-        src="https://cdn.gpteng.co/blank-app-v1.svg"
-        alt="Your app will live here!"
-      />
+    <div className="glass-panel p-4">
+      <div className="text-[11px] uppercase tracking-widest text-muted-foreground">{label}</div>
+      <div className="mt-1 text-2xl font-semibold display gold-text">{value}</div>
+      {hint && <div className="text-[11px] text-muted-foreground mt-1">{hint}</div>}
+    </div>
+  );
+}
+
+function CommandCenter() {
+  const rah = useRah();
+  const stats = useMemo(() => {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const todayCount = rah.commands.filter((c) => c.createdAt >= today.getTime()).length;
+    const voice = rah.commands.filter((c) => c.inputType === "voice").length;
+    const pending = rah.approvals.filter((a) => a.status === "pending").length;
+    const active = rah.projects.filter((p) => p.status === "active").length;
+    const agentCounts = new Map<string, number>();
+    rah.commands.forEach((c) => c.agents.forEach((a) => agentCounts.set(a, (agentCounts.get(a) ?? 0) + 1)));
+    const top = [...agentCounts.entries()].sort((a, b) => b[1] - a[1])[0];
+    return { today: todayCount, voice, pending, active, mem: rah.memory.length, mostAgent: top ? agentById(top[0])?.name ?? top[0] : "—" };
+  }, [rah.commands, rah.approvals, rah.projects, rah.memory]);
+
+  const recent = rah.commands.slice(0, 5);
+
+  return (
+    <div className="space-y-6">
+      {!rah.prefs.onboardingComplete && (
+        <div className="glass-panel gold-border p-4 flex flex-wrap items-center gap-3">
+          <RavenMark size={32} />
+          <div className="min-w-0">
+            <div className="display gold-text text-lg">Welcome to RAH Listen Key</div>
+            <div className="text-sm text-muted-foreground">Run the short setup to choose language, approvals and your first project.</div>
+          </div>
+          <Link to="/onboarding" className="ml-auto inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+            Start onboarding
+          </Link>
+        </div>
+      )}
+
+      <div>
+        <h1 className="display text-3xl md:text-4xl">Command Center</h1>
+        <p className="text-muted-foreground mt-1">Speak. Show. Command. Create.</p>
+      </div>
+
+      <CommandBar />
+
+      <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-6">
+        <Stat label="Commands today" value={stats.today} />
+        <Stat label="Voice commands" value={stats.voice} />
+        <Stat label="Pending approvals" value={stats.pending} hint="Live count" />
+        <Stat label="Active projects" value={stats.active} />
+        <Stat label="Saved memories" value={stats.mem} />
+        <Stat label="Most-used agent" value={stats.mostAgent} />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div className="glass-panel p-4 lg:col-span-2">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="display text-lg">Recent activity</h2>
+            <Link to="/history" className="text-xs text-primary hover:underline">Open history</Link>
+          </div>
+          {recent.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No commands yet. Try “RAH Brain, help me organize my next project.”</p>
+          ) : (
+            <ul className="divide-y divide-border/60">
+              {recent.map((c) => (
+                <li key={c.id} className="py-2 flex items-start gap-3">
+                  <span className="mt-0.5 text-xs text-muted-foreground min-w-[68px]">
+                    {new Date(c.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm">{c.prompt}</div>
+                    <div className="text-[11px] text-muted-foreground">
+                      {c.agents.map((a) => agentById(a)?.emoji).join(" ")} · {c.mode} · {c.status}
+                      {c.demo && " · demo output"}
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div className="glass-panel p-4">
+          <h2 className="display text-lg mb-3">Agent team</h2>
+          <ul className="space-y-2">
+            {AGENTS.slice(0, 6).map((a) => (
+              <li key={a.id} className="flex items-start gap-2">
+                <span className="text-lg leading-none">{a.emoji}</span>
+                <div className="min-w-0">
+                  <div className="text-sm">{a.name}</div>
+                  <div className="text-[11px] text-muted-foreground truncate">{a.summary}</div>
+                </div>
+              </li>
+            ))}
+          </ul>
+          <Link to="/agents" className="mt-3 inline-block text-xs text-primary hover:underline">View all agents</Link>
+        </div>
+      </div>
     </div>
   );
 }
