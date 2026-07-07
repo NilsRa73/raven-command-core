@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as VoiceRouteImport } from './routes/voice'
 import { Route as VisionRouteImport } from './routes/vision'
 import { Route as ProjectsRouteImport } from './routes/projects'
+import { Route as MemoryRouteImport } from './routes/memory'
 import { Route as HistoryRouteImport } from './routes/history'
 import { Route as AgentsRouteImport } from './routes/agents'
 import { Route as IndexRouteImport } from './routes/index'
@@ -30,6 +31,11 @@ const VisionRoute = VisionRouteImport.update({
 const ProjectsRoute = ProjectsRouteImport.update({
   id: '/projects',
   path: '/projects',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MemoryRoute = MemoryRouteImport.update({
+  id: '/memory',
+  path: '/memory',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HistoryRoute = HistoryRouteImport.update({
@@ -57,6 +63,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/agents': typeof AgentsRoute
   '/history': typeof HistoryRoute
+  '/memory': typeof MemoryRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/vision': typeof VisionRoute
   '/voice': typeof VoiceRoute
@@ -66,6 +73,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/agents': typeof AgentsRoute
   '/history': typeof HistoryRoute
+  '/memory': typeof MemoryRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/vision': typeof VisionRoute
   '/voice': typeof VoiceRoute
@@ -76,6 +84,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/agents': typeof AgentsRoute
   '/history': typeof HistoryRoute
+  '/memory': typeof MemoryRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/vision': typeof VisionRoute
   '/voice': typeof VoiceRoute
@@ -87,6 +96,7 @@ export interface FileRouteTypes {
     | '/'
     | '/agents'
     | '/history'
+    | '/memory'
     | '/projects'
     | '/vision'
     | '/voice'
@@ -96,6 +106,7 @@ export interface FileRouteTypes {
     | '/'
     | '/agents'
     | '/history'
+    | '/memory'
     | '/projects'
     | '/vision'
     | '/voice'
@@ -105,6 +116,7 @@ export interface FileRouteTypes {
     | '/'
     | '/agents'
     | '/history'
+    | '/memory'
     | '/projects'
     | '/vision'
     | '/voice'
@@ -115,6 +127,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AgentsRoute: typeof AgentsRoute
   HistoryRoute: typeof HistoryRoute
+  MemoryRoute: typeof MemoryRoute
   ProjectsRoute: typeof ProjectsRouteWithChildren
   VisionRoute: typeof VisionRoute
   VoiceRoute: typeof VoiceRoute
@@ -141,6 +154,13 @@ declare module '@tanstack/react-router' {
       path: '/projects'
       fullPath: '/projects'
       preLoaderRoute: typeof ProjectsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/memory': {
+      id: '/memory'
+      path: '/memory'
+      fullPath: '/memory'
+      preLoaderRoute: typeof MemoryRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/history': {
@@ -190,6 +210,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AgentsRoute: AgentsRoute,
   HistoryRoute: HistoryRoute,
+  MemoryRoute: MemoryRoute,
   ProjectsRoute: ProjectsRouteWithChildren,
   VisionRoute: VisionRoute,
   VoiceRoute: VoiceRoute,
