@@ -85,10 +85,14 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "description", content: "RAH Listen Key is the voice, vision and multi-agent command center for RAH AI Studios." },
       { name: "author", content: "RAH AI Studios" },
       { name: "theme-color", content: "#0a0906" },
-      { property: "og:title", content: "RAH Listen Key" },
-      { property: "og:description", content: "Voice, vision and multi-agent command center for RAH AI Studios." },
+      { property: "og:title", content: "RAH Listen Key — Speak. Show. Command. Create." },
+      { property: "og:description", content: "RAH Listen Key is the voice, vision and multi-agent command center for RAH AI Studios." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:title", content: "RAH Listen Key — Speak. Show. Command. Create." },
+      { name: "twitter:description", content: "RAH Listen Key is the voice, vision and multi-agent command center for RAH AI Studios." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/34a30c44-8f45-42fc-9990-e147e334e440/id-preview-6824f832--07b00439-0796-4d84-82a8-74f3aef8cb74.lovable.app-1783382789241.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/34a30c44-8f45-42fc-9990-e147e334e440/id-preview-6824f832--07b00439-0796-4d84-82a8-74f3aef8cb74.lovable.app-1783382789241.png" },
     ],
     links: [
       {
