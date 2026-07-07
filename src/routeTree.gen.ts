@@ -14,6 +14,7 @@ import { Route as VisionRouteImport } from './routes/vision'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as MemoryRouteImport } from './routes/memory'
 import { Route as HistoryRouteImport } from './routes/history'
+import { Route as ApprovalsRouteImport } from './routes/approvals'
 import { Route as AgentsRouteImport } from './routes/agents'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ProjectsIdRouteImport } from './routes/projects.$id'
@@ -43,6 +44,11 @@ const HistoryRoute = HistoryRouteImport.update({
   path: '/history',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApprovalsRoute = ApprovalsRouteImport.update({
+  id: '/approvals',
+  path: '/approvals',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AgentsRoute = AgentsRouteImport.update({
   id: '/agents',
   path: '/agents',
@@ -62,6 +68,7 @@ const ProjectsIdRoute = ProjectsIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/agents': typeof AgentsRoute
+  '/approvals': typeof ApprovalsRoute
   '/history': typeof HistoryRoute
   '/memory': typeof MemoryRoute
   '/projects': typeof ProjectsRouteWithChildren
@@ -72,6 +79,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/agents': typeof AgentsRoute
+  '/approvals': typeof ApprovalsRoute
   '/history': typeof HistoryRoute
   '/memory': typeof MemoryRoute
   '/projects': typeof ProjectsRouteWithChildren
@@ -83,6 +91,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/agents': typeof AgentsRoute
+  '/approvals': typeof ApprovalsRoute
   '/history': typeof HistoryRoute
   '/memory': typeof MemoryRoute
   '/projects': typeof ProjectsRouteWithChildren
@@ -95,6 +104,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/agents'
+    | '/approvals'
     | '/history'
     | '/memory'
     | '/projects'
@@ -105,6 +115,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/agents'
+    | '/approvals'
     | '/history'
     | '/memory'
     | '/projects'
@@ -115,6 +126,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/agents'
+    | '/approvals'
     | '/history'
     | '/memory'
     | '/projects'
@@ -126,6 +138,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AgentsRoute: typeof AgentsRoute
+  ApprovalsRoute: typeof ApprovalsRoute
   HistoryRoute: typeof HistoryRoute
   MemoryRoute: typeof MemoryRoute
   ProjectsRoute: typeof ProjectsRouteWithChildren
@@ -170,6 +183,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HistoryRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/approvals': {
+      id: '/approvals'
+      path: '/approvals'
+      fullPath: '/approvals'
+      preLoaderRoute: typeof ApprovalsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/agents': {
       id: '/agents'
       path: '/agents'
@@ -209,6 +229,7 @@ const ProjectsRouteWithChildren = ProjectsRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AgentsRoute: AgentsRoute,
+  ApprovalsRoute: ApprovalsRoute,
   HistoryRoute: HistoryRoute,
   MemoryRoute: MemoryRoute,
   ProjectsRoute: ProjectsRouteWithChildren,
