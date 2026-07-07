@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as VoiceRouteImport } from './routes/voice'
 import { Route as VisionRouteImport } from './routes/vision'
 import { Route as ProjectsRouteImport } from './routes/projects'
+import { Route as HistoryRouteImport } from './routes/history'
 import { Route as AgentsRouteImport } from './routes/agents'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ProjectsIdRouteImport } from './routes/projects.$id'
@@ -29,6 +30,11 @@ const VisionRoute = VisionRouteImport.update({
 const ProjectsRoute = ProjectsRouteImport.update({
   id: '/projects',
   path: '/projects',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HistoryRoute = HistoryRouteImport.update({
+  id: '/history',
+  path: '/history',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AgentsRoute = AgentsRouteImport.update({
@@ -50,6 +56,7 @@ const ProjectsIdRoute = ProjectsIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/agents': typeof AgentsRoute
+  '/history': typeof HistoryRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/vision': typeof VisionRoute
   '/voice': typeof VoiceRoute
@@ -58,6 +65,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/agents': typeof AgentsRoute
+  '/history': typeof HistoryRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/vision': typeof VisionRoute
   '/voice': typeof VoiceRoute
@@ -67,6 +75,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/agents': typeof AgentsRoute
+  '/history': typeof HistoryRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/vision': typeof VisionRoute
   '/voice': typeof VoiceRoute
@@ -77,16 +86,25 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/agents'
+    | '/history'
     | '/projects'
     | '/vision'
     | '/voice'
     | '/projects/$id'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/agents' | '/projects' | '/vision' | '/voice' | '/projects/$id'
+  to:
+    | '/'
+    | '/agents'
+    | '/history'
+    | '/projects'
+    | '/vision'
+    | '/voice'
+    | '/projects/$id'
   id:
     | '__root__'
     | '/'
     | '/agents'
+    | '/history'
     | '/projects'
     | '/vision'
     | '/voice'
@@ -96,6 +114,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AgentsRoute: typeof AgentsRoute
+  HistoryRoute: typeof HistoryRoute
   ProjectsRoute: typeof ProjectsRouteWithChildren
   VisionRoute: typeof VisionRoute
   VoiceRoute: typeof VoiceRoute
@@ -122,6 +141,13 @@ declare module '@tanstack/react-router' {
       path: '/projects'
       fullPath: '/projects'
       preLoaderRoute: typeof ProjectsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/history': {
+      id: '/history'
+      path: '/history'
+      fullPath: '/history'
+      preLoaderRoute: typeof HistoryRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/agents': {
@@ -163,6 +189,7 @@ const ProjectsRouteWithChildren = ProjectsRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AgentsRoute: AgentsRoute,
+  HistoryRoute: HistoryRoute,
   ProjectsRoute: ProjectsRouteWithChildren,
   VisionRoute: VisionRoute,
   VoiceRoute: VoiceRoute,
