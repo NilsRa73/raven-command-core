@@ -14,6 +14,7 @@ import { Route as VisionRouteImport } from './routes/vision'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as AgentsRouteImport } from './routes/agents'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ProjectsIdRouteImport } from './routes/projects.$id'
 
 const VoiceRoute = VoiceRouteImport.update({
   id: '/voice',
@@ -40,41 +41,62 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProjectsIdRoute = ProjectsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ProjectsRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/agents': typeof AgentsRoute
-  '/projects': typeof ProjectsRoute
+  '/projects': typeof ProjectsRouteWithChildren
   '/vision': typeof VisionRoute
   '/voice': typeof VoiceRoute
+  '/projects/$id': typeof ProjectsIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/agents': typeof AgentsRoute
-  '/projects': typeof ProjectsRoute
+  '/projects': typeof ProjectsRouteWithChildren
   '/vision': typeof VisionRoute
   '/voice': typeof VoiceRoute
+  '/projects/$id': typeof ProjectsIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/agents': typeof AgentsRoute
-  '/projects': typeof ProjectsRoute
+  '/projects': typeof ProjectsRouteWithChildren
   '/vision': typeof VisionRoute
   '/voice': typeof VoiceRoute
+  '/projects/$id': typeof ProjectsIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/agents' | '/projects' | '/vision' | '/voice'
+  fullPaths:
+    | '/'
+    | '/agents'
+    | '/projects'
+    | '/vision'
+    | '/voice'
+    | '/projects/$id'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/agents' | '/projects' | '/vision' | '/voice'
-  id: '__root__' | '/' | '/agents' | '/projects' | '/vision' | '/voice'
+  to: '/' | '/agents' | '/projects' | '/vision' | '/voice' | '/projects/$id'
+  id:
+    | '__root__'
+    | '/'
+    | '/agents'
+    | '/projects'
+    | '/vision'
+    | '/voice'
+    | '/projects/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AgentsRoute: typeof AgentsRoute
-  ProjectsRoute: typeof ProjectsRoute
+  ProjectsRoute: typeof ProjectsRouteWithChildren
   VisionRoute: typeof VisionRoute
   VoiceRoute: typeof VoiceRoute
 }
@@ -116,13 +138,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/projects/$id': {
+      id: '/projects/$id'
+      path: '/$id'
+      fullPath: '/projects/$id'
+      preLoaderRoute: typeof ProjectsIdRouteImport
+      parentRoute: typeof ProjectsRoute
+    }
   }
 }
+
+interface ProjectsRouteChildren {
+  ProjectsIdRoute: typeof ProjectsIdRoute
+}
+
+const ProjectsRouteChildren: ProjectsRouteChildren = {
+  ProjectsIdRoute: ProjectsIdRoute,
+}
+
+const ProjectsRouteWithChildren = ProjectsRoute._addFileChildren(
+  ProjectsRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AgentsRoute: AgentsRoute,
-  ProjectsRoute: ProjectsRoute,
+  ProjectsRoute: ProjectsRouteWithChildren,
   VisionRoute: VisionRoute,
   VoiceRoute: VoiceRoute,
 }
