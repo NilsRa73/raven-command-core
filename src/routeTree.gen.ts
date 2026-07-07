@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as VoiceRouteImport } from './routes/voice'
 import { Route as VisionRouteImport } from './routes/vision'
 import { Route as ProjectsRouteImport } from './routes/projects'
+import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as MemoryRouteImport } from './routes/memory'
 import { Route as HistoryRouteImport } from './routes/history'
 import { Route as FilesRouteImport } from './routes/files'
@@ -35,6 +36,11 @@ const VisionRoute = VisionRouteImport.update({
 const ProjectsRoute = ProjectsRouteImport.update({
   id: '/projects',
   path: '/projects',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MemoryRoute = MemoryRouteImport.update({
@@ -92,6 +98,7 @@ export interface FileRoutesByFullPath {
   '/files': typeof FilesRoute
   '/history': typeof HistoryRoute
   '/memory': typeof MemoryRoute
+  '/privacy': typeof PrivacyRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/vision': typeof VisionRoute
   '/voice': typeof VoiceRoute
@@ -106,6 +113,7 @@ export interface FileRoutesByTo {
   '/files': typeof FilesRoute
   '/history': typeof HistoryRoute
   '/memory': typeof MemoryRoute
+  '/privacy': typeof PrivacyRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/vision': typeof VisionRoute
   '/voice': typeof VoiceRoute
@@ -121,6 +129,7 @@ export interface FileRoutesById {
   '/files': typeof FilesRoute
   '/history': typeof HistoryRoute
   '/memory': typeof MemoryRoute
+  '/privacy': typeof PrivacyRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/vision': typeof VisionRoute
   '/voice': typeof VoiceRoute
@@ -137,6 +146,7 @@ export interface FileRouteTypes {
     | '/files'
     | '/history'
     | '/memory'
+    | '/privacy'
     | '/projects'
     | '/vision'
     | '/voice'
@@ -151,6 +161,7 @@ export interface FileRouteTypes {
     | '/files'
     | '/history'
     | '/memory'
+    | '/privacy'
     | '/projects'
     | '/vision'
     | '/voice'
@@ -165,6 +176,7 @@ export interface FileRouteTypes {
     | '/files'
     | '/history'
     | '/memory'
+    | '/privacy'
     | '/projects'
     | '/vision'
     | '/voice'
@@ -180,6 +192,7 @@ export interface RootRouteChildren {
   FilesRoute: typeof FilesRoute
   HistoryRoute: typeof HistoryRoute
   MemoryRoute: typeof MemoryRoute
+  PrivacyRoute: typeof PrivacyRoute
   ProjectsRoute: typeof ProjectsRouteWithChildren
   VisionRoute: typeof VisionRoute
   VoiceRoute: typeof VoiceRoute
@@ -206,6 +219,13 @@ declare module '@tanstack/react-router' {
       path: '/projects'
       fullPath: '/projects'
       preLoaderRoute: typeof ProjectsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/memory': {
@@ -295,6 +315,7 @@ const rootRouteChildren: RootRouteChildren = {
   FilesRoute: FilesRoute,
   HistoryRoute: HistoryRoute,
   MemoryRoute: MemoryRoute,
+  PrivacyRoute: PrivacyRoute,
   ProjectsRoute: ProjectsRouteWithChildren,
   VisionRoute: VisionRoute,
   VoiceRoute: VoiceRoute,
