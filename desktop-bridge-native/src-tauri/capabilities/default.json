@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2/capability",
   "identifier": "default",
-  "description": "Minimal Tauri 2 capability set. Only the typed IPC commands, opener (system browser only), autostart, and a scoped shell:allow-execute for the named 'rah-bridge-sidecar' binary with a fixed empty argv are exposed. No generic shell execution, no arbitrary binaries, no user-controlled args, no fs, no http, no dialog, no notification, no clipboard, no process control, no OS admin surface.",
+  "description": "Minimal Tauri 2 capability set. Only the typed IPC commands, opener (system browser only), autostart, and a scoped shell:allow-spawn for the named 'rah-bridge-sidecar' binary with a fixed empty argv are exposed (Rust calls Command::spawn(), so this is the required permission — never shell:allow-execute). No generic shell execution, no arbitrary binaries, no user-controlled args, no fs, no http, no dialog, no notification, no clipboard, no process control, no OS admin surface.",
   "windows": ["status"],
   "permissions": [
     "core:default",
@@ -16,7 +16,7 @@
     "autostart:allow-disable",
     "autostart:allow-is-enabled",
     {
-      "identifier": "shell:allow-execute",
+      "identifier": "shell:allow-spawn",
       "allow": [
         {
           "name": "rah-bridge-sidecar",
