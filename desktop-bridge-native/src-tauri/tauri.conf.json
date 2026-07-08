@@ -47,7 +47,7 @@
     "windows": {
       "webviewInstallMode": { "type": "downloadBootstrapper" },
       "nsis": {
-        "installMode": "perUser",
+        "installMode": "currentUser",
         "installerIcon": "icons/icon.ico",
         "displayLanguageSelector": false
       }
