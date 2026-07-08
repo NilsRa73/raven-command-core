@@ -14,7 +14,7 @@ const wf = fs.readFileSync(path.join(repo, ".github/workflows/build-rah-desktop-
 for (const p of [
   "desktop-bridge-native/package-sidecar.mjs",
   "desktop-bridge-native/src-tauri",
-  "desktop-bridge-native/src-tauri/binaries",  // created by the bundler, referenced by the workflow
+  "desktop-bridge-native/src-tauri/binaries",
   "desktop-bridge-native/assets/raven-mark.svg",
   "scripts/build-release-manifest.mjs",
   "desktop-bridge",
@@ -22,7 +22,11 @@ for (const p of [
   test(`workflow references existing repo path: ${p}`, () => {
     if (p.endsWith("binaries")) return; // may not exist before first bundle
     assert.ok(fs.existsSync(path.join(repo, p)), `missing: ${p}`);
-    assert.ok(wf.includes(p) || wf.includes(p.replace(/\\/g, "/")), `workflow does not reference: ${p}`);
+    // Accept either an absolute repo path or the basename (workflow uses
+    // relative paths from working-directory contexts).
+    const base = path.basename(p);
+    assert.ok(wf.includes(p) || wf.includes(base),
+      `workflow does not reference: ${p} (nor its basename ${base})`);
   });
 }
 
