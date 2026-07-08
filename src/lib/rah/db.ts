@@ -50,6 +50,11 @@ export interface CommandRecord {
     state?: string;
   }[];
   visionUsed?: boolean;
+  /** Payload retained for a queued command awaiting approval so it can be executed after Approve. */
+  pending?: {
+    context?: { projectName?: string; projectGoals?: string; memory?: string[] };
+    images?: { name: string; mime: string; dataUrl: string }[];
+  };
 }
 
 export interface MemoryItem {
@@ -90,6 +95,8 @@ export interface Approval {
   category: string;
   undo?: string;
   status: "pending" | "approved" | "rejected" | "cancelled";
+  /** The queued CommandRecord this approval authorises, if any. */
+  commandId?: string;
 }
 
 export interface Preferences {
