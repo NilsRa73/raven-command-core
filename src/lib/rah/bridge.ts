@@ -1,6 +1,6 @@
 import { openDB } from "idb";
 import {
-  DEFAULT_BRIDGE_PORT, PROTOCOL_VERSION,
+  BRIDGE_MIN_VERSION, DEFAULT_BRIDGE_PORT, PROTOCOL_VERSION,
   type BridgeHealth, type BridgePairResponse, type BridgeCapabilities,
   type BridgeSystemStatus, type BridgeListResult, type BridgeSearchResult,
   type BridgeReadTextResult, type BridgeJob, type BridgePrepareResponse,
@@ -167,8 +167,43 @@ export async function bridgeStatusSnapshot(): Promise<BridgeStatusSnapshot> {
   const creds = await loadCredentials();
   if (h.state === "offline") return { ui: "offline", paired: !!creds, message: h.message };
   if (h.state === "error") return { ui: "error", paired: !!creds, message: h.message, latencyMs: h.latencyMs };
+  const detected = h.bridgeVersion;
+  if (detected && !isVersionCompatible(detected, BRIDGE_MIN_VERSION)) {
+    return {
+      ui: "version_mismatch",
+      paired: !!creds,
+      version: detected,
+      latencyMs: h.latencyMs,
+      message: `Bridge v${detected} is below the required minimum v${BRIDGE_MIN_VERSION}. Download the latest package and restart the bridge.`,
+    };
+  }
   const paired = !!(h.paired && creds);
   if (!paired) return { ui: "pairing_required", paired: false, version: h.bridgeVersion, latencyMs: h.latencyMs };
   if (h.emergencyStopped) return { ui: "emergency_stopped", paired: true, version: h.bridgeVersion, pairedAt: creds?.pairedAt, latencyMs: h.latencyMs, emergencyStopped: true };
   return { ui: "paired_online", paired: true, version: h.bridgeVersion, pairedAt: creds?.pairedAt, latencyMs: h.latencyMs };
+}
+
+function parseVersion(v: string): [number, number, number] | null {
+  const m = /^(\d+)\.(\d+)\.(\d+)/.exec(v.trim());
+  if (!m) return null;
+  return [Number(m[1]), Number(m[2]), Number(m[3])];
+}
+
+/**
+ * Compatible if:
+ *   - detected version parses,
+ *   - detected.major === min.major (a bumped major is treated as incompatible
+ *     until the web client is updated for the new protocol), and
+ *   - detected >= min (semver-style compare on major.minor.patch).
+ */
+export function isVersionCompatible(detected: string, min: string): boolean {
+  const d = parseVersion(detected);
+  const m = parseVersion(min);
+  if (!d || !m) return false;
+  if (d[0] !== m[0]) return false;
+  for (let i = 0; i < 3; i++) {
+    if (d[i] > m[i]) return true;
+    if (d[i] < m[i]) return false;
+  }
+  return true;
 }
