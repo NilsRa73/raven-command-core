@@ -19,12 +19,11 @@
 use rah_desktop_bridge_native::healthcheck::{probe, HealthState, BRIDGE_MIN_VERSION};
 use rah_desktop_bridge_native::pairing::{parse_pairing_line, PairingCode};
 use rah_desktop_bridge_native::redact::redact;
-use rah_desktop_bridge_native::supervisor::{Action, State as SupState, Supervisor, SIDECAR_ARGS, SIDECAR_NAME};
+use rah_desktop_bridge_native::supervisor::{Action, State as SupState, Supervisor, SIDECAR_NAME};
 
 use parking_lot::Mutex;
 use serde::Serialize;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 use tauri::{
