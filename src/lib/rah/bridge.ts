@@ -3,7 +3,8 @@ import {
   DEFAULT_BRIDGE_PORT, PROTOCOL_VERSION,
   type BridgeHealth, type BridgePairResponse, type BridgeCapabilities,
   type BridgeSystemStatus, type BridgeListResult, type BridgeSearchResult,
-  type BridgeReadTextResult, type BridgeJob, type CapabilityId,
+  type BridgeReadTextResult, type BridgeJob, type BridgePrepareResponse,
+  type CapabilityId,
 } from "./bridge-protocol";
 
 // ---- Secure token storage (IndexedDB, never localStorage) ----
@@ -114,11 +115,37 @@ export const bridgeEmergencyStop = () => authedCall<{ ok: boolean; stopped: bool
 export const bridgeResume = () => authedCall<{ ok: boolean; stopped: boolean }>("POST", "/resume", {});
 export const bridgeAuditRecent = () => authedCall<{ entries: unknown[] }>("GET", "/audit/recent");
 
-export async function bridgePrepare(capability: CapabilityId, target?: unknown) {
-  return authedCall<{ job: BridgeJob; risk: string; requiresApproval: boolean }>("POST", "/actions/prepare", { capability, target });
+/**
+ * Prepare an action. The response includes a one-time `confirmationToken`
+ * that MUST be passed back verbatim to bridgeExecute. The token is only
+ * returned here; the bridge never returns it again.
+ */
+export async function bridgePrepare(capability: CapabilityId, params: Record<string, unknown> = {}) {
+  return authedCall<BridgePrepareResponse>("POST", "/actions/prepare", { capability, params });
 }
-export async function bridgeExecute(jobId: string, approvalId: string, extra: Record<string, unknown> = {}) {
-  return authedCall<{ job: BridgeJob }>("POST", "/actions/execute", { jobId, approvalId, ...extra });
+/**
+ * Execute a prepared action. Only jobId, approvalId, and confirmationToken
+ * are accepted — no per-call parameter overrides.
+ */
+export async function bridgeExecute(jobId: string, approvalId: string, confirmationToken: string) {
+  return authedCall<{ job: BridgeJob }>("POST", "/actions/execute", { jobId, approvalId, confirmationToken });
+}
+export async function bridgeCancel(jobId: string) {
+  return authedCall<{ job: BridgeJob }>("POST", "/actions/cancel", { jobId });
+}
+
+/**
+ * Server-side disconnect. Revokes the on-disk device credentials and
+ * starts a fresh pairing session whose 6-digit code is printed only in the
+ * local bridge console. Also forgets the browser-side credentials so the
+ * UI drops back into the pairing wizard.
+ */
+export async function bridgeDisconnect() {
+  try {
+    await authedCall<{ ok: boolean; disconnected: boolean }>("POST", "/disconnect", {});
+  } finally {
+    await forgetCredentials();
+  }
 }
 
 export type BridgeUiState =

@@ -86,37 +86,88 @@ test("path traversal is blocked", async () => {
   assert.equal(r.status, 400);
 });
 
-test("prepare launch.url with unsafe scheme rejected at execute", async () => {
-  // prepare
-  const body1 = JSON.stringify({ capability: "launch.url" });
+test("prepare launch.url with unsafe scheme rejected at prepare time", async () => {
+  const body1 = JSON.stringify({ capability: "launch.url", params: { url: "file:///etc/passwd" } });
   const r1 = await fetch(baseUrl + "/v1/actions/prepare", { method: "POST", body: body1, headers: signedHeaders({ method: "POST", path: "/v1/actions/prepare", body: body1, token: deviceToken, secret: hmacSecret }) });
-  const j1 = await r1.json();
-  assert.equal(r1.status, 200); const jobId = j1.job.id;
-  // execute with file:// URL
-  const body2 = JSON.stringify({ jobId, approvalId: "test-approval", url: "file:///etc/passwd" });
-  const r2 = await fetch(baseUrl + "/v1/actions/execute", { method: "POST", body: body2, headers: signedHeaders({ method: "POST", path: "/v1/actions/execute", body: body2, token: deviceToken, secret: hmacSecret }) });
-  assert.equal(r2.status, 400);
+  assert.equal(r1.status, 400);
+});
+
+test("prepare launch.url rejects http://", async () => {
+  const body1 = JSON.stringify({ capability: "launch.url", params: { url: "http://example.com" } });
+  const r1 = await fetch(baseUrl + "/v1/actions/prepare", { method: "POST", body: body1, headers: signedHeaders({ method: "POST", path: "/v1/actions/prepare", body: body1, token: deviceToken, secret: hmacSecret }) });
+  assert.equal(r1.status, 400);
 });
 
 test("execute without approvalId is rejected for approval-required capability", async () => {
-  const body1 = JSON.stringify({ capability: "files.createFolder", target: path.join(approvedRoot, "should-not-be-created") });
+  const target = path.join(approvedRoot, "should-not-be-created");
+  const body1 = JSON.stringify({ capability: "files.createFolder", params: { target } });
   const r1 = await fetch(baseUrl + "/v1/actions/prepare", { method: "POST", body: body1, headers: signedHeaders({ method: "POST", path: "/v1/actions/prepare", body: body1, token: deviceToken, secret: hmacSecret }) });
   const j1 = await r1.json();
-  const body2 = JSON.stringify({ jobId: j1.job.id, target: path.join(approvedRoot, "should-not-be-created") });
+  const body2 = JSON.stringify({ jobId: j1.job.id, confirmationToken: j1.confirmationToken });
   const r2 = await fetch(baseUrl + "/v1/actions/execute", { method: "POST", body: body2, headers: signedHeaders({ method: "POST", path: "/v1/actions/execute", body: body2, token: deviceToken, secret: hmacSecret }) });
   assert.equal(r2.status, 403);
-  assert.ok(!fs.existsSync(path.join(approvedRoot, "should-not-be-created")));
+  assert.ok(!fs.existsSync(target));
 });
 
-test("execute files.createFolder with approval succeeds", async () => {
+test("execute files.createFolder with approval + token succeeds", async () => {
   const target = path.join(approvedRoot, "new-folder");
-  const body1 = JSON.stringify({ capability: "files.createFolder", target });
+  const body1 = JSON.stringify({ capability: "files.createFolder", params: { target } });
   const r1 = await fetch(baseUrl + "/v1/actions/prepare", { method: "POST", body: body1, headers: signedHeaders({ method: "POST", path: "/v1/actions/prepare", body: body1, token: deviceToken, secret: hmacSecret }) });
   const j1 = await r1.json();
-  const body2 = JSON.stringify({ jobId: j1.job.id, approvalId: "test-approval", target });
+  assert.ok(j1.confirmationToken);
+  const body2 = JSON.stringify({ jobId: j1.job.id, approvalId: "test-approval", confirmationToken: j1.confirmationToken });
   const r2 = await fetch(baseUrl + "/v1/actions/execute", { method: "POST", body: body2, headers: signedHeaders({ method: "POST", path: "/v1/actions/execute", body: body2, token: deviceToken, secret: hmacSecret }) });
   assert.equal(r2.status, 200);
   assert.ok(fs.statSync(target).isDirectory());
+});
+
+test("execute rejects extra override fields (path swap attempt)", async () => {
+  const goodTarget = path.join(approvedRoot, "approved-folder");
+  const evilTarget = path.join(approvedRoot, "evil-folder");
+  const body1 = JSON.stringify({ capability: "files.createFolder", params: { target: goodTarget } });
+  const r1 = await fetch(baseUrl + "/v1/actions/prepare", { method: "POST", body: body1, headers: signedHeaders({ method: "POST", path: "/v1/actions/prepare", body: body1, token: deviceToken, secret: hmacSecret }) });
+  const j1 = await r1.json();
+  const body2 = JSON.stringify({ jobId: j1.job.id, approvalId: "a", confirmationToken: j1.confirmationToken, target: evilTarget });
+  const r2 = await fetch(baseUrl + "/v1/actions/execute", { method: "POST", body: body2, headers: signedHeaders({ method: "POST", path: "/v1/actions/execute", body: body2, token: deviceToken, secret: hmacSecret }) });
+  assert.equal(r2.status, 400);
+  assert.ok(!fs.existsSync(evilTarget));
+  assert.ok(!fs.existsSync(goodTarget));
+});
+
+test("execute rejects missing/wrong/reused confirmation token", async () => {
+  const target = path.join(approvedRoot, "token-folder");
+  const body1 = JSON.stringify({ capability: "files.createFolder", params: { target } });
+  const r1 = await fetch(baseUrl + "/v1/actions/prepare", { method: "POST", body: body1, headers: signedHeaders({ method: "POST", path: "/v1/actions/prepare", body: body1, token: deviceToken, secret: hmacSecret }) });
+  const j1 = await r1.json();
+  // Missing token
+  const bMissing = JSON.stringify({ jobId: j1.job.id, approvalId: "a" });
+  const rMissing = await fetch(baseUrl + "/v1/actions/execute", { method: "POST", body: bMissing, headers: signedHeaders({ method: "POST", path: "/v1/actions/execute", body: bMissing, token: deviceToken, secret: hmacSecret }) });
+  assert.equal(rMissing.status, 403);
+  // Wrong token
+  const bWrong = JSON.stringify({ jobId: j1.job.id, approvalId: "a", confirmationToken: "not-the-real-token" });
+  const rWrong = await fetch(baseUrl + "/v1/actions/execute", { method: "POST", body: bWrong, headers: signedHeaders({ method: "POST", path: "/v1/actions/execute", body: bWrong, token: deviceToken, secret: hmacSecret }) });
+  assert.equal(rWrong.status, 403);
+  // Correct → succeeds
+  const bOk = JSON.stringify({ jobId: j1.job.id, approvalId: "a", confirmationToken: j1.confirmationToken });
+  const rOk = await fetch(baseUrl + "/v1/actions/execute", { method: "POST", body: bOk, headers: signedHeaders({ method: "POST", path: "/v1/actions/execute", body: bOk, token: deviceToken, secret: hmacSecret }) });
+  assert.equal(rOk.status, 200);
+  // Reused → job no longer pending
+  const rReuse = await fetch(baseUrl + "/v1/actions/execute", { method: "POST", body: bOk, headers: signedHeaders({ method: "POST", path: "/v1/actions/execute", body: bOk, token: deviceToken, secret: hmacSecret }) });
+  assert.notEqual(rReuse.status, 200);
+});
+
+test("actions/cancel blocks subsequent execute", async () => {
+  const target = path.join(approvedRoot, "cancel-folder");
+  const body1 = JSON.stringify({ capability: "files.createFolder", params: { target } });
+  const r1 = await fetch(baseUrl + "/v1/actions/prepare", { method: "POST", body: body1, headers: signedHeaders({ method: "POST", path: "/v1/actions/prepare", body: body1, token: deviceToken, secret: hmacSecret }) });
+  const j1 = await r1.json();
+  const bc = JSON.stringify({ jobId: j1.job.id });
+  const rc = await fetch(baseUrl + "/v1/actions/cancel", { method: "POST", body: bc, headers: signedHeaders({ method: "POST", path: "/v1/actions/cancel", body: bc, token: deviceToken, secret: hmacSecret }) });
+  assert.equal(rc.status, 200);
+  const bx = JSON.stringify({ jobId: j1.job.id, approvalId: "a", confirmationToken: j1.confirmationToken });
+  const rx = await fetch(baseUrl + "/v1/actions/execute", { method: "POST", body: bx, headers: signedHeaders({ method: "POST", path: "/v1/actions/execute", body: bx, token: deviceToken, secret: hmacSecret }) });
+  assert.equal(rx.status, 409);
+  assert.ok(!fs.existsSync(target));
 });
 
 test("emergency stop blocks actions until resume", async () => {
@@ -143,4 +194,33 @@ test("screenshot.capture returns not_implemented", async () => {
 test("origin not on allowlist is rejected", async () => {
   const r = await fetch(baseUrl + "/v1/system/status", { headers: { Origin: "https://evil.example.com" } });
   assert.equal(r.status, 403);
+});
+
+test("health without Origin is allowed (local status.cmd script)", async () => {
+  const r = await fetch(baseUrl + "/v1/health");
+  assert.equal(r.status, 200);
+});
+
+test("health with disallowed Origin is rejected", async () => {
+  const r = await fetch(baseUrl + "/v1/health", { headers: { Origin: "https://evil.example.com" } });
+  assert.equal(r.status, 403);
+});
+
+test("OPTIONS preflight includes Private Network Access header", async () => {
+  const r = await fetch(baseUrl + "/v1/system/status", { method: "OPTIONS", headers: { Origin: "http://localhost:8080", "Access-Control-Request-Method": "GET", "Access-Control-Request-Private-Network": "true" } });
+  assert.equal(r.status, 204);
+  assert.equal(r.headers.get("access-control-allow-private-network"), "true");
+  assert.equal(r.headers.get("access-control-allow-origin"), "http://localhost:8080");
+});
+
+test("disconnect revokes credentials", async () => {
+  const r = await fetch(baseUrl + "/v1/disconnect", { method: "POST", body: "", headers: signedHeaders({ method: "POST", path: "/v1/disconnect", body: "", token: deviceToken, secret: hmacSecret }) });
+  assert.equal(r.status, 200);
+  // Any subsequent authenticated call with old token must fail (428 pairing required)
+  const r2 = await fetch(baseUrl + "/v1/system/status", { headers: signedHeaders({ method: "GET", path: "/v1/system/status", token: deviceToken, secret: hmacSecret }) });
+  assert.equal(r2.status, 428);
+  // Response must not leak the new pairing code
+  const body = await r.json();
+  assert.equal(body.disconnected, true);
+  assert.ok(!("code" in body) && !("pairingCode" in body));
 });

@@ -9,31 +9,43 @@ import * as emergency from "./emergency.js";
 import * as files from "./files.js";
 import * as launch from "./launch.js";
 import { systemStatus } from "./system.js";
-import { createJob, getJob, approveJob, updateJob } from "./jobs.js";
+import { createJob, getJob, approveJob, updateJob, publicJob } from "./jobs.js";
 import { PathContainmentError } from "./paths.js";
-import { UnsafeUrlError } from "./urlCheck.js";
+import { UnsafeUrlError, assertSafeUrl } from "./urlCheck.js";
 
-const ALLOWED_ORIGIN_PATTERNS = [
-  /^http:\/\/localhost(:\d+)?$/,
-  /^http:\/\/127\.0\.0\.1(:\d+)?$/,
-  /^https:\/\/raven-command-core\.lovable\.app$/,
-  /^https:\/\/id-preview--[a-f0-9-]+\.lovable\.app$/,
-  /^https:\/\/[a-z0-9-]+\.lovable\.app$/,
-  /^https:\/\/[a-z0-9-]+\.lovableproject\.com$/,
-];
+// Strict origin allowlist:
+//  - exact production Raven Command URL
+//  - exact Lovable preview URL for this project
+//  - localhost / 127.0.0.1 with any port (local dev)
+// Additional origins can be added via RAH_BRIDGE_ALLOWED_ORIGINS (comma-separated).
+const HARDCODED_ORIGINS = new Set([
+  "https://raven-command-core.lovable.app",
+  "https://id-preview--07b00439-0796-4d84-82a8-74f3aef8cb74.lovable.app",
+]);
+const LOCAL_ORIGIN_RE = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+
+function extraOrigins() {
+  const raw = process.env.RAH_BRIDGE_ALLOWED_ORIGINS || "";
+  return new Set(raw.split(",").map((s) => s.trim()).filter(Boolean));
+}
 
 function isOriginAllowed(origin) {
   if (!origin) return false;
-  return ALLOWED_ORIGIN_PATTERNS.some((p) => p.test(origin));
+  if (HARDCODED_ORIGINS.has(origin)) return true;
+  if (extraOrigins().has(origin)) return true;
+  if (LOCAL_ORIGIN_RE.test(origin)) return true;
+  return false;
 }
 
-function corsHeaders(origin) {
+function corsHeaders(origin, extra = {}) {
   return {
     "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization, X-RAH-Timestamp, X-RAH-Nonce, X-RAH-Signature",
+    "Access-Control-Allow-Private-Network": "true",
     "Access-Control-Max-Age": "600",
-    "Vary": "Origin",
+    "Vary": "Origin, Access-Control-Request-Private-Network",
+    ...extra,
   };
 }
 
@@ -42,6 +54,20 @@ let pairingSession = null; // { code, expiresAt }
 function newPairing() {
   const code = generatePairingCode();
   pairingSession = { code, expiresAt: Date.now() + PAIRING_CODE_TTL_MS };
+  return code;
+}
+
+// Called by /v1/disconnect. Prints the code to the LOCAL bridge console only;
+// never returns it over HTTP.
+function startFreshPairingSession() {
+  const code = newPairing();
+  process.stdout.write(
+    "\n  RE-PAIRING REQUESTED FROM BROWSER\n" +
+    "  Previous device credentials have been revoked.\n" +
+    "  Enter this six-digit code in Raven Command -> Connections:\n\n" +
+    "        " + code + "\n\n" +
+    "  Code expires in 5 minutes.\n\n"
+  );
   return code;
 }
 
@@ -68,6 +94,28 @@ function requireAuth(req, rawBody, cfg) {
   if (!cfg.deviceToken || !cfg.hmacSecret) throw new AuthError("Pairing required", 428);
   verifyRequest({ req, rawBody, expectedToken: cfg.deviceToken, expectedSecret: cfg.hmacSecret });
 }
+
+// ---------- Per-capability parameter normalizers ----------
+// Each returns the ONLY fields we will persist on the job and later act on.
+// Extra client fields are silently dropped here.
+const CAP_NORMALIZERS = {
+  "files.createFolder": (p) => ({ target: String(p?.target ?? "") }),
+  "files.rename":       (p) => ({ from: String(p?.from ?? ""), to: String(p?.to ?? "") }),
+  "files.copy":         (p) => ({ from: String(p?.from ?? ""), to: String(p?.to ?? "") }),
+  "files.move":         (p) => ({ from: String(p?.from ?? ""), to: String(p?.to ?? "") }),
+  "files.recycle":      (p) => ({ target: String(p?.target ?? "") }),
+  "launch.explorer":    (p) => ({ target: String(p?.target ?? "") }),
+  "launch.url":         (p) => {
+    const url = String(p?.url ?? "");
+    assertSafeUrl(url); // fail early at prepare time
+    return { url };
+  },
+};
+
+// Whitelist of top-level fields we accept on /actions/execute.
+// Anything else (target, url, from, to, etc.) is rejected — the caller
+// must not be able to change what they approved.
+const EXECUTE_ALLOWED_KEYS = new Set(["jobId", "approvalId", "confirmationToken"]);
 
 async function handleRoute(req, res, url, rawBody, cfg, origin) {
   const p = url.pathname;
@@ -142,6 +190,19 @@ async function handleRoute(req, res, url, rawBody, cfg, origin) {
     return json(res, 200, { entries: readRecent(100) }, corsHeaders(origin));
   }
 
+  if (p === `/${PROTOCOL_VERSION}/disconnect` && method === "POST") {
+    // Revoke on-disk credentials, then start a fresh pairing session whose
+    // code is only printed on the local bridge console.
+    cfg.deviceToken = null;
+    cfg.hmacSecret = null;
+    cfg.pairedAt = null;
+    cfg.pairedOrigin = null;
+    saveConfig(cfg);
+    startFreshPairingSession();
+    auditLog({ event: "disconnect", origin });
+    return json(res, 200, { ok: true, disconnected: true, pairingRequired: true }, corsHeaders(origin));
+  }
+
   // Blocked when emergency stopped, except stop/resume/status/health above.
   if (emergency.isStopped()) {
     return json(res, 423, { error: "emergency_stopped" }, corsHeaders(origin));
@@ -172,39 +233,90 @@ async function handleRoute(req, res, url, rawBody, cfg, origin) {
       const spec = CAPABILITIES[cap];
       if (!spec) return json(res, 400, { error: "unknown_capability" }, corsHeaders(origin));
       if (spec.disabled) return json(res, 403, { error: "capability_disabled" }, corsHeaders(origin));
-      const j = createJob(cap, body.target ?? null);
-      auditLog({ event: "actions.prepare", capability: cap, jobId: j.id });
-      return json(res, 200, { job: j, risk: spec.risk, requiresApproval: spec.requiresApproval }, corsHeaders(origin));
+      const normalizer = CAP_NORMALIZERS[cap];
+      if (!normalizer) return json(res, 400, { error: "capability_not_executable" }, corsHeaders(origin));
+      let normalized;
+      try { normalized = normalizer(body.params ?? body); }
+      catch (err) {
+        if (err instanceof UnsafeUrlError) return json(res, 400, { error: "unsafe_url", message: err.message }, corsHeaders(origin));
+        throw err;
+      }
+      const j = createJob(cap, normalized);
+      auditLog({ event: "actions.prepare", capability: cap, jobId: j.id, params: normalized });
+      // Return the one-time confirmationToken here and only here.
+      return json(res, 200, {
+        job: publicJob(j),
+        confirmationToken: j.confirmationToken,
+        risk: spec.risk,
+        requiresApproval: spec.requiresApproval,
+        expiresAt: j.expiresAt,
+      }, corsHeaders(origin));
     }
-    if (p === `/${PROTOCOL_VERSION}/actions/execute` && method === "POST") {
+    if (p === `/${PROTOCOL_VERSION}/actions/cancel` && method === "POST") {
       const j = getJob(String(body.jobId || ""));
       if (!j) return json(res, 404, { error: "unknown_job" }, corsHeaders(origin));
+      if (j.status === "done" || j.status === "running") {
+        return json(res, 409, { error: "cannot_cancel_active_job", status: j.status }, corsHeaders(origin));
+      }
+      updateJob(j.id, { status: "cancelled", finishedAt: Date.now(), tokenConsumed: true, confirmationToken: null });
+      auditLog({ event: "actions.cancel", jobId: j.id });
+      return json(res, 200, { job: publicJob(getJob(j.id)) }, corsHeaders(origin));
+    }
+    if (p === `/${PROTOCOL_VERSION}/actions/execute` && method === "POST") {
+      // Reject unknown override fields — nothing about the action may
+      // change between prepare and execute.
+      const extraKeys = Object.keys(body).filter((k) => !EXECUTE_ALLOWED_KEYS.has(k));
+      if (extraKeys.length > 0) {
+        auditLog({ event: "actions.execute", ok: false, reason: "extra_fields", extraKeys });
+        return json(res, 400, { error: "extra_fields_not_allowed", fields: extraKeys }, corsHeaders(origin));
+      }
+      const j = getJob(String(body.jobId || ""));
+      if (!j) return json(res, 404, { error: "unknown_job" }, corsHeaders(origin));
+      if (j.status === "cancelled") return json(res, 409, { error: "job_cancelled" }, corsHeaders(origin));
+      if (j.status !== "prepared") return json(res, 409, { error: "job_not_pending", status: j.status }, corsHeaders(origin));
+      if (Date.now() > j.expiresAt) {
+        updateJob(j.id, { status: "expired", finishedAt: Date.now(), tokenConsumed: true, confirmationToken: null });
+        return json(res, 410, { error: "job_expired" }, corsHeaders(origin));
+      }
       const spec = CAPABILITIES[j.capability];
       if (!spec) return json(res, 400, { error: "unknown_capability" }, corsHeaders(origin));
       if (spec.disabled) return json(res, 403, { error: "capability_disabled" }, corsHeaders(origin));
       if (spec.requiresApproval && !body.approvalId) return json(res, 403, { error: "approval_required" }, corsHeaders(origin));
+
+      // Confirmation token — one-time, timing-safe compare, then consume.
+      const provided = String(body.confirmationToken || "");
+      if (!provided || j.tokenConsumed || !j.confirmationToken) {
+        return json(res, 403, { error: "invalid_confirmation_token" }, corsHeaders(origin));
+      }
+      const a = Buffer.from(provided); const b = Buffer.from(j.confirmationToken);
+      if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+        return json(res, 403, { error: "invalid_confirmation_token" }, corsHeaders(origin));
+      }
+      updateJob(j.id, { tokenConsumed: true, confirmationToken: null });
       approveJob(j.id, body.approvalId ?? "auto");
       updateJob(j.id, { status: "running", startedAt: Date.now() });
+
+      // Everything below reads ONLY the stored, normalized params.
+      const params = j.params || {};
       let result;
       try {
-        const t = body.target ?? j.target;
         switch (j.capability) {
-          case "files.createFolder": result = files.createFolder(t, cfg.approvedRoots); break;
-          case "files.rename":       result = files.renameEntry(body.from, body.to, cfg.approvedRoots); break;
-          case "files.copy":         result = files.copyEntry(body.from, body.to, cfg.approvedRoots); break;
-          case "files.move":         result = files.moveEntry(body.from, body.to, cfg.approvedRoots); break;
-          case "files.recycle":      result = await files.recycleEntry(t, cfg.approvedRoots); break;
-          case "launch.explorer":    result = await launch.openInExplorer(t, cfg.approvedRoots); break;
-          case "launch.url":         result = await launch.openUrl(body.url); break;
+          case "files.createFolder": result = files.createFolder(params.target, cfg.approvedRoots); break;
+          case "files.rename":       result = files.renameEntry(params.from, params.to, cfg.approvedRoots); break;
+          case "files.copy":         result = files.copyEntry(params.from, params.to, cfg.approvedRoots); break;
+          case "files.move":         result = files.moveEntry(params.from, params.to, cfg.approvedRoots); break;
+          case "files.recycle":      result = await files.recycleEntry(params.target, cfg.approvedRoots); break;
+          case "launch.explorer":    result = await launch.openInExplorer(params.target, cfg.approvedRoots); break;
+          case "launch.url":         result = await launch.openUrl(params.url); break;
           default: throw new Error("Capability not executable: " + j.capability);
         }
         updateJob(j.id, { status: "done", finishedAt: Date.now(), result });
         auditLog({ event: "actions.execute", capability: j.capability, jobId: j.id, ok: true });
-        return json(res, 200, { job: getJob(j.id) }, corsHeaders(origin));
+        return json(res, 200, { job: publicJob(getJob(j.id)) }, corsHeaders(origin));
       } catch (err) {
         updateJob(j.id, { status: "error", finishedAt: Date.now(), error: err.message });
         auditLog({ event: "actions.execute", capability: j.capability, jobId: j.id, ok: false, error: err.message });
-        return json(res, 400, { error: err.message, job: getJob(j.id) }, corsHeaders(origin));
+        return json(res, 400, { error: err.message, job: publicJob(getJob(j.id)) }, corsHeaders(origin));
       }
     }
     if (p === `/${PROTOCOL_VERSION}/jobs/` && method === "GET") {
@@ -214,7 +326,7 @@ async function handleRoute(req, res, url, rawBody, cfg, origin) {
     if (jobMatch && method === "GET") {
       const j = getJob(jobMatch[1]);
       if (!j) return json(res, 404, { error: "unknown_job" }, corsHeaders(origin));
-      return json(res, 200, { job: j }, corsHeaders(origin));
+      return json(res, 200, { job: publicJob(j) }, corsHeaders(origin));
     }
     if (p === `/${PROTOCOL_VERSION}/screenshot/capture` && method === "POST") {
       auditLog({ event: "screenshot.capture", ok: false, reason: "not_implemented" });
@@ -234,16 +346,29 @@ export function createServer(cfg) {
     try {
       const url = new URL(req.url, "http://localhost");
       const origin = req.headers["origin"] || "";
-      const allowed = isOriginAllowed(origin) || url.pathname === `/${PROTOCOL_VERSION}/health`;
+      const isHealth = url.pathname === `/${PROTOCOL_VERSION}/health`;
 
+      // Preflight — must include Private Network Access grant so Chrome
+      // permits the HTTPS dashboard to call this http://127.0.0.1 endpoint.
       if (req.method === "OPTIONS") {
         if (!isOriginAllowed(origin)) { res.writeHead(403).end(); return; }
         res.writeHead(204, corsHeaders(origin)); res.end(); return;
       }
-      if (!allowed) {
-        res.writeHead(403, { "Content-Type": "application/json" }).end(JSON.stringify({ error: "origin_not_allowed" }));
-        return;
+
+      // Health is reachable without an Origin (e.g. local status.cmd script
+      // using curl). Browser requests from disallowed origins are rejected.
+      if (isHealth) {
+        if (origin && !isOriginAllowed(origin)) {
+          res.writeHead(403, { "Content-Type": "application/json" }).end(JSON.stringify({ error: "origin_not_allowed" }));
+          return;
+        }
+      } else {
+        if (!isOriginAllowed(origin)) {
+          res.writeHead(403, { "Content-Type": "application/json" }).end(JSON.stringify({ error: "origin_not_allowed" }));
+          return;
+        }
       }
+
       const rawBody = req.method === "GET" ? "" : await readBody(req);
       await handleRoute(req, res, url, rawBody, cfg, origin);
     } catch (err) {

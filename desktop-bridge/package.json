@@ -4,7 +4,7 @@
   "private": true,
   "description": "RAH Desktop Bridge — secure localhost companion for Raven Command.",
   "type": "module",
-  "engines": { "node": ">=20" },
+  "engines": { "node": ">=22" },
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",

@@ -1,5 +1,5 @@
 // MUST match desktop-bridge/src/protocol.js
-export const BRIDGE_MIN_VERSION = "0.1.0";
+export const BRIDGE_MIN_VERSION = "0.1.1";
 export const PROTOCOL_VERSION = "v1";
 export const DEFAULT_BRIDGE_PORT = 47824;
 
@@ -35,4 +35,24 @@ export interface BridgeFile { name: string; path: string; size: number | null; m
 export interface BridgeListResult { path: string; items: BridgeFile[]; }
 export interface BridgeSearchResult { results: BridgeFile[]; truncated: boolean; }
 export interface BridgeReadTextResult { path: string; size: number; mtime: number; text: string; }
-export interface BridgeJob { id: string; capability: CapabilityId; target: unknown; status: string; approvalId: string | null; createdAt: number; startedAt: number | null; finishedAt: number | null; result: unknown; error: string | null; }
+export interface BridgeJob {
+  id: string;
+  capability: CapabilityId;
+  params: Record<string, unknown>;
+  status: "prepared" | "approved" | "running" | "done" | "error" | "cancelled" | "expired";
+  approvalId: string | null;
+  createdAt: number;
+  expiresAt: number;
+  startedAt: number | null;
+  finishedAt: number | null;
+  result: unknown;
+  error: string | null;
+}
+
+export interface BridgePrepareResponse {
+  job: BridgeJob;
+  confirmationToken: string;
+  risk: "low" | "medium" | "high";
+  requiresApproval: boolean;
+  expiresAt: number;
+}

@@ -15,29 +15,40 @@ function realOrLexical(p) {
   try { return fs.realpathSync(p); } catch { return path.resolve(p); }
 }
 
+// Walk up the path until we find an ancestor that actually exists on disk,
+// so we can realpath through any intermediate symlink and check containment
+// against the resolved location, not the lexical one.
+function nearestExistingAncestor(absPath) {
+  let cur = absPath;
+  while (true) {
+    if (fs.existsSync(cur)) return cur;
+    const parent = path.dirname(cur);
+    if (parent === cur) return cur; // filesystem root
+    cur = parent;
+  }
+}
+
 export function assertContained(target, approvedRoots) {
   if (typeof target !== "string" || target.length === 0) {
     throw new PathContainmentError("Missing path");
   }
   if (target.includes("\u0000")) throw new PathContainmentError("Null byte in path");
 
-  // Resolve; if the target doesn't exist yet, resolve its parent for real path.
-  let resolved;
-  if (fs.existsSync(target)) {
-    resolved = realOrLexical(target);
-  } else {
-    const parent = path.dirname(path.resolve(target));
-    const parentReal = fs.existsSync(parent) ? realOrLexical(parent) : path.resolve(parent);
-    resolved = path.join(parentReal, path.basename(target));
-  }
+  const abs = path.resolve(target);
+  // Resolve symlinks on the deepest existing ancestor, then re-append the
+  // remaining suffix. This defeats symlink-in-the-middle escapes for
+  // not-yet-existing targets (e.g. new folder under a symlinked parent).
+  const anchor = nearestExistingAncestor(abs);
+  const anchorReal = realOrLexical(anchor);
+  const suffix = path.relative(anchor, abs); // "" if abs already exists
+  const resolved = suffix ? path.join(anchorReal, suffix) : anchorReal;
 
   for (const rootRaw of approvedRoots) {
     const root = realOrLexical(rootRaw);
     const rel = path.relative(root, resolved);
-    if (!rel.startsWith("..") && !path.isAbsolute(rel)) {
+    if (rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel))) {
       return resolved;
     }
-    if (resolved === root) return resolved;
   }
   throw new PathContainmentError("Path is not inside any approved root");
 }
