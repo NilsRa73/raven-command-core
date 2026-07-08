@@ -8,6 +8,7 @@ import { useRah } from "@/lib/rah/context";
 import { AGENTS } from "@/lib/rah/agents";
 import { createRecognizer, isSpeechSupported } from "@/lib/rah/speech";
 import { getDB, uid } from "@/lib/rah/db";
+import { localDemoResponse } from "@/lib/rah/demo";
 import { Link } from "@tanstack/react-router";
 
 export function CommandBar() {
@@ -83,13 +84,14 @@ export function CommandBar() {
     if (!prompt) { toast.error("Type or dictate a command first."); return; }
     stopListening();
     const needsApproval = approvalMode !== "advisory";
+    const demoResult = localDemoResponse(prompt, selectedAgents, mode);
     await rah.addCommand({
       prompt, agents: selectedAgents, mode, fileIds: [],
       projectId: rah.activeProject?.id, inputType: listening ? "voice" : "text",
       status: needsApproval ? "awaiting_approval" : "done",
       resultSummary: rah.prefs.provider
         ? "Awaiting provider response."
-        : "Local demonstration — configure an AI provider in Settings for real analysis.",
+        : demoResult,
       demo: !rah.prefs.provider,
     });
     if (needsApproval) {
@@ -169,8 +171,13 @@ export function CommandBar() {
         ref={ref}
         value={interim ? `${text}${text ? " " : ""}${interim}` : text}
         onChange={(e) => { setText(e.target.value); setInterim(""); }}
-        onKeyDown={(e) => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); void send(); } }}
-        placeholder='Try: "Ask the coding, design, and business agents to review this project."'
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+            e.preventDefault();
+            void send();
+          }
+        }}
+        placeholder='Try: "Ask the coding, design, and business agents to review this project."  (Enter to send · Shift+Enter for new line)'
         rows={4}
         className="resize-y bg-background/60"
         aria-label="Command input"
