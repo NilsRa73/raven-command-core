@@ -24,7 +24,7 @@ export const Route = createFileRoute("/api/rah-health")({
             body: JSON.stringify({
               model: "openai/gpt-5.5",
               messages: [{ role: "user", content: "Reply with the single word: pong" }],
-              max_tokens: 8,
+              max_completion_tokens: 16,
             }),
           });
           const latencyMs = Date.now() - started;
