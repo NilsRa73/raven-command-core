@@ -10,43 +10,51 @@ import * as files from "./files.js";
 import * as launch from "./launch.js";
 import { systemStatus } from "./system.js";
 import { createJob, getJob, approveJob, updateJob, publicJob } from "./jobs.js";
-import { PathContainmentError } from "./paths.js";
+import { PathContainmentError, assertContained } from "./paths.js";
 import { UnsafeUrlError, assertSafeUrl } from "./urlCheck.js";
 
-// Strict origin allowlist:
+// Strict origin allowlist (no env-based expansion — the bridge only trusts
+// these fixed browser origins):
 //  - exact production Raven Command URL
 //  - exact Lovable preview URL for this project
 //  - localhost / 127.0.0.1 with any port (local dev)
-// Additional origins can be added via RAH_BRIDGE_ALLOWED_ORIGINS (comma-separated).
-const HARDCODED_ORIGINS = new Set([
+const ALLOWED_ORIGINS = new Set([
   "https://raven-command-core.lovable.app",
   "https://id-preview--07b00439-0796-4d84-82a8-74f3aef8cb74.lovable.app",
 ]);
 const LOCAL_ORIGIN_RE = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
 
-function extraOrigins() {
-  const raw = process.env.RAH_BRIDGE_ALLOWED_ORIGINS || "";
-  return new Set(raw.split(",").map((s) => s.trim()).filter(Boolean));
-}
-
 function isOriginAllowed(origin) {
   if (!origin) return false;
-  if (HARDCODED_ORIGINS.has(origin)) return true;
-  if (extraOrigins().has(origin)) return true;
+  if (ALLOWED_ORIGINS.has(origin)) return true;
   if (LOCAL_ORIGIN_RE.test(origin)) return true;
   return false;
 }
 
+// Base CORS headers for actual responses. Never emits an empty
+// Access-Control-Allow-Origin (that confuses browsers); when the caller has
+// no Origin — e.g. the local status.cmd curl script — we omit the ACAO
+// header entirely.
 function corsHeaders(origin, extra = {}) {
-  return {
-    "Access-Control-Allow-Origin": origin,
+  const headers = {
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization, X-RAH-Timestamp, X-RAH-Nonce, X-RAH-Signature",
-    "Access-Control-Allow-Private-Network": "true",
     "Access-Control-Max-Age": "600",
     "Vary": "Origin, Access-Control-Request-Private-Network",
     ...extra,
   };
+  if (origin) headers["Access-Control-Allow-Origin"] = origin;
+  return headers;
+}
+
+// Preflight response headers. Access-Control-Allow-Private-Network is
+// emitted ONLY when the browser explicitly asks for PNA on this preflight.
+function preflightHeaders(origin, req) {
+  const headers = corsHeaders(origin);
+  if (String(req.headers["access-control-request-private-network"] || "").toLowerCase() === "true") {
+    headers["Access-Control-Allow-Private-Network"] = "true";
+  }
+  return headers;
 }
 
 let pairingSession = null; // { code, expiresAt }
@@ -97,14 +105,28 @@ function requireAuth(req, rawBody, cfg) {
 
 // ---------- Per-capability parameter normalizers ----------
 // Each returns the ONLY fields we will persist on the job and later act on.
+// File/folder paths are canonicalized against the approved roots at prepare
+// time — a relative or lexical path is resolved, an outside-root path is
+// rejected, and a symlink-through-an-ancestor destination is rejected. The
+// resolved absolute paths are what /actions/execute later runs, so the
+// public job/approval preview shows exactly what will happen.
 // Extra client fields are silently dropped here.
 const CAP_NORMALIZERS = {
-  "files.createFolder": (p) => ({ target: String(p?.target ?? "") }),
-  "files.rename":       (p) => ({ from: String(p?.from ?? ""), to: String(p?.to ?? "") }),
-  "files.copy":         (p) => ({ from: String(p?.from ?? ""), to: String(p?.to ?? "") }),
-  "files.move":         (p) => ({ from: String(p?.from ?? ""), to: String(p?.to ?? "") }),
-  "files.recycle":      (p) => ({ target: String(p?.target ?? "") }),
-  "launch.explorer":    (p) => ({ target: String(p?.target ?? "") }),
+  "files.createFolder": (p, roots) => ({ target: assertContained(String(p?.target ?? ""), roots) }),
+  "files.rename":       (p, roots) => ({
+    from: assertContained(String(p?.from ?? ""), roots),
+    to:   assertContained(String(p?.to   ?? ""), roots),
+  }),
+  "files.copy":         (p, roots) => ({
+    from: assertContained(String(p?.from ?? ""), roots),
+    to:   assertContained(String(p?.to   ?? ""), roots),
+  }),
+  "files.move":         (p, roots) => ({
+    from: assertContained(String(p?.from ?? ""), roots),
+    to:   assertContained(String(p?.to   ?? ""), roots),
+  }),
+  "files.recycle":      (p, roots) => ({ target: assertContained(String(p?.target ?? ""), roots) }),
+  "launch.explorer":    (p, roots) => ({ target: assertContained(String(p?.target ?? ""), roots) }),
   "launch.url":         (p) => {
     const url = String(p?.url ?? "");
     assertSafeUrl(url); // fail early at prepare time
@@ -236,9 +258,10 @@ async function handleRoute(req, res, url, rawBody, cfg, origin) {
       const normalizer = CAP_NORMALIZERS[cap];
       if (!normalizer) return json(res, 400, { error: "capability_not_executable" }, corsHeaders(origin));
       let normalized;
-      try { normalized = normalizer(body.params ?? body); }
+      try { normalized = normalizer(body.params ?? body, cfg.approvedRoots); }
       catch (err) {
         if (err instanceof UnsafeUrlError) return json(res, 400, { error: "unsafe_url", message: err.message }, corsHeaders(origin));
+        if (err instanceof PathContainmentError) return json(res, 400, { error: "path_not_allowed", message: err.message }, corsHeaders(origin));
         throw err;
       }
       const j = createJob(cap, normalized);
@@ -352,7 +375,7 @@ export function createServer(cfg) {
       // permits the HTTPS dashboard to call this http://127.0.0.1 endpoint.
       if (req.method === "OPTIONS") {
         if (!isOriginAllowed(origin)) { res.writeHead(403).end(); return; }
-        res.writeHead(204, corsHeaders(origin)); res.end(); return;
+        res.writeHead(204, preflightHeaders(origin, req)); res.end(); return;
       }
 
       // Health is reachable without an Origin (e.g. local status.cmd script

@@ -213,6 +213,60 @@ test("OPTIONS preflight includes Private Network Access header", async () => {
   assert.equal(r.headers.get("access-control-allow-origin"), "http://localhost:8080");
 });
 
+test("OPTIONS preflight WITHOUT PNA request header omits PNA response header", async () => {
+  const r = await fetch(baseUrl + "/v1/system/status", { method: "OPTIONS", headers: { Origin: "http://localhost:8080", "Access-Control-Request-Method": "GET" } });
+  assert.equal(r.status, 204);
+  assert.equal(r.headers.get("access-control-allow-private-network"), null);
+});
+
+test("no-Origin health response does not emit an empty ACAO header", async () => {
+  const r = await fetch(baseUrl + "/v1/health");
+  assert.equal(r.status, 200);
+  // Header must be absent (not an empty string) for CLI callers with no Origin.
+  assert.equal(r.headers.get("access-control-allow-origin"), null);
+});
+
+test("prepare canonicalizes relative/lexical path into stored job params", async () => {
+  const rel = path.join(approvedRoot, "subdir", "..", "canon-folder");
+  const expected = path.join(approvedRoot, "canon-folder");
+  const body1 = JSON.stringify({ capability: "files.createFolder", params: { target: rel } });
+  const r1 = await fetch(baseUrl + "/v1/actions/prepare", { method: "POST", body: body1, headers: signedHeaders({ method: "POST", path: "/v1/actions/prepare", body: body1, token: deviceToken, secret: hmacSecret }) });
+  assert.equal(r1.status, 200);
+  const j1 = await r1.json();
+  assert.equal(j1.job.params.target, expected);
+  const body2 = JSON.stringify({ jobId: j1.job.id, approvalId: "a", confirmationToken: j1.confirmationToken });
+  const r2 = await fetch(baseUrl + "/v1/actions/execute", { method: "POST", body: body2, headers: signedHeaders({ method: "POST", path: "/v1/actions/execute", body: body2, token: deviceToken, secret: hmacSecret }) });
+  assert.equal(r2.status, 200);
+  assert.ok(fs.statSync(expected).isDirectory());
+});
+
+test("prepare rejects out-of-root path at prepare time", async () => {
+  const body1 = JSON.stringify({ capability: "files.createFolder", params: { target: "/etc/rah-should-not-exist" } });
+  const r1 = await fetch(baseUrl + "/v1/actions/prepare", { method: "POST", body: body1, headers: signedHeaders({ method: "POST", path: "/v1/actions/prepare", body: body1, token: deviceToken, secret: hmacSecret }) });
+  assert.equal(r1.status, 400);
+  const j = await r1.json();
+  assert.equal(j.error, "path_not_allowed");
+});
+
+test("prepare rejects symlink-ancestor destination at prepare time", async () => {
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), "rah-outside-prep-"));
+  const link = path.join(approvedRoot, "prep-link");
+  try { fs.symlinkSync(outside, link, "dir"); }
+  catch (e) { if (e.code === "EPERM") return; throw e; }
+  try {
+    const evil = path.join(link, "escaped");
+    const body1 = JSON.stringify({ capability: "files.createFolder", params: { target: evil } });
+    const r1 = await fetch(baseUrl + "/v1/actions/prepare", { method: "POST", body: body1, headers: signedHeaders({ method: "POST", path: "/v1/actions/prepare", body: body1, token: deviceToken, secret: hmacSecret }) });
+    assert.equal(r1.status, 400);
+    const j = await r1.json();
+    assert.equal(j.error, "path_not_allowed");
+    assert.ok(!fs.existsSync(path.join(outside, "escaped")));
+  } finally {
+    try { fs.unlinkSync(link); } catch { /* */ }
+    fs.rmSync(outside, { recursive: true, force: true });
+  }
+});
+
 test("disconnect revokes credentials", async () => {
   const r = await fetch(baseUrl + "/v1/disconnect", { method: "POST", body: "", headers: signedHeaders({ method: "POST", path: "/v1/disconnect", body: "", token: deviceToken, secret: hmacSecret }) });
   assert.equal(r.status, 200);
