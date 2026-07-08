@@ -38,6 +38,18 @@ export interface CommandRecord {
   latencyMs?: number;
   usage?: unknown;
   errorMessage?: string;
+  attachments?: {
+    id: string;
+    name: string;
+    mime: string;
+    width: number;
+    height: number;
+    sizeBytes: number;
+    included: boolean;
+    analyzed?: boolean;
+    state?: string;
+  }[];
+  visionUsed?: boolean;
 }
 
 export interface MemoryItem {
