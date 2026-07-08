@@ -27,7 +27,8 @@ export function CommandBar() {
   const [approvalMode, setApprovalMode] = useState(rah.prefs.approvalMode);
   const [listening, setListening] = useState(false);
   const [interim, setInterim] = useState("");
-  const [voiceSupported] = useState(() => isSpeechSupported());
+  const [voiceSupported, setVoiceSupported] = useState(false);
+  useEffect(() => { setVoiceSupported(isSpeechSupported()); }, []);
   const recRef = useRef<any>(null);
   const ref = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
