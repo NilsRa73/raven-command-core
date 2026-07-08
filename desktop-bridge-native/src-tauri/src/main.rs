@@ -48,8 +48,6 @@ struct AppState {
     health: Mutex<HealthState>,
 }
 
-impl Default for HealthState { fn default() -> Self { HealthState::Offline } }
-
 #[derive(Serialize, Clone)]
 struct StatusPayload {
     app_version: String,
@@ -228,7 +226,7 @@ fn spawn_sidecar(app: AppHandle) -> Result<(), String> {
     let (mut rx, child) = shell
         .sidecar(SIDECAR_NAME)
         .map_err(|e| format!("sidecar unavailable: {e}"))?
-        .args::<[&str; 0], &str>([]) // fixed empty argv — do not add anything here
+        // Fixed empty argv — never accept args from webview or env.
         .spawn()
         .map_err(|e| format!("spawn failed: {e}"))?;
 
