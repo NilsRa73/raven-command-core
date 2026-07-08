@@ -141,6 +141,6 @@ test("screenshot.capture returns not_implemented", async () => {
 });
 
 test("origin not on allowlist is rejected", async () => {
-  const r = await fetch(baseUrl + "/v1/health", { headers: { Origin: "https://evil.example.com" } });
+  const r = await fetch(baseUrl + "/v1/system/status", { headers: { Origin: "https://evil.example.com" } });
   assert.equal(r.status, 403);
 });
