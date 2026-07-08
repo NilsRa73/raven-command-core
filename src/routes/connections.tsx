@@ -259,7 +259,7 @@ function Connections() {
         </details>
 
         <div className="text-[11px] text-muted-foreground border-t border-border pt-3">
-          <strong className="text-foreground">Security notes (v0.1.0)</strong> —
+          <strong className="text-foreground">Security notes (v{PACKAGE_VERSION})</strong> —
           {" "}Read-only capabilities (system status, list/search/read-text) are allowed inside approved roots after pairing.
           {" "}All file modifications, launches, and URL opens require an approval card.
           {" "}Program launch, arbitrary shell, registry, keyboard automation, credential access, mic and webcam are DISABLED.
