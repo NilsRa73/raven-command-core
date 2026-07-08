@@ -25,6 +25,8 @@ import { Route as ApprovalsRouteImport } from './routes/approvals'
 import { Route as AgentsRouteImport } from './routes/agents'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ProjectsIdRouteImport } from './routes/projects.$id'
+import { Route as ApiRahHealthRouteImport } from './routes/api/rah-health'
+import { Route as ApiRahChatRouteImport } from './routes/api/rah-chat'
 
 const VoiceRoute = VoiceRouteImport.update({
   id: '/voice',
@@ -106,6 +108,16 @@ const ProjectsIdRoute = ProjectsIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => ProjectsRoute,
 } as any)
+const ApiRahHealthRoute = ApiRahHealthRouteImport.update({
+  id: '/api/rah-health',
+  path: '/api/rah-health',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiRahChatRoute = ApiRahChatRouteImport.update({
+  id: '/api/rah-chat',
+  path: '/api/rah-chat',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -123,6 +135,8 @@ export interface FileRoutesByFullPath {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/vision': typeof VisionRoute
   '/voice': typeof VoiceRoute
+  '/api/rah-chat': typeof ApiRahChatRoute
+  '/api/rah-health': typeof ApiRahHealthRoute
   '/projects/$id': typeof ProjectsIdRoute
 }
 export interface FileRoutesByTo {
@@ -141,6 +155,8 @@ export interface FileRoutesByTo {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/vision': typeof VisionRoute
   '/voice': typeof VoiceRoute
+  '/api/rah-chat': typeof ApiRahChatRoute
+  '/api/rah-health': typeof ApiRahHealthRoute
   '/projects/$id': typeof ProjectsIdRoute
 }
 export interface FileRoutesById {
@@ -160,6 +176,8 @@ export interface FileRoutesById {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/vision': typeof VisionRoute
   '/voice': typeof VoiceRoute
+  '/api/rah-chat': typeof ApiRahChatRoute
+  '/api/rah-health': typeof ApiRahHealthRoute
   '/projects/$id': typeof ProjectsIdRoute
 }
 export interface FileRouteTypes {
@@ -180,6 +198,8 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/vision'
     | '/voice'
+    | '/api/rah-chat'
+    | '/api/rah-health'
     | '/projects/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -198,6 +218,8 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/vision'
     | '/voice'
+    | '/api/rah-chat'
+    | '/api/rah-health'
     | '/projects/$id'
   id:
     | '__root__'
@@ -216,6 +238,8 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/vision'
     | '/voice'
+    | '/api/rah-chat'
+    | '/api/rah-health'
     | '/projects/$id'
   fileRoutesById: FileRoutesById
 }
@@ -235,6 +259,8 @@ export interface RootRouteChildren {
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   VisionRoute: typeof VisionRoute
   VoiceRoute: typeof VoiceRoute
+  ApiRahChatRoute: typeof ApiRahChatRoute
+  ApiRahHealthRoute: typeof ApiRahHealthRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -351,6 +377,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectsIdRouteImport
       parentRoute: typeof ProjectsRoute
     }
+    '/api/rah-health': {
+      id: '/api/rah-health'
+      path: '/api/rah-health'
+      fullPath: '/api/rah-health'
+      preLoaderRoute: typeof ApiRahHealthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/rah-chat': {
+      id: '/api/rah-chat'
+      path: '/api/rah-chat'
+      fullPath: '/api/rah-chat'
+      preLoaderRoute: typeof ApiRahChatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -382,7 +422,19 @@ const rootRouteChildren: RootRouteChildren = {
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   VisionRoute: VisionRoute,
   VoiceRoute: VoiceRoute,
+  ApiRahChatRoute: ApiRahChatRoute,
+  ApiRahHealthRoute: ApiRahHealthRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

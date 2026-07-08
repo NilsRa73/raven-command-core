@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Slider } from "@/components/ui/slider";
 import { useRah } from "@/lib/rah/context";
 import { getVoices, speak } from "@/lib/rah/speech";
+import { AiStatusBadge, useAiHealth } from "@/components/rah/AiStatusBadge";
 
 export const Route = createFileRoute("/settings")({
   head: () => ({ meta: [{ title: "Settings — RAH Listen Key" }] }),
@@ -17,6 +18,7 @@ export const Route = createFileRoute("/settings")({
 function SettingsPage() {
   const rah = useRah();
   const [voices] = useState(() => getVoices());
+  const { health, loading, refresh } = useAiHealth(true);
 
   return (
     <div className="space-y-6">
@@ -118,23 +120,29 @@ function SettingsPage() {
 
       <section className="glass-panel p-4 space-y-4">
         <h2 className="display text-lg">AI provider</h2>
+        <div className="flex flex-wrap items-center gap-3">
+          <AiStatusBadge health={health} loading={loading} />
+          <Button size="sm" variant="secondary" onClick={() => void refresh()}>Test AI Connection</Button>
+        </div>
         <p className="text-xs text-muted-foreground">
-          API keys are never stored in client code. This form stores only the provider name and endpoint locally.
-          A server-side function reads the real secret from your workspace's secure secret store.
+          Raven Command uses the built-in Lovable AI Gateway. The API key is stored server-side in the workspace secret store
+          (<code>LOVABLE_API_KEY</code>) and is never sent to the browser.
+          When the gateway is unreachable, rate-limited, or unauthenticated, the Command Center automatically falls back to the
+          clearly labelled Local Demo engine.
         </p>
-        <Row label="Name">
-          <Input value={rah.prefs.provider?.name ?? ""} onChange={(e) => rah.updatePrefs({ provider: { ...(rah.prefs.provider ?? { baseUrl: "" }), name: e.target.value } })} placeholder="Lovable AI Gateway" className="max-w-md" />
-        </Row>
-        <Row label="Base URL">
-          <Input value={rah.prefs.provider?.baseUrl ?? ""} onChange={(e) => rah.updatePrefs({ provider: { ...(rah.prefs.provider ?? { name: "" }), baseUrl: e.target.value } })} placeholder="https://ai.gateway.lovable.dev/v1" className="max-w-md" />
-        </Row>
-        <Row label="Model">
-          <Input value={rah.prefs.provider?.model ?? ""} onChange={(e) => rah.updatePrefs({ provider: { ...(rah.prefs.provider ?? { name: "", baseUrl: "" }), model: e.target.value } })} placeholder="openai/gpt-5.5" className="max-w-md" />
-        </Row>
-        <Row label="Secret name">
-          <Input value={rah.prefs.provider?.secretName ?? ""} onChange={(e) => rah.updatePrefs({ provider: { ...(rah.prefs.provider ?? { name: "", baseUrl: "" }), secretName: e.target.value } })} placeholder="LOVABLE_API_KEY" className="max-w-md" />
-        </Row>
-        <Button variant="secondary" onClick={() => { rah.updatePrefs({ provider: undefined }); toast.success("Provider cleared"); }}>Clear provider</Button>
+        {health?.ok && (
+          <div className="text-xs text-muted-foreground">
+            Provider: <span className="text-foreground">{health.provider}</span> · Model: <span className="text-foreground">{health.model ?? "openai/gpt-5.5"}</span> · Latency: <span className="text-foreground">{health.latencyMs} ms</span>
+          </div>
+        )}
+        {health && !health.ok && (
+          <div className="text-xs text-destructive">{health.state}: {health.message}</div>
+        )}
+        <div className="pt-2">
+          <Button size="sm" variant="ghost" onClick={() => { rah.updatePrefs({ provider: undefined }); toast.success("Cleared any legacy provider config."); }}>
+            Reset legacy provider settings
+          </Button>
+        </div>
       </section>
     </div>
   );

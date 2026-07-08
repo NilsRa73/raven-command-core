@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useRah } from "@/lib/rah/context";
 import { AGENTS, agentById } from "@/lib/rah/agents";
+import { Markdown } from "@/components/rah/Markdown";
 
 function speak(text: string) {
   if (typeof window === "undefined" || !("speechSynthesis" in window)) return false;
@@ -79,9 +80,16 @@ function HistoryPage() {
                 {c.demo && " · demo output"}
               </div>
               {c.resultSummary && (
-                <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded-md border border-border/60 bg-background/40 p-2 text-[11px] leading-relaxed text-foreground/90 font-mono">
-                  {c.resultSummary}
-                </pre>
+                <div className="mt-2 max-h-64 overflow-auto rounded-md border border-border/60 bg-background/40 p-2">
+                  {c.demo || c.status === "error"
+                    ? <pre className="whitespace-pre-wrap text-[11px] leading-relaxed text-foreground/90 font-mono">{c.resultSummary}</pre>
+                    : <Markdown>{c.resultSummary}</Markdown>}
+                </div>
+              )}
+              {(c.provider || c.model || c.latencyMs) && (
+                <div className="text-[10px] uppercase tracking-widest text-muted-foreground mt-1">
+                  {c.provider ?? ""}{c.model ? " · " + c.model : ""}{c.latencyMs ? " · " + c.latencyMs + "ms" : ""}
+                </div>
               )}
             </div>
             <div className="flex gap-1">

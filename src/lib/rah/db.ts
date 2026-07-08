@@ -33,6 +33,11 @@ export interface CommandRecord {
   favorite?: boolean;
   approvals?: string[];
   demo?: boolean;
+  provider?: string;
+  model?: string;
+  latencyMs?: number;
+  usage?: unknown;
+  errorMessage?: string;
 }
 
 export interface MemoryItem {

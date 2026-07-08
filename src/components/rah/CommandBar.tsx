@@ -10,6 +10,9 @@ import { createRecognizer, isSpeechSupported } from "@/lib/rah/speech";
 import { getDB, uid } from "@/lib/rah/db";
 import { localDemoResponse } from "@/lib/rah/demo";
 import { Link } from "@tanstack/react-router";
+import { streamChat } from "@/lib/rah/ai";
+import { ResponsePanel, type LiveResponse } from "./ResponsePanel";
+import { AiStatusBadge, useAiHealth } from "./AiStatusBadge";
 
 export function CommandBar() {
   const rah = useRah();
@@ -23,10 +26,14 @@ export function CommandBar() {
   const recRef = useRef<any>(null);
   const ref = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [response, setResponse] = useState<LiveResponse | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const { health, loading: healthLoading, refresh: refreshHealth } = useAiHealth(true);
+  const aiLive = health?.state === "connected";
 
   useEffect(() => rah.registerCommandBarFocus(() => ref.current?.focus()), [rah]);
   useEffect(() => {
-    const cancel = () => stopListening();
+    const cancel = () => { stopListening(); abortRef.current?.abort(); };
     window.addEventListener("rah:cancel", cancel);
     return () => window.removeEventListener("rah:cancel", cancel);
   }, []);
@@ -84,16 +91,7 @@ export function CommandBar() {
     if (!prompt) { toast.error("Type or dictate a command first."); return; }
     stopListening();
     const needsApproval = approvalMode !== "advisory";
-    const demoResult = localDemoResponse(prompt, selectedAgents, mode);
-    await rah.addCommand({
-      prompt, agents: selectedAgents, mode, fileIds: [],
-      projectId: rah.activeProject?.id, inputType: listening ? "voice" : "text",
-      status: needsApproval ? "awaiting_approval" : "done",
-      resultSummary: rah.prefs.provider
-        ? "Awaiting provider response."
-        : demoResult,
-      demo: !rah.prefs.provider,
-    });
+
     if (needsApproval) {
       await rah.requestApproval({
         title: `Run "${prompt.slice(0, 60)}"`,
@@ -104,15 +102,130 @@ export function CommandBar() {
         risk: "low",
         category: "agent-run",
       });
+      await rah.addCommand({
+        prompt, agents: selectedAgents, mode, fileIds: [],
+        projectId: rah.activeProject?.id, inputType: listening ? "voice" : "text",
+        status: "awaiting_approval",
+        resultSummary: "Queued for approval before running.",
+      });
+      setText(""); setInterim("");
+      toast.success("Queued for approval.");
+      return;
     }
+
+    await runInference(prompt);
     setText(""); setInterim("");
-    toast.success(needsApproval ? "Queued for approval." : "Command recorded.");
+  }
+
+  async function runInference(prompt: string) {
+    abortRef.current?.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
+    const startedAt = Date.now();
+
+    if (!aiLive) {
+      // Honest fallback — local demo
+      const demo = localDemoResponse(prompt, selectedAgents, mode);
+      const cmd = await rah.addCommand({
+        prompt, agents: selectedAgents, mode, fileIds: [],
+        projectId: rah.activeProject?.id, inputType: listening ? "voice" : "text",
+        status: "done", resultSummary: demo, demo: true,
+      });
+      setResponse({
+        id: cmd.id, prompt, agents: selectedAgents, text: demo,
+        state: "done", demo: true, startedAt, latencyMs: 0,
+        provider: "Local Demo Engine",
+      });
+      toast.message("Local Demo Response (no live AI).");
+      return;
+    }
+
+    setResponse({
+      prompt, agents: selectedAgents, text: "",
+      state: "thinking", startedAt,
+      provider: "Lovable AI Gateway",
+    });
+
+    const memory = rah.prefs.memoryEnabled
+      ? rah.memory.filter((m) => !m.disabled && (!m.projectId || m.projectId === rah.activeProject?.id)).map((m) => m.text)
+      : [];
+
+    try {
+      let providerLabel = "Lovable AI Gateway";
+      let modelLabel: string | undefined;
+      let latencyMs = 0;
+      let usage: unknown = null;
+      let finalText = "";
+
+      await streamChat({
+        prompt, agents: selectedAgents, mode,
+        signal: ac.signal,
+        context: {
+          projectName: rah.activeProject?.name,
+          projectGoals: rah.activeProject?.goals,
+          memory,
+        },
+      }, {
+        onStart: (info) => {
+          providerLabel = info.provider;
+          modelLabel = info.model;
+          setResponse((r) => r ? { ...r, state: "streaming", provider: info.provider, model: info.model } : r);
+        },
+        onDelta: (_c, full) => {
+          finalText = full;
+          setResponse((r) => r ? { ...r, text: full, state: "streaming" } : r);
+        },
+        onDone: (info) => {
+          finalText = info.text;
+          modelLabel = info.model;
+          providerLabel = info.provider;
+          latencyMs = info.latencyMs;
+          usage = info.usage;
+        },
+        onError: (msg, state) => {
+          setResponse((r) => r ? { ...r, state: "error", error: msg, errorState: state } : r);
+        },
+      });
+
+      const cmd = await rah.addCommand({
+        prompt, agents: selectedAgents, mode, fileIds: [],
+        projectId: rah.activeProject?.id, inputType: listening ? "voice" : "text",
+        status: "done", resultSummary: finalText,
+        provider: providerLabel, model: modelLabel, latencyMs, usage, demo: false,
+      });
+      setResponse({
+        id: cmd.id, prompt, agents: selectedAgents, text: finalText,
+        state: "done", provider: providerLabel, model: modelLabel,
+        latencyMs, usage, demo: false, startedAt,
+      });
+    } catch (err) {
+      if (ac.signal.aborted) {
+        setResponse((r) => r ? { ...r, state: "cancelled" } : r);
+        await rah.addCommand({
+          prompt, agents: selectedAgents, mode, fileIds: [],
+          projectId: rah.activeProject?.id, inputType: listening ? "voice" : "text",
+          status: "error", resultSummary: "Cancelled by user.", errorMessage: "aborted",
+        });
+        toast.message("Cancelled.");
+        return;
+      }
+      const msg = err instanceof Error ? err.message : String(err);
+      setResponse((r) => r ? { ...r, state: "error", error: msg } : r);
+      await rah.addCommand({
+        prompt, agents: selectedAgents, mode, fileIds: [],
+        projectId: rah.activeProject?.id, inputType: listening ? "voice" : "text",
+        status: "error", resultSummary: `Error: ${msg}`, errorMessage: msg,
+      });
+      toast.error("AI request failed: " + msg);
+      void refreshHealth();
+    }
   }
 
   const toggleAgent = (id: string) =>
     setSelectedAgents((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
 
   return (
+    <div className="space-y-4">
     <div className="glass-panel gold-border p-4 md:p-5 space-y-3">
       <div className="flex flex-wrap items-center gap-2 text-xs">
         <Select value={rah.activeProject?.id ?? "none"} onValueChange={(v) => void rah.setActiveProject(v === "none" ? undefined : v)}>
@@ -139,11 +252,12 @@ export function CommandBar() {
             <SelectItem value="trusted_low_risk">Trusted Low-Risk</SelectItem>
           </SelectContent>
         </Select>
-        {!rah.prefs.provider && (
-          <Link to="/settings" className="ml-auto text-primary hover:underline">
-            No AI provider configured — Settings →
-          </Link>
-        )}
+        <div className="ml-auto flex items-center gap-2">
+          <AiStatusBadge health={health} loading={healthLoading} />
+          {!aiLive && !healthLoading && (
+            <Link to="/connections" className="text-[11px] text-primary hover:underline">Fix →</Link>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-1.5">
@@ -220,6 +334,32 @@ export function CommandBar() {
           </Button>
         </div>
       </div>
+    </div>
+
+    <ResponsePanel
+      response={response}
+      onStop={() => { abortRef.current?.abort(); }}
+      onRetry={() => { if (response) void runInference(response.prompt); }}
+      onFavorite={async () => {
+        if (!response?.id) { toast.error("Nothing to favorite yet."); return; }
+        await rah.updateCommand(response.id, { favorite: true });
+        setResponse((r) => r ? { ...r, favorite: true } : r);
+        toast.success("Favorited");
+      }}
+      onSaveToProject={async () => {
+        if (!response?.text) return;
+        if (!rah.activeProject) { toast.error("Select an active project first."); return; }
+        await rah.addMemory({
+          layer: "project",
+          projectId: rah.activeProject.id,
+          text: `[${new Date().toLocaleString()}] ${response.prompt}\n---\n${response.text.slice(0, 4000)}`,
+          category: "ai_response",
+          source: response.model ?? "Lovable AI Gateway",
+        });
+        toast.success(`Saved to ${rah.activeProject.name}`);
+      }}
+      onClear={() => setResponse(null)}
+    />
     </div>
   );
 }
