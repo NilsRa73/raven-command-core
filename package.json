@@ -10,7 +10,7 @@
     "prebuild:dev": "node scripts/build-bridge-package.mjs",
     "build:dev": "vite build --mode development",
     "bridge:package": "node scripts/build-bridge-package.mjs",
-    "bridge:test": "cd desktop-bridge && node --test tests",
+    "bridge:test": "cd desktop-bridge && node --test tests/*.test.js",
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write ."
