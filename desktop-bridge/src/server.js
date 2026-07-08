@@ -10,8 +10,7 @@ import * as files from "./files.js";
 import * as launch from "./launch.js";
 import { systemStatus } from "./system.js";
 import { createJob, getJob, approveJob, updateJob, publicJob } from "./jobs.js";
-import { PathContainmentError } from "./paths.js";
-import { assertContained } from "./paths.js";
+import { PathContainmentError, assertContained } from "./paths.js";
 import { UnsafeUrlError, assertSafeUrl } from "./urlCheck.js";
 
 // Strict origin allowlist (no env-based expansion — the bridge only trusts
