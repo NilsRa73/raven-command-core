@@ -14,24 +14,46 @@
         <p class="subtitle">Secure localhost companion for Raven Command</p>
       </div>
     </header>
+
     <section class="status" aria-live="polite">
       <div class="row"><span>Status</span><strong id="state">Starting…</strong></div>
       <div class="row"><span>Endpoint</span><code id="endpoint">http://127.0.0.1:47824</code></div>
-      <div class="row"><span>App version</span><code id="app-version">–</code></div>
-      <div class="row"><span>Bridge version</span><code id="bridge-version">–</code></div>
+      <div class="row"><span>Companion</span><code id="app-version">–</code></div>
+      <div class="row"><span>Bridge min</span><code id="bridge-min">–</code></div>
       <div class="row"><span>Signature</span><strong id="signed" class="warn">Unsigned development build</strong></div>
     </section>
+
+    <section id="pairing-panel" class="pairing hidden" aria-live="polite">
+      <div class="pairing-label">Pair Desktop Bridge — enter this code in Raven Command → Connections</div>
+      <div class="pairing-code" id="pairing-code">— — — — — —</div>
+      <div class="pairing-expiry">Expires in <span id="pairing-countdown">–</span></div>
+    </section>
+
     <section class="actions">
       <button id="btn-open">Open Raven Command</button>
-      <button id="btn-start">Start Bridge</button>
-      <button id="btn-stop">Stop Bridge</button>
+      <button id="btn-restart">Restart Bridge</button>
+      <button id="btn-start">Start</button>
+      <button id="btn-stop">Stop</button>
       <button id="btn-estop" class="danger">Emergency Stop</button>
+      <button id="btn-resume">Resume</button>
+      <button id="btn-logs">Open Logs Folder</button>
+      <button id="btn-quit">Quit</button>
     </section>
+
+    <section class="toggle">
+      <label>
+        <input type="checkbox" id="autostart" />
+        Start with Windows <span class="muted">(default off)</span>
+      </label>
+    </section>
+
     <footer>
-      <p>Listens only on 127.0.0.1. Never on LAN or the internet. No unrestricted
+      <p>Listens only on 127.0.0.1 — never on LAN or the internet. No unrestricted
       shell / PowerShell / registry / keyboard / mic / webcam access. Screenshot
-      capture is intentionally disabled in this release.</p>
+      capture intentionally disabled in this release. This companion does not
+      load any remote page in its native window.</p>
     </footer>
+
     <script src="./app.js"></script>
   </body>
 </html>

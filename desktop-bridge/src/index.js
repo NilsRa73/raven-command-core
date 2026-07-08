@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createServer, newPairing } from "./server.js";
 import { loadConfig, paths } from "./config.js";
-import { BRIDGE_VERSION, DEFAULT_PORT } from "./protocol.js";
+import { BRIDGE_VERSION, DEFAULT_PORT, PAIRING_CODE_TTL_MS } from "./protocol.js";
 
 const port = Number(process.env.RAH_BRIDGE_PORT || DEFAULT_PORT);
 const host = "127.0.0.1"; // localhost only, never LAN
@@ -17,9 +17,17 @@ server.listen(port, host, () => {
     " Config: " + paths().configDir + "\n" +
     "==================================================================\n";
   process.stdout.write(banner);
+  // Machine-readable ready line for the native supervisor to detect
+  // the exact moment the bridge is accepting connections. Any parser
+  // MUST tolerate this line vanishing in future versions.
+  process.stdout.write(`RAH_BRIDGE_READY port=${port} version=${BRIDGE_VERSION}\n`);
 
   if (!cfg.deviceToken) {
     const code = newPairing();
+    // Machine-readable line for the native supervisor. Contains the
+    // six-digit code and its absolute expiry epoch ms. This line is
+    // scrubbed by the native redactor before ANY log write.
+    process.stdout.write(`RAH_PAIRING_CODE code=${code} expiresAt=${Date.now() + PAIRING_CODE_TTL_MS}\n`);
     process.stdout.write(
       "\n  PAIRING REQUIRED\n" +
       "  Open Raven Command  ->  Connections  ->  Pair Desktop Bridge\n" +

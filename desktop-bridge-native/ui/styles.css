@@ -10,9 +10,16 @@ h1{margin:0;font-size:20px;letter-spacing:.02em;color:var(--gold)}
 .row{display:flex;justify-content:space-between;padding:6px 0;font-size:13px}
 .row span{color:var(--muted)}
 .warn{color:var(--warn)}
+.hidden{display:none}
+.pairing{margin-top:14px;background:#1a1408;border:1px solid var(--gold-2);border-radius:8px;padding:14px;text-align:center}
+.pairing-label{color:var(--gold);font-size:12px;margin-bottom:8px}
+.pairing-code{font-family:ui-monospace,monospace;font-size:32px;letter-spacing:.4em;color:var(--gold);user-select:text}
+.pairing-expiry{color:var(--muted);font-size:11px;margin-top:8px}
 .actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:16px}
 button{background:transparent;color:var(--fg);border:1px solid var(--gold-2);border-radius:6px;padding:10px 12px;font-size:13px;cursor:pointer}
 button:hover{background:rgba(212,175,55,.08)}
 button.danger{border-color:var(--danger);color:#fca5a5}
+.toggle{margin-top:14px;font-size:13px;color:var(--fg)}
+.toggle .muted{color:var(--muted);font-size:11px;margin-left:6px}
 footer{margin-top:20px;padding-top:12px;border-top:1px solid var(--border);color:var(--muted);font-size:11px}
 code{color:var(--gold);font-family:ui-monospace,monospace;font-size:12px}

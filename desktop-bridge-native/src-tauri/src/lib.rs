@@ -1,4 +1,6 @@
-//! Library surface so unit tests can exercise the supervisor and
-//! redaction logic without spawning Tauri.
+//! Library surface for unit-testing the supervisor, redactor, and
+//! pairing-line parser without linking Tauri.
 pub mod redact;
 pub mod supervisor;
+pub mod pairing;
+pub mod healthcheck;

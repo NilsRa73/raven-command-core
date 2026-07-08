@@ -19,54 +19,78 @@ jobs:
         uses: actions/setup-node@v4
         with: { node-version: "22" }
 
+      - name: Install bun (used by the repo)
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install repo deps (esbuild + bridge deps)
+        run: bun install --frozen-lockfile
+
+      - name: Bridge unit + integration tests (49)
+        working-directory: desktop-bridge
+        shell: pwsh
+        run: node --test tests/*.test.js
+
       - name: Setup Rust stable
         uses: dtolnay/rust-toolchain@stable
-        with: { targets: x86_64-pc-windows-msvc }
+        with:
+          targets: x86_64-pc-windows-msvc
+          components: rustfmt, clippy
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with: { workspaces: "desktop-bridge-native/src-tauri -> target" }
 
-      - name: Bridge unit + integration tests
-        working-directory: desktop-bridge
-        run: node --test tests
+      - name: Rust fmt check
+        working-directory: desktop-bridge-native/src-tauri
+        run: cargo fmt --all -- --check
+        continue-on-error: true
 
-      - name: Rust supervisor + redaction tests
+      - name: Rust unit tests (supervisor + redact + pairing + healthcheck)
         working-directory: desktop-bridge-native/src-tauri
         run: cargo test --lib --release
 
-      - name: Prepare sidecar SEA config
+      - name: Rust clippy (lib only)
+        working-directory: desktop-bridge-native/src-tauri
+        run: cargo clippy --lib --release -- -D warnings
+        continue-on-error: true
+
+      - name: Bundle sidecar (esbuild -> CJS -> SEA config)
         run: node desktop-bridge-native/package-sidecar.mjs
 
-      - name: Build Node SEA sidecar (postject)
+      - name: Build Node SEA sidecar + postject
         shell: pwsh
         working-directory: desktop-bridge-native/src-tauri/binaries
         run: |
           node --experimental-sea-config sea-config.json
+          if (-not (Test-Path sea-prep.blob)) { throw "SEA blob missing" }
           Copy-Item (Get-Command node).Source rah-bridge-sidecar-x86_64-pc-windows-msvc.exe
           npx --yes postject rah-bridge-sidecar-x86_64-pc-windows-msvc.exe NODE_SEA_BLOB sea-prep.blob `
             --sentinel-fuse NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2
+          $exe = "rah-bridge-sidecar-x86_64-pc-windows-msvc.exe"
+          if (-not (Test-Path $exe)) { throw "sidecar exe missing" }
+          if ((Get-Item $exe).Length -lt 20000000) { throw "sidecar exe suspiciously small ($((Get-Item $exe).Length) bytes)" }
 
       - name: Install Tauri CLI
         run: cargo install tauri-cli --version "^2" --locked
 
-      - name: Generate app icons from brand mark
+      - name: Generate app icons from repo-owned SVG
         shell: pwsh
         working-directory: desktop-bridge-native/src-tauri
         run: |
-          cargo tauri icon ..\..\src\assets\raven-mark.svg -o icons
-          Copy-Item icons\128x128.png icons\tray.png -Force
+          cargo tauri icon ../assets/raven-mark.svg -o icons
+          Copy-Item icons/128x128.png icons/tray.png -Force
 
-      - name: Build Tauri Windows installer
+      - name: Build Tauri Windows installer (NSIS)
         working-directory: desktop-bridge-native/src-tauri
         run: cargo tauri build --target x86_64-pc-windows-msvc --bundles nsis
 
-      - name: Collect artifacts
+      - name: Verify + collect artifacts
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
-          Get-ChildItem -Recurse -Path desktop-bridge-native/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis -Filter *.exe |
-            ForEach-Object { Copy-Item $_.FullName "dist/rah-desktop-bridge-0.2.0-x64.exe" -Force }
+          $installers = Get-ChildItem -Recurse -Path desktop-bridge-native/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis -Filter *.exe
+          if ($installers.Count -eq 0) { throw "no installer produced" }
+          Copy-Item $installers[0].FullName "dist/rah-desktop-bridge-0.2.1-x64.exe" -Force
           Copy-Item desktop-bridge-native/src-tauri/binaries/rah-bridge-sidecar-x86_64-pc-windows-msvc.exe dist/ -Force
           $lines = @()
           Get-ChildItem dist | ForEach-Object {
@@ -75,9 +99,9 @@ jobs:
           }
           $lines | Out-File -Encoding ascii dist/SHA256SUMS.txt
 
-      - name: Copy installer into public/ for manifest build
+      - name: Stage installer for manifest build
         shell: pwsh
-        run: Copy-Item dist/rah-desktop-bridge-0.2.0-x64.exe public/ -Force
+        run: Copy-Item dist/rah-desktop-bridge-0.2.1-x64.exe public/ -Force
 
       - name: Regenerate release manifest
         run: node scripts/build-release-manifest.mjs
@@ -85,18 +109,18 @@ jobs:
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: rah-desktop-bridge-windows-0.2.0
+          name: rah-desktop-bridge-windows-0.2.1
           path: |
             dist/
             src/lib/rah/bridge-manifest.json
           if-no-files-found: error
 
-      - name: Create GitHub Release (draft, tag builds only)
+      - name: Create draft GitHub Release (tag builds only)
         if: startsWith(github.ref, 'refs/tags/desktop-bridge-v')
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/rah-desktop-bridge-0.2.0-x64.exe
+            dist/rah-desktop-bridge-0.2.1-x64.exe
             dist/rah-bridge-sidecar-x86_64-pc-windows-msvc.exe
             dist/SHA256SUMS.txt
           draft: true
