@@ -41,10 +41,21 @@ pub fn classify(j: &serde_json::Value) -> HealthState {
     if !j.get("paired").and_then(|v| v.as_bool()).unwrap_or(false) {
         return HealthState::PairingRequired;
     }
-    if !version.is_empty() && !version_ge(&version, BRIDGE_MIN_VERSION) {
-        return HealthState::VersionMismatch { detected: version, min: BRIDGE_MIN_VERSION.into() };
+    if !version.is_empty() {
+        // Below the minimum patch/minor OR an incompatible major both
+        // count as VersionMismatch; only versions in the same major
+        // AND ≥ the documented minimum are treated as Online.
+        let detected_major = major_of(&version);
+        let expected_major = major_of(BRIDGE_MIN_VERSION);
+        if detected_major != expected_major || !version_ge(&version, BRIDGE_MIN_VERSION) {
+            return HealthState::VersionMismatch { detected: version, min: BRIDGE_MIN_VERSION.into() };
+        }
     }
     HealthState::Online { version }
+}
+
+fn major_of(v: &str) -> u32 {
+    v.split('.').next().and_then(|p| p.parse().ok()).unwrap_or(0)
 }
 
 fn version_ge(a: &str, b: &str) -> bool {
@@ -86,6 +97,17 @@ mod tests {
     #[test]
     fn classifies_version_mismatch_below_min() {
         let j = json!({ "bridgeVersion": "0.1.0", "paired": true });
+        assert!(matches!(classify(&j), HealthState::VersionMismatch { .. }));
+    }
+
+    #[test]
+    fn classifies_incompatible_major_as_mismatch_not_online() {
+        // Same "≥ min" numerically but a different major line — this
+        // MUST NOT be reported as Online.
+        let j = json!({ "bridgeVersion": "1.0.0", "paired": true });
+        assert!(matches!(classify(&j), HealthState::VersionMismatch { .. }),
+            "incompatible major bridge version must be VersionMismatch");
+        let j = json!({ "bridgeVersion": "2.5.0", "paired": true });
         assert!(matches!(classify(&j), HealthState::VersionMismatch { .. }));
     }
 
