@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "companionVersion": "0.2.0",
+  "companionVersion": "0.2.1",
   "protocol": "v1",
   "bridgeMinVersion": "0.1.1",
   "webMinVersion": "0.1.0",
@@ -19,5 +19,5 @@
     "nodeRequired": ">=22"
   },
   "windowsInstaller": null,
-  "updatedAt": "2026-07-08T16:18:09.824Z"
+  "updatedAt": "2026-07-08T16:27:05.552Z"
 }
