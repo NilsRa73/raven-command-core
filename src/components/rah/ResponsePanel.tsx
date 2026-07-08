@@ -68,8 +68,8 @@ export function ResponsePanel({
         {response.provider && <span>{response.provider}</span>}
         {response.model && <span>· {response.model}</span>}
         <span>· {(latency / 1000).toFixed(2)}s</span>
-        {response.usage && typeof response.usage === "object" && (response.usage as any).total_tokens != null && (
-          <span>· {(response.usage as any).total_tokens} tok</span>
+        {response.usage && typeof response.usage === "object" && (response.usage as { total_tokens?: number }).total_tokens != null && (
+          <span>· {String((response.usage as { total_tokens?: number }).total_tokens)} tok</span>
         )}
         <span className="ml-auto normal-case tracking-normal">Agents: {response.agents.join(", ") || "brain"}</span>
       </header>
