@@ -23,9 +23,22 @@ export const Route = createFileRoute("/connections")({
 
 import bridgeManifest from "@/lib/rah/bridge-manifest.json";
 
-const PACKAGE_URL = `/${bridgeManifest.file}`;
-const PACKAGE_SHA256 = bridgeManifest.sha256;
-const PACKAGE_VERSION = bridgeManifest.version;
+// v0.2.0 manifest with back-compat fallback for legacy schema.
+const SOURCE_PACKAGE = (bridgeManifest as any).sourcePackage ?? {
+  file: (bridgeManifest as any).file,
+  version: (bridgeManifest as any).version,
+  sha256: (bridgeManifest as any).sha256,
+  bytes: (bridgeManifest as any).bytes,
+};
+const WINDOWS_INSTALLER: null | {
+  file: string; version: string; sha256: string; bytes: number;
+  signed: boolean; arch: string; builtAt: string;
+} = (bridgeManifest as any).windowsInstaller ?? null;
+const COMPANION_VERSION: string = (bridgeManifest as any).companionVersion ?? SOURCE_PACKAGE.version;
+const BRIDGE_MIN_VERSION_MANIFEST: string = (bridgeManifest as any).bridgeMinVersion ?? SOURCE_PACKAGE.version;
+const PACKAGE_URL = `/${SOURCE_PACKAGE.file}`;
+const PACKAGE_SHA256: string = SOURCE_PACKAGE.sha256;
+const INSTALLER_URL = WINDOWS_INSTALLER ? `/${WINDOWS_INSTALLER.file}` : null;
 
 function stateLabel(s: BridgeStatusSnapshot["ui"]) {
   switch (s) {
@@ -241,25 +254,52 @@ function Connections() {
               Forget browser credentials only
             </Button>
           )}
+          {INSTALLER_URL ? (
+            <a href={INSTALLER_URL} download className="inline-block">
+              <Button size="sm">
+                Download Windows installer (v{WINDOWS_INSTALLER!.version})
+                {!WINDOWS_INSTALLER!.signed ? " · unsigned" : ""}
+              </Button>
+            </a>
+          ) : (
+            <span className="inline-flex items-center rounded-md border border-yellow-500/50 bg-yellow-500/5 px-3 py-1 text-xs text-yellow-500">
+              Windows installer pipeline ready — artifact not published yet
+            </span>
+          )}
           <a href={PACKAGE_URL} download className="inline-block">
-            <Button size="sm" variant="outline">Download bridge package (v{PACKAGE_VERSION})</Button>
+            <Button size="sm" variant="outline">Advanced: download source package (v{SOURCE_PACKAGE.version})</Button>
           </a>
         </div>
 
         <details className="text-xs text-muted-foreground">
-          <summary className="cursor-pointer text-foreground">Setup wizard — 4 steps</summary>
-          <ol className="list-decimal pl-5 mt-2 space-y-1">
-            <li>Click <strong>Download bridge package</strong> above.</li>
-            <li>Extract the ZIP anywhere (e.g. Documents).</li>
-            <li>Double-click <code>Start RAH Desktop Bridge.cmd</code>. A black window shows a six-digit code.</li>
-            <li>Click <strong>Pair Desktop Bridge</strong> above and type the code.</li>
-          </ol>
-          <div className="mt-2">Package SHA-256: <span className="font-mono text-[10px]">{PACKAGE_SHA256}</span></div>
-          <div>Requires Node.js 22 LTS (Windows 10/11). The bridge listens only on 127.0.0.1 — never LAN or internet.</div>
+          <summary className="cursor-pointer text-foreground">Setup wizard</summary>
+          {INSTALLER_URL ? (
+            <ol className="list-decimal pl-5 mt-2 space-y-1">
+              <li>Click <strong>Download Windows installer</strong> above.</li>
+              <li>Run the installer. Windows may show an "Unsigned app" warning — this build is not code-signed yet (see <code>docs/code-signing.md</code>).</li>
+              <li>The bridge starts automatically and appears in the system tray as a black/gold raven.</li>
+              <li>Click <strong>Pair Desktop Bridge</strong> above and type the six-digit code shown in the tray window.</li>
+            </ol>
+          ) : (
+            <ol className="list-decimal pl-5 mt-2 space-y-1">
+              <li>Click <strong>Advanced: download source package</strong> above.</li>
+              <li>Extract the ZIP anywhere (e.g. Documents).</li>
+              <li>Install Node.js 22 LTS from nodejs.org, then double-click <code>Start RAH Desktop Bridge.cmd</code>.</li>
+              <li>Click <strong>Pair Desktop Bridge</strong> above and type the six-digit code shown in the console window.</li>
+            </ol>
+          )}
+          <div className="mt-2">Companion version: <span className="text-foreground">v{COMPANION_VERSION}</span></div>
+          <div>Bridge minimum version: <span className="text-foreground">v{BRIDGE_MIN_VERSION_MANIFEST}</span></div>
+          <div>Source package SHA-256: <span className="font-mono text-[10px]">{PACKAGE_SHA256}</span></div>
+          {WINDOWS_INSTALLER && (
+            <div>Installer SHA-256: <span className="font-mono text-[10px]">{WINDOWS_INSTALLER.sha256}</span></div>
+          )}
+          <div>The bridge listens only on 127.0.0.1 — never LAN or internet.</div>
         </details>
 
         <div className="text-[11px] text-muted-foreground border-t border-border pt-3">
-          <strong className="text-foreground">Security notes (v{PACKAGE_VERSION})</strong> —
+          <strong className="text-foreground">Security notes (v{COMPANION_VERSION})</strong> —
+          {" "}Windows installer artifact is {WINDOWS_INSTALLER ? (WINDOWS_INSTALLER.signed ? "SIGNED." : "UNSIGNED (development build).") : "not yet published; use the source package meanwhile."}
           {" "}Read-only capabilities (system status, list/search/read-text) are allowed inside approved roots after pairing.
           {" "}All file modifications, launches, and URL opens require an approval card.
           {" "}Program launch, arbitrary shell, registry, keyboard automation, credential access, mic and webcam are DISABLED.
