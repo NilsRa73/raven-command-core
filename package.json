@@ -5,8 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev",
+    "prebuild": "node scripts/build-bridge-package.mjs",
     "build": "vite build",
+    "prebuild:dev": "node scripts/build-bridge-package.mjs",
     "build:dev": "vite build --mode development",
+    "bridge:package": "node scripts/build-bridge-package.mjs",
+    "bridge:test": "cd desktop-bridge && node --test tests",
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write ."
