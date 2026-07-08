@@ -4,8 +4,9 @@
 
 use std::time::Duration;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum HealthState {
+    #[default]
     Offline,
     PairingRequired,
     EmergencyStopped,
