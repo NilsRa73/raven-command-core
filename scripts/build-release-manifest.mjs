@@ -43,7 +43,7 @@ for (const f of fs.readdirSync(publicDir)) {
 
 const merged = {
   schemaVersion: 2,
-  companionVersion: "0.2.0",
+  companionVersion: "0.2.1",
   protocol: "v1",
   bridgeMinVersion: "0.1.1",
   webMinVersion: "0.1.0",
