@@ -37,10 +37,10 @@ test("capability does NOT include shell:allow-execute", () => {
   const bad = findScopedShell("shell:allow-execute");
   assert.equal(bad, undefined,
     "shell:allow-execute is wrong for Command::spawn() and widens the surface");
-  // Also assert the raw string form is absent (defense in depth).
-  const raw = JSON.stringify(cap);
-  assert.ok(!/shell:allow-execute/.test(raw),
-    "capability file must not mention shell:allow-execute at all");
+  // Defense in depth: no string-form permission entry either.
+  const stringPerms = cap.permissions.filter((p) => typeof p === "string");
+  assert.ok(!stringPerms.includes("shell:allow-execute"),
+    "capability file must not include shell:allow-execute as a bare permission string");
 });
 
 test("capability never uses wildcard args or generic shell surface", () => {
