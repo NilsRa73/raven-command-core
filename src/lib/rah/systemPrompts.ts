@@ -28,6 +28,7 @@ export interface PromptContext {
   projectGoals?: string;
   memory?: string[];
   attachments?: { name: string; mime: string; size: number }[];
+  attachmentsIncluded?: boolean;
 }
 
 export function buildSystemPrompt(
@@ -57,12 +58,21 @@ export function buildSystemPrompt(
     contextLines.push(...ctx.memory.slice(0, 20).map((m) => `- ${m}`));
   }
   if (ctx.attachments && ctx.attachments.length) {
-    contextLines.push(
-      "Attachments recorded locally (metadata only — file bytes are NOT included in this request unless explicitly noted):",
-    );
-    contextLines.push(
-      ...ctx.attachments.map((a) => `- ${a.name} (${a.mime}, ${a.size} bytes)`),
-    );
+    if (ctx.attachmentsIncluded) {
+      contextLines.push(
+        `The user has attached ${ctx.attachments.length} image${ctx.attachments.length > 1 ? "s" : ""} to this message. The actual image bytes are included below as image parts. You CAN see them. Reference each image by its attachment number and filename. If multiple images are attached, compare them when the request calls for it. Do NOT claim you cannot view images.`,
+      );
+      contextLines.push(
+        ...ctx.attachments.map((a, i) => `- Attachment ${i + 1}: ${a.name} (${a.mime}, ~${a.size} bytes)`),
+      );
+    } else {
+      contextLines.push(
+        "Attachments recorded locally (metadata only — file bytes are NOT included in this request):",
+      );
+      contextLines.push(
+        ...ctx.attachments.map((a) => `- ${a.name} (${a.mime}, ${a.size} bytes)`),
+      );
+    }
   }
 
   return [
