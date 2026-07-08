@@ -125,20 +125,21 @@ fn start_bridge(app: AppHandle, state: State<'_, AppState>) -> Result<(), String
     }
 }
 
-#[tauri::command]
-fn stop_bridge(state: State<'_, AppState>) -> Result<(), String> {
+fn do_stop(app: &AppHandle) {
+    let state: State<'_, AppState> = app.state();
     state.sup.lock().on_user_stop();
     kill_child(&state);
     *state.pairing.lock() = None;
-    Ok(())
 }
 
 #[tauri::command]
-fn restart_bridge(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
-    stop_bridge(state.clone())?;
-    // brief pause so the OS releases the port
+fn stop_bridge(app: AppHandle) -> Result<(), String> { do_stop(&app); Ok(()) }
+
+#[tauri::command]
+fn restart_bridge(app: AppHandle) -> Result<(), String> {
+    do_stop(&app);
     thread::sleep(Duration::from_millis(250));
-    let action = state.sup.lock().on_user_start();
+    let action = { let state: State<'_, AppState> = app.state(); state.sup.lock().on_user_start() };
     if let Action::Spawn = action { spawn_sidecar(app)?; }
     Ok(())
 }
@@ -190,9 +191,8 @@ fn set_autostart(app: AppHandle, enabled: bool) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn quit_app(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
-    state.sup.lock().on_user_stop();
-    kill_child(&state);
+fn quit_app(app: AppHandle) -> Result<(), String> {
+    do_stop(&app);
     app.exit(0);
     Ok(())
 }
@@ -328,7 +328,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
             match event.id.as_ref() {
                 "show"    => { if let Some(w) = handle.get_webview_window("status") { let _ = w.show(); let _ = w.set_focus(); } }
                 "open"    => { let _ = open_raven_command(handle); }
-                "restart" => { let s: State<'_, AppState> = app.state(); let _ = restart_bridge(handle, s); }
+                "restart" => { let _ = restart_bridge(handle); }
                 "estop"   => { let s: State<'_, AppState> = app.state(); let _ = local_emergency_stop(s); }
                 "resume"  => { let s: State<'_, AppState> = app.state(); let _ = resume_bridge(handle, s); }
                 "logs"    => { let _ = open_logs_folder(handle); }
@@ -337,7 +337,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
                         let _ = set_autostart(handle, !cur);
                     }
                 }
-                "quit"    => { let s: State<'_, AppState> = app.state(); let _ = quit_app(handle, s); }
+                "quit"    => { let _ = quit_app(handle); }
                 _ => {}
             }
         })
