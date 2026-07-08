@@ -27,7 +27,7 @@ use std::path::PathBuf;
 use std::thread;
 use std::time::Duration;
 use tauri::{
-    menu::{CheckMenuItemBuilder, MenuBuilder, MenuItemBuilder, PredefinedMenuItem},
+    menu::{CheckMenuItemBuilder, MenuBuilder, MenuItem, MenuItemBuilder, PredefinedMenuItem},
     tray::{TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, Manager, State,
 };
@@ -45,6 +45,7 @@ struct AppState {
     child: Mutex<Option<CommandChild>>,
     pairing: Mutex<Option<PairingCode>>,
     health: Mutex<HealthState>,
+    tray_status: Mutex<Option<MenuItem<tauri::Wry>>>,
 }
 
 #[derive(Serialize, Clone)]
@@ -229,12 +230,14 @@ fn spawn_sidecar(app: AppHandle) -> Result<(), String> {
         .spawn()
         .map_err(|e| format!("spawn failed: {e}"))?;
 
-    // Store child + mark supervisor
-    {
+    // Store child + capture the generation tag for THIS child so that
+    // a late Terminated event from a previous child cannot schedule an
+    // extra restart after the replacement has already started.
+    let generation = {
         let state: State<'_, AppState> = app.state();
         *state.child.lock() = Some(child);
-        state.sup.lock().on_spawned();
-    }
+        state.sup.lock().on_spawned()
+    };
 
     // Consume child stdout/stderr on a background task. Every line is
     // scanned for the machine pairing marker BEFORE being redacted for
@@ -260,8 +263,16 @@ fn spawn_sidecar(app: AppHandle) -> Result<(), String> {
                 CommandEvent::Terminated(payload) => {
                     let reason = format!("exit code={:?} signal={:?}", payload.code, payload.signal);
                     let state: State<'_, AppState> = app_handle.state();
-                    let action = state.sup.lock().on_child_exit(&reason);
-                    *state.child.lock() = None;
+                    let action = state.sup.lock().on_child_exit(generation, &reason);
+                    // Only clear the child slot if this event was for
+                    // the current child; a stale event for an older
+                    // generation must NOT clobber a fresh child handle.
+                    if matches!(action, Action::WaitBackoff(_) | Action::Idle | Action::NotifyGaveUp(_)) {
+                        let mut slot = state.child.lock();
+                        if slot.is_some() && state.sup.lock().current_generation() == generation {
+                            *slot = None;
+                        }
+                    }
                     if let Action::WaitBackoff(d) = action {
                         let app2 = app_handle.clone();
                         tauri::async_runtime::spawn(async move {
@@ -284,13 +295,31 @@ fn start_health_poller(app: AppHandle) {
         {
             let state: State<'_, AppState> = app.state();
             *state.health.lock() = h.clone();
-            // Auto-clear pairing slot once the bridge reports paired.
-            if !matches!(h, HealthState::PairingRequired) {
-                if let Some(p) = state.pairing.lock().as_ref() {
-                    if p.is_expired_now(now_ms()) {
-                        // expired — let the UI drop it naturally on next get_status
-                    }
+            // Pairing privacy: the moment the bridge is no longer in
+            // PairingRequired (either it's Online/VersionMismatch/etc,
+            // or the code has expired), drop the in-memory code so the
+            // native UI cannot keep displaying a stale/valid secret.
+            {
+                let mut slot = state.pairing.lock();
+                let should_clear = match &h {
+                    HealthState::PairingRequired => slot
+                        .as_ref()
+                        .map(|p| p.is_expired_now(now_ms()))
+                        .unwrap_or(false),
+                    _ => true,
+                };
+                if should_clear && slot.is_some() {
+                    *slot = None;
                 }
+            }
+            // Update the disabled tray status item from the ACTUAL
+            // native status, not the "Starting…" placeholder.
+            let label = {
+                let sup = state.sup.lock();
+                format!("Status: {}", state_label(&sup, &h))
+            };
+            if let Some(item) = state.tray_status.lock().as_ref() {
+                let _ = item.set_text(&label);
             }
         }
         thread::sleep(Duration::from_millis(1500));
@@ -299,6 +328,12 @@ fn start_health_poller(app: AppHandle) {
 
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let status_item = MenuItemBuilder::with_id("status", "Status: Starting…").enabled(false).build(app)?;
+    // Hold on to the status item so the health poller can update it
+    // in place with the real supervisor + health status.
+    {
+        let state: State<'_, AppState> = app.state();
+        *state.tray_status.lock() = Some(status_item.clone());
+    }
     let show_item   = MenuItemBuilder::with_id("show",    "Show Bridge Window").build(app)?;
     let open_raven  = MenuItemBuilder::with_id("open",    "Open Raven Command").build(app)?;
     let restart     = MenuItemBuilder::with_id("restart", "Restart Bridge").build(app)?;
