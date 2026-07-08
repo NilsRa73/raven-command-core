@@ -1,5 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { getDB, getPrefs, savePrefs, seedIfEmpty, uid, type Approval, type CommandRecord, type MemoryItem, type Preferences, type Project } from "./db";
+import { streamChat } from "./ai";
+import { toast } from "sonner";
 
 type Ctx = {
   ready: boolean;
@@ -26,6 +28,7 @@ type Ctx = {
   reloadApprovals: () => Promise<void>;
   requestApproval: (a: Omit<Approval, "id" | "createdAt" | "status">) => Promise<Approval>;
   resolveApproval: (id: string, status: "approved" | "rejected" | "cancelled") => Promise<void>;
+  runApprovedCommand: (commandId: string) => Promise<void>;
   emergencyStop: () => Promise<void>;
   focusCommandBar: () => void;
   registerCommandBarFocus: (fn: () => void) => () => void;
@@ -188,7 +191,72 @@ export function RahProvider({ children }: { children: ReactNode }) {
     if (!cur) return;
     await db.put("approvals", { ...cur, status });
     await reloadApprovals();
+    if (status === "approved" && cur.commandId) {
+      // Fire-and-forget: actually run the AI inference the user just authorised.
+      void runApprovedCommand(cur.commandId);
+    } else if (status !== "approved" && cur.commandId) {
+      const cmd = await db.get("commands", cur.commandId);
+      if (cmd && cmd.status === "awaiting_approval") {
+        const { pending: _drop, ...rest } = cmd;
+        void _drop;
+        await db.put("commands", { ...rest, status: status === "rejected" ? "rejected" : "error", resultSummary: status === "rejected" ? "Rejected by user." : "Cancelled by user." });
+        await reloadCommands();
+      }
+    }
   }, [reloadApprovals]);
+
+  const runApprovedCommand = useCallback<Ctx["runApprovedCommand"]>(async (commandId) => {
+    const db = await getDB();
+    const cmd = await db.get("commands", commandId);
+    if (!cmd) return;
+    if (cmd.status !== "awaiting_approval" && cmd.status !== "queued") return;
+    const pending = cmd.pending;
+    await db.put("commands", { ...cmd, status: "running", resultSummary: "Running…" });
+    await reloadCommands();
+    const startedAt = Date.now();
+    let providerLabel = "Lovable AI Gateway";
+    let modelLabel: string | undefined;
+    let latencyMs = 0;
+    let usage: unknown = null;
+    let finalText = "";
+    let visionUsed = false;
+    try {
+      await streamChat({
+        prompt: cmd.prompt,
+        agents: cmd.agents,
+        mode: cmd.mode,
+        context: pending?.context,
+        images: pending?.images,
+      }, {
+        onStart: (i) => { providerLabel = i.provider; modelLabel = i.model; },
+        onVision: (i) => { visionUsed = i.imageCount > 0; },
+        onDelta: (_c, full) => { finalText = full; },
+        onDone: (i) => { finalText = i.text; modelLabel = i.model; providerLabel = i.provider; latencyMs = i.latencyMs; usage = i.usage; },
+      });
+      const { pending: _drop, ...rest } = cmd;
+      void _drop;
+      await db.put("commands", {
+        ...rest,
+        status: "done",
+        resultSummary: finalText || "(empty response)",
+        provider: providerLabel,
+        model: modelLabel,
+        latencyMs: latencyMs || (Date.now() - startedAt),
+        usage,
+        visionUsed,
+        demo: false,
+      });
+      await reloadCommands();
+      toast.success("Approved command finished — see History.");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const { pending: _drop, ...rest } = cmd;
+      void _drop;
+      await db.put("commands", { ...rest, status: "error", errorMessage: msg, resultSummary: `Error: ${msg}` });
+      await reloadCommands();
+      toast.error("Approved command failed: " + msg);
+    }
+  }, [reloadCommands]);
 
   const emergencyStop = useCallback(async () => {
     const db = await getDB();
@@ -216,6 +284,7 @@ export function RahProvider({ children }: { children: ReactNode }) {
     commands, reloadCommands, addCommand, updateCommand, deleteCommand,
     memory, reloadMemory, addMemory, deleteMemory,
     approvals, reloadApprovals, requestApproval, resolveApproval,
+    runApprovedCommand,
     emergencyStop,
     focusCommandBar, registerCommandBarFocus,
   };
