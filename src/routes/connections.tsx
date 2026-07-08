@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import {
   bridgeStatusSnapshot, bridgePair, bridgeSystemStatus, bridgeCapabilities,
   bridgeEmergencyStop, bridgeResume, forgetCredentials, loadCredentials,
+  bridgeDisconnect,
   type BridgeStatusSnapshot,
 } from "@/lib/rah/bridge";
 import type { BridgeSystemStatus, BridgeCapabilities } from "@/lib/rah/bridge-protocol";
@@ -20,9 +21,11 @@ export const Route = createFileRoute("/connections")({
   component: Connections,
 });
 
-const PACKAGE_URL = "/rah-desktop-bridge-0.1.0.zip";
-const PACKAGE_SHA256 = "07f60a59023ae857b6b3e50d4627a8659faf48d8dd52544b7ccaa056b0c910fb";
-const PACKAGE_VERSION = "0.1.0";
+import bridgeManifest from "@/lib/rah/bridge-manifest.json";
+
+const PACKAGE_URL = `/${bridgeManifest.file}`;
+const PACKAGE_SHA256 = bridgeManifest.sha256;
+const PACKAGE_VERSION = bridgeManifest.version;
 
 function stateLabel(s: BridgeStatusSnapshot["ui"]) {
   switch (s) {
@@ -116,8 +119,17 @@ function Connections() {
   }
   async function doForget() {
     await forgetCredentials();
-    toast.success("Local device credentials cleared. Also delete %LOCALAPPDATA%\\RAH\\DesktopBridge on the PC to fully re-pair.");
+    toast.success("Browser-side credentials cleared. The bridge still trusts this browser until you disconnect from the bridge too.");
     await refreshBridge();
+  }
+  async function doDisconnect() {
+    try {
+      await bridgeDisconnect();
+      toast.success("Disconnected. Check the bridge console window for a new 6-digit pairing code.");
+      await refreshBridge();
+    } catch (e) {
+      toast.error("Disconnect failed: " + (e instanceof Error ? e.message : String(e)));
+    }
   }
 
   const ui = snap?.ui ?? "offline";
@@ -219,7 +231,16 @@ function Connections() {
           {ui === "emergency_stopped" && (
             <Button size="sm" onClick={() => void doResume()}>Resume</Button>
           )}
-          {paired && <Button size="sm" variant="secondary" onClick={() => void doForget()}>Forget device (browser side)</Button>}
+          {paired && (
+            <Button size="sm" variant="destructive" onClick={() => void doDisconnect()}>
+              Disconnect and re-pair
+            </Button>
+          )}
+          {paired && (
+            <Button size="sm" variant="secondary" onClick={() => void doForget()}>
+              Forget browser credentials only
+            </Button>
+          )}
           <a href={PACKAGE_URL} download className="inline-block">
             <Button size="sm" variant="outline">Download bridge package (v{PACKAGE_VERSION})</Button>
           </a>
@@ -234,7 +255,7 @@ function Connections() {
             <li>Click <strong>Pair Desktop Bridge</strong> above and type the code.</li>
           </ol>
           <div className="mt-2">Package SHA-256: <span className="font-mono text-[10px]">{PACKAGE_SHA256}</span></div>
-          <div>Requires Node.js 20+ (Windows 10/11). The bridge listens only on 127.0.0.1 — never LAN or internet.</div>
+          <div>Requires Node.js 22 LTS (Windows 10/11). The bridge listens only on 127.0.0.1 — never LAN or internet.</div>
         </details>
 
         <div className="text-[11px] text-muted-foreground border-t border-border pt-3">

@@ -48,6 +48,37 @@ test("assertSafeUrl: blocks powershell:", () => {
   assert.throws(() => assertSafeUrl("powershell:whatever"), UnsafeUrlError);
 });
 
+test("assertSafeUrl: blocks http://", () => {
+  assert.throws(() => assertSafeUrl("http://example.com"), UnsafeUrlError);
+});
+
+test("assertSafeUrl: blocks mailto:", () => {
+  assert.throws(() => assertSafeUrl("mailto:someone@example.com"), UnsafeUrlError);
+});
+
+test("assertSafeUrl: blocks URLs with embedded credentials", () => {
+  assert.throws(() => assertSafeUrl("https://user:pass@example.com/"), UnsafeUrlError);
+});
+
+test("assertSafeUrl: blocks control characters", () => {
+  assert.throws(() => assertSafeUrl("https://example.com/\n"), UnsafeUrlError);
+  assert.throws(() => assertSafeUrl("https://example.com/ path"), UnsafeUrlError);
+});
+
+test("assertContained: blocks symlink-ancestor escape for new file", () => {
+  // Create a real dir outside the approved root, symlink into the approved
+  // root, then try to create a file under the symlink. Containment must
+  // resolve through the symlink and reject the write.
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), "rah-outside-"));
+  const linkName = path.join(root, "link-to-outside");
+  try { fs.symlinkSync(outside, linkName, "dir"); }
+  catch (err) { if (err.code === "EPERM") { console.log("skipping symlink test: no privilege"); return; } throw err; }
+  const evilTarget = path.join(linkName, "new-file.txt");
+  assert.throws(() => assertContained(evilTarget, [root]), PathContainmentError);
+  fs.unlinkSync(linkName);
+  fs.rmSync(outside, { recursive: true, force: true });
+});
+
 test("redact: masks tokens and 6-digit codes and secret-like keys", () => {
   const r = redact({ token: "abc", pairingCode: "123456", body: "Bearer " + "x".repeat(40) + " code 654321" });
   assert.equal(r.token, "[REDACTED]");

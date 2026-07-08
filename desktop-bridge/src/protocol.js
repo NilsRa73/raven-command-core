@@ -1,7 +1,7 @@
 // Shared protocol constants between the RAH Desktop Bridge and Raven Command.
 // Any change here must be reflected in src/lib/rah/bridge-protocol.ts on the web side.
 
-export const BRIDGE_VERSION = "0.1.0";
+export const BRIDGE_VERSION = "0.1.1";
 export const PROTOCOL_VERSION = "v1";
 export const DEFAULT_PORT = 47824;
 export const MAX_REQUEST_TIMESTAMP_SKEW_MS = 60_000;
@@ -15,11 +15,16 @@ export const READ_TEXT_EXTENSIONS = [
 ];
 export const READ_TEXT_MAX_BYTES = 512 * 1024;
 
-export const SAFE_URL_SCHEMES = ["https:", "http:", "mailto:"];
+// v0.1.1: HTTPS only. HTTP and mailto are explicitly rejected.
+export const SAFE_URL_SCHEMES = ["https:"];
 export const BLOCKED_URL_SCHEMES = [
-  "file:", "javascript:", "data:", "vbscript:",
+  "http:", "mailto:",
+  "file:", "javascript:", "data:", "vbscript:", "ftp:",
   "powershell:", "shell:", "ms-cxh:", "ms-cxh-full:",
 ];
+
+// Approval / job lifetime constants
+export const JOB_APPROVAL_TTL_MS = 5 * 60_000;
 
 export const CAPABILITIES = {
   "system.status":      { risk: "low",    requiresApproval: false, category: "read" },
