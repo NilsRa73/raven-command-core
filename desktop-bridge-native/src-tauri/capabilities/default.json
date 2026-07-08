@@ -1,0 +1,19 @@
+{
+  "$schema": "https://schema.tauri.app/config/2/capability",
+  "identifier": "default",
+  "description": "Minimal Tauri 2 capability set for the RAH Desktop Bridge companion. Only the five typed IPC commands and the opener plugin (system browser only) are exposed. No shell, no fs, no http, no dialog, no notification, no clipboard, no process, no OS admin surface.",
+  "windows": ["status"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-set-focus",
+    "core:window:allow-close",
+    "core:tray:default",
+    "core:menu:default",
+    "opener:allow-open-url",
+    "autostart:allow-enable",
+    "autostart:allow-disable",
+    "autostart:allow-is-enabled"
+  ]
+}
