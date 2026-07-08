@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { requestScreenShare, captureFrame, stopStream } from "@/lib/rah/speech";
 import { getDB, uid } from "@/lib/rah/db";
 import { useRah } from "@/lib/rah/context";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { queuePendingImage, MAX_EDGE } from "@/lib/rah/images";
 
 export const Route = createFileRoute("/vision")({
   head: () => ({ meta: [{ title: "Screen Vision — RAH Listen Key" }, { name: "description", content: "Share your screen and capture frames with explicit permission." }] }),
@@ -17,6 +18,7 @@ type Anno = { type: "rect" | "arrow" | "marker" | "text"; x: number; y: number; 
 
 function VisionPage() {
   const rah = useRah();
+  const navigate = useNavigate();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [captures, setCaptures] = useState<{ id: string; url: string; blob: Blob }[]>([]);
@@ -116,6 +118,55 @@ function VisionPage() {
     toast.success("Saved to Files.");
   }
 
+  async function sendCaptureToCommand(cap: { id: string; blob: Blob }) {
+    // Bake annotations onto the image, downscale, and hand off to CommandBar.
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const url = URL.createObjectURL(cap.blob);
+      const el = new Image();
+      el.onload = () => { URL.revokeObjectURL(url); resolve(el); };
+      el.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Decode failed")); };
+      el.src = url;
+    });
+    const scale = Math.min(1, MAX_EDGE / Math.max(img.naturalWidth, img.naturalHeight));
+    const w = Math.max(1, Math.round(img.naturalWidth * scale));
+    const h = Math.max(1, Math.round(img.naturalHeight * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) { toast.error("Canvas unavailable"); return; }
+    ctx.drawImage(img, 0, 0, w, h);
+
+    // Bake annotations (percent-based coordinates map to the scaled canvas).
+    const list = annos[cap.id] ?? [];
+    ctx.strokeStyle = "#d4af37"; ctx.fillStyle = "#d4af37"; ctx.lineWidth = 3;
+    ctx.font = "bold 14px sans-serif";
+    for (const a of list) {
+      const x = (a.x / 100) * w, y = (a.y / 100) * h;
+      const aw = ((a.w ?? 0) / 100) * w, ah = ((a.h ?? 0) / 100) * h;
+      if (a.type === "rect") { ctx.strokeRect(x, y, aw, ah); }
+      else if (a.type === "arrow") { ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + aw, y + ah); ctx.stroke(); }
+      else if (a.type === "marker") { ctx.beginPath(); ctx.arc(x, y, 14, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = "#000"; ctx.fillText(String(a.n ?? "?"), x - 4, y + 5); ctx.fillStyle = "#d4af37"; }
+      else if (a.type === "text" && a.text) { const pad = 4; const tw = ctx.measureText(a.text).width; ctx.fillRect(x, y - 16, tw + pad * 2, 20); ctx.fillStyle = "#000"; ctx.fillText(a.text, x + pad, y - 2); ctx.fillStyle = "#d4af37"; }
+    }
+
+    const blob = await new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob((b) => b ? resolve(b) : reject(new Error("Encode failed")), "image/jpeg", 0.85)!,
+    );
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result));
+      r.onerror = () => reject(new Error("Read failed"));
+      r.readAsDataURL(blob);
+    });
+    queuePendingImage({
+      name: `screen-capture-${new Date().toISOString().slice(11, 19)}.jpg`,
+      mime: "image/jpeg",
+      dataUrl, width: w, height: h, sizeBytes: blob.size,
+    });
+    toast.success("Snapshot queued — opening Command Center…");
+    void navigate({ to: "/" });
+  }
+
   const activeCap = captures.find((c) => c.id === active) ?? null;
 
   return (
@@ -188,6 +239,9 @@ function VisionPage() {
                 <Button size="sm" variant="ghost" onClick={() => setAnnos((a) => ({ ...a, [activeCap.id]: [] }))}>Clear</Button>
                 <div className="ml-auto flex gap-2">
                   <Button size="sm" variant="secondary" onClick={() => saveToFiles(activeCap)}>Save to Files</Button>
+                  <Button size="sm" onClick={() => void sendCaptureToCommand(activeCap)}>
+                    <Camera className="h-4 w-4" /> Capture for AI
+                  </Button>
                   <Button size="sm" variant="ghost" asChild><a href={activeCap.url} download="capture.png"><Download className="h-4 w-4" />Download</a></Button>
                   <Button size="sm" variant="ghost" onClick={() => { setCaptures((c) => c.filter((x) => x.id !== activeCap.id)); setActive(null); }}>
                     <Trash2 className="h-4 w-4" />

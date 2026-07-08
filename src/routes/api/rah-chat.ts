@@ -2,12 +2,20 @@ import { createFileRoute } from "@tanstack/react-router";
 import { buildSystemPrompt, type PromptContext } from "@/lib/rah/systemPrompts";
 import type { ExecutionMode } from "@/lib/rah/db";
 
+const ACCEPTED_IMAGE_MIME = new Set(["image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif"]);
+const MAX_IMAGES_SERVER = 4;
+const MAX_IMAGE_DATAURL_CHARS = 14_000_000; // ~10 MB base64
+const MAX_TOTAL_DATAURL_CHARS = 32_000_000; // ~22 MB base64 combined
+
+interface ImageInput { name?: string; mime?: string; dataUrl: string }
+
 interface ChatBody {
   prompt: string;
   agents: string[];
   mode: ExecutionMode;
   context?: PromptContext;
   model?: string;
+  images?: ImageInput[];
 }
 
 function sseEvent(obj: unknown) {
@@ -33,8 +41,57 @@ export const Route = createFileRoute("/api/rah-chat")({
         }
         const agents = Array.isArray(body.agents) && body.agents.length ? body.agents : ["brain"];
         const mode: ExecutionMode = body.mode ?? "fast";
-        const model = body.model || "openai/gpt-5.5";
-        const system = buildSystemPrompt(agents, mode, body.context ?? {});
+
+        // Validate + normalize images (multimodal input).
+        const rawImages = Array.isArray(body.images) ? body.images : [];
+        if (rawImages.length > MAX_IMAGES_SERVER) {
+          return Response.json({ error: "bad_request", message: `Too many images (max ${MAX_IMAGES_SERVER}).` }, { status: 400 });
+        }
+        let totalChars = 0;
+        const images: { name: string; mime: string; dataUrl: string }[] = [];
+        for (const img of rawImages) {
+          if (!img?.dataUrl || typeof img.dataUrl !== "string") {
+            return Response.json({ error: "bad_request", message: "Invalid image payload." }, { status: 400 });
+          }
+          const m = /^data:([^;]+);base64,/.exec(img.dataUrl);
+          const mime = (m?.[1] || img.mime || "").toLowerCase();
+          if (!m || !ACCEPTED_IMAGE_MIME.has(mime)) {
+            return Response.json({ error: "bad_request", message: `Unsupported image type: ${mime || "unknown"}` }, { status: 400 });
+          }
+          if (img.dataUrl.length > MAX_IMAGE_DATAURL_CHARS) {
+            return Response.json({ error: "bad_request", message: `Image too large: ${img.name || "image"}` }, { status: 413 });
+          }
+          totalChars += img.dataUrl.length;
+          if (totalChars > MAX_TOTAL_DATAURL_CHARS) {
+            return Response.json({ error: "bad_request", message: "Combined image payload too large." }, { status: 413 });
+          }
+          images.push({ name: img.name || "image", mime, dataUrl: img.dataUrl });
+        }
+
+        // Choose a multimodal-capable model when images are attached.
+        const model = body.model || (images.length ? "google/gemini-2.5-flash" : "openai/gpt-5.5");
+
+        // Inject attachment awareness into the system prompt.
+        const ctx: PromptContext = { ...(body.context ?? {}) };
+        if (images.length) {
+          ctx.attachments = images.map((im, i) => ({
+            name: im.name || `image-${i + 1}`,
+            mime: im.mime,
+            size: Math.floor((im.dataUrl.length * 3) / 4),
+          }));
+          ctx.attachmentsIncluded = true;
+        }
+        const system = buildSystemPrompt(agents, mode, ctx);
+
+        // Build the user message: text + image_url parts (OpenAI-compatible multimodal).
+        const userContent: unknown[] = [{ type: "text", text: body.prompt }];
+        images.forEach((im, i) => {
+          userContent.push({ type: "text", text: `\n[Attachment ${i + 1}: ${im.name}]` });
+          userContent.push({ type: "image_url", image_url: { url: im.dataUrl } });
+        });
+        const userMessage = images.length
+          ? { role: "user", content: userContent }
+          : { role: "user", content: body.prompt };
 
         const started = Date.now();
         let upstream: Response;
@@ -51,7 +108,7 @@ export const Route = createFileRoute("/api/rah-chat")({
               stream: true,
               messages: [
                 { role: "system", content: system },
-                { role: "user", content: body.prompt },
+                userMessage,
               ],
             }),
           });
@@ -85,6 +142,13 @@ export const Route = createFileRoute("/api/rah-chat")({
             let usage: unknown = null;
             let respModel = model;
             controller.enqueue(sseEvent({ type: "start", provider: "Lovable AI Gateway", model }));
+            if (images.length) {
+              controller.enqueue(sseEvent({
+                type: "vision",
+                imageCount: images.length,
+                attachments: images.map((im) => ({ name: im.name, mime: im.mime })),
+              }));
+            }
             try {
               while (true) {
                 const { value, done } = await reader.read();

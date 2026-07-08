@@ -37,6 +37,7 @@ export async function checkHealth(signal?: AbortSignal): Promise<HealthResult> {
 
 export interface StreamCallbacks {
   onStart?: (info: { provider: string; model: string }) => void;
+  onVision?: (info: { imageCount: number; attachments: { name: string; mime: string }[] }) => void;
   onDelta?: (chunk: string, full: string) => void;
   onDone?: (info: { text: string; model: string; provider: string; latencyMs: number; usage: unknown }) => void;
   onError?: (message: string, state: AiState) => void;
@@ -49,6 +50,7 @@ export interface StreamRequest {
   context?: PromptContext;
   model?: string;
   signal?: AbortSignal;
+  images?: { name: string; mime: string; dataUrl: string }[];
 }
 
 export async function streamChat(req: StreamRequest, cb: StreamCallbacks): Promise<string> {
@@ -63,6 +65,7 @@ export async function streamChat(req: StreamRequest, cb: StreamCallbacks): Promi
       mode: req.mode,
       context: req.context,
       model: req.model,
+      images: req.images,
     }),
   });
   if (!res.ok || !res.body) {
@@ -91,10 +94,12 @@ export async function streamChat(req: StreamRequest, cb: StreamCallbacks): Promi
       try {
         const ev = JSON.parse(trimmed) as
           | { type: "start"; provider: string; model: string }
+          | { type: "vision"; imageCount: number; attachments: { name: string; mime: string }[] }
           | { type: "delta"; text: string }
           | { type: "done"; text: string; model: string; provider: string; latencyMs: number; usage: unknown }
           | { type: "error"; message: string };
         if (ev.type === "start") cb.onStart?.({ provider: ev.provider, model: ev.model });
+        else if (ev.type === "vision") cb.onVision?.({ imageCount: ev.imageCount, attachments: ev.attachments });
         else if (ev.type === "delta") { full += ev.text; cb.onDelta?.(ev.text, full); }
         else if (ev.type === "done") { full = ev.text || full; cb.onDone?.({ text: full, model: ev.model, provider: ev.provider, latencyMs: ev.latencyMs, usage: ev.usage }); }
         else if (ev.type === "error") cb.onError?.(ev.message, "error");
@@ -102,4 +107,27 @@ export async function streamChat(req: StreamRequest, cb: StreamCallbacks): Promi
     }
   }
   return full;
+}
+
+export interface VisionTestResult {
+  ok: boolean;
+  state: AiState;
+  provider: string;
+  model?: string;
+  latencyMs?: number;
+  reply?: string;
+  message?: string;
+  matched?: boolean;
+}
+
+export async function testVision(signal?: AbortSignal): Promise<VisionTestResult> {
+  try {
+    const res = await fetch("/api/rah-vision-test", { method: "POST", signal });
+    return (await res.json()) as VisionTestResult;
+  } catch (err) {
+    return {
+      ok: false, state: "network_error", provider: "Lovable AI Gateway",
+      message: err instanceof Error ? err.message : String(err),
+    };
+  }
 }

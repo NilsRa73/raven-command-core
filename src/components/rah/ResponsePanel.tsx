@@ -20,6 +20,8 @@ export interface LiveResponse {
   demo?: boolean;
   startedAt: number;
   favorite?: boolean;
+  visionUsed?: boolean;
+  attachmentCount?: number;
 }
 
 function speak(text: string) {
@@ -68,6 +70,11 @@ export function ResponsePanel({
         {response.provider && <span>{response.provider}</span>}
         {response.model && <span>· {response.model}</span>}
         <span>· {(latency / 1000).toFixed(2)}s</span>
+        {response.visionUsed && (
+          <span className="rounded-full border border-primary/60 px-2 py-0.5 text-primary">
+            👁 Vision used{response.attachmentCount ? ` · ${response.attachmentCount} img` : ""}
+          </span>
+        )}
         {(() => {
           const u = response.usage as { total_tokens?: number } | null | undefined;
           if (!u || typeof u !== "object" || u.total_tokens == null) return null;

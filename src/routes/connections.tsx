@@ -3,6 +3,8 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { probeBridge, type BridgeState } from "@/lib/rah/speech";
 import { AiStatusBadge, useAiHealth } from "@/components/rah/AiStatusBadge";
+import { testVision, type VisionTestResult } from "@/lib/rah/ai";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/connections")({
   head: () => ({ meta: [{ title: "Connections — RAH Listen Key" }] }),
@@ -14,6 +16,16 @@ function Connections() {
   async function check() { setState("checking"); setState(await probeBridge()); }
   useEffect(() => { void check(); }, []);
   const { health, loading, refresh } = useAiHealth(true);
+  const [vision, setVision] = useState<VisionTestResult | null>(null);
+  const [visionLoading, setVisionLoading] = useState(false);
+  async function runVisionTest() {
+    setVisionLoading(true);
+    const r = await testVision();
+    setVision(r);
+    setVisionLoading(false);
+    if (r.ok) toast.success(`Vision ready · ${r.model ?? ""}`);
+    else toast.error(`Vision test failed: ${r.message ?? r.state}`);
+  }
 
   return (
     <div className="space-y-6">
@@ -42,6 +54,37 @@ function Connections() {
           The API key is stored server-side only and never shipped to the browser.
           When disconnected or rate limited, the Command Center automatically falls back to the labelled Local Demo engine.
         </p>
+      </section>
+
+      <section className="glass-panel gold-border p-5 space-y-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          <h2 className="display text-lg">Multimodal vision</h2>
+          <span className={
+            "rounded-full border px-3 py-1 text-xs " +
+            (vision?.ok ? "border-primary text-primary"
+              : vision ? "border-destructive text-destructive"
+              : "border-border text-muted-foreground")
+          }>
+            {visionLoading ? "Testing…" : vision?.ok ? "Vision Ready" : vision ? "Failed" : "Not tested"}
+          </span>
+          <Button size="sm" className="ml-auto" onClick={() => void runVisionTest()} disabled={visionLoading}>
+            Test Vision
+          </Button>
+        </div>
+        <p className="text-[11px] text-muted-foreground">
+          Sends a small fixture image (a solid red square) through the real secure server route and asks the AI
+          to name its color. "Vision Ready" only shows after the live multimodal round-trip succeeds and the
+          reply actually mentions the correct color.
+        </p>
+        {vision && (
+          <div className="text-xs text-muted-foreground space-y-1">
+            <div>Provider: <span className="text-foreground">{vision.provider}</span></div>
+            {vision.model && <div>Model: <span className="text-foreground">{vision.model}</span></div>}
+            {typeof vision.latencyMs === "number" && <div>Latency: <span className="text-foreground">{vision.latencyMs} ms</span></div>}
+            {vision.reply && <div>Reply: <span className="text-foreground">"{vision.reply}"</span></div>}
+            {vision.message && <div className={vision.ok ? "" : "text-destructive"}>Message: {vision.message}</div>}
+          </div>
+        )}
       </section>
 
       <header>

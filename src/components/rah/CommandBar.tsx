@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Mic, MicOff, Send, Paperclip, MonitorPlay, Camera, Trash2 } from "lucide-react";
+import { Mic, MicOff, Send, Paperclip, MonitorPlay, Camera, Trash2, ImagePlus, X, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -13,6 +13,11 @@ import { Link } from "@tanstack/react-router";
 import { streamChat } from "@/lib/rah/ai";
 import { ResponsePanel, type LiveResponse } from "./ResponsePanel";
 import { AiStatusBadge, useAiHealth } from "./AiStatusBadge";
+import {
+  prepareImage, releasePrepared, validateBatch, metaFromPrepared,
+  drainPendingImages, preparedFromPending, ACCEPTED_MIME,
+  type PreparedImage,
+} from "@/lib/rah/images";
 
 export function CommandBar() {
   const rah = useRah();
@@ -26,6 +31,9 @@ export function CommandBar() {
   const recRef = useRef<any>(null);
   const ref = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const imageRef = useRef<HTMLInputElement>(null);
+  const [images, setImages] = useState<PreparedImage[]>([]);
+  const [dragging, setDragging] = useState(false);
   const [response, setResponse] = useState<LiveResponse | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const { health, loading: healthLoading, refresh: refreshHealth } = useAiHealth(true);
@@ -37,6 +45,68 @@ export function CommandBar() {
     window.addEventListener("rah:cancel", cancel);
     return () => window.removeEventListener("rah:cancel", cancel);
   }, []);
+
+  useEffect(() => {
+    const pending = drainPendingImages();
+    if (!pending.length) return;
+    (async () => {
+      const prepared: PreparedImage[] = [];
+      for (const p of pending) prepared.push(await preparedFromPending(p));
+      setImages((cur) => [...cur, ...prepared].slice(0, 4));
+      toast.success(`Attached ${prepared.length} snapshot${prepared.length > 1 ? "s" : ""} from Screen Vision`);
+      ref.current?.focus();
+    })();
+  }, []);
+
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      if (!e.clipboardData) return;
+      const files: File[] = [];
+      for (const it of Array.from(e.clipboardData.items)) {
+        if (it.type.startsWith("image/")) { const f = it.getAsFile(); if (f) files.push(f); }
+      }
+      if (files.length) { e.preventDefault(); void addImages(files); }
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [images]);
+
+  useEffect(() => () => releasePrepared(images), []);
+
+  async function addImages(files: File[]) {
+    const addingBytes = files.reduce((s, f) => s + f.size, 0);
+    const err = validateBatch(images, files.length, addingBytes);
+    if (err) { toast.error(err); return; }
+    const next: PreparedImage[] = [];
+    for (const f of files) {
+      const p = await prepareImage(f);
+      if (p.state !== "ready") toast.error(`${p.name}: ${p.error ?? p.state}`);
+      next.push(p);
+    }
+    setImages((cur) => [...cur, ...next]);
+  }
+  function removeImage(id: string) {
+    setImages((cur) => {
+      const gone = cur.find((p) => p.id === id);
+      if (gone) { try { URL.revokeObjectURL(gone.thumbUrl); } catch { /* */ } }
+      return cur.filter((p) => p.id !== id);
+    });
+  }
+  function toggleImageIncluded(id: string) {
+    setImages((cur) => cur.map((p) => p.id === id ? { ...p, included: !p.included } : p));
+  }
+  function clearImages() { releasePrepared(images); setImages([]); }
+  function onImagePicker(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files ? Array.from(e.target.files) : [];
+    if (files.length) void addImages(files);
+    e.target.value = "";
+  }
+  function onDrop(e: React.DragEvent) {
+    e.preventDefault(); setDragging(false);
+    const files = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith("image/"));
+    if (files.length) void addImages(files);
+  }
 
   function startListening() {
     if (!voiceSupported) {
@@ -107,6 +177,7 @@ export function CommandBar() {
         projectId: rah.activeProject?.id, inputType: listening ? "voice" : "text",
         status: "awaiting_approval",
         resultSummary: "Queued for approval before running.",
+        attachments: images.map((i) => metaFromPrepared(i, false)),
       });
       setText(""); setInterim("");
       toast.success("Queued for approval.");
@@ -123,18 +194,28 @@ export function CommandBar() {
     abortRef.current = ac;
     const startedAt = Date.now();
 
+    const includedImages = images.filter((i) => i.state === "ready" && i.included);
+    const attachmentsMeta = images.map((i) => metaFromPrepared(i, false));
+    const imagePayload = includedImages.map((i) => ({ name: i.name, mime: i.mime, dataUrl: i.dataUrl }));
+    const hasImages = imagePayload.length > 0;
+
     if (!aiLive) {
-      // Honest fallback — local demo
-      const demo = localDemoResponse(prompt, selectedAgents, mode);
+      const demoBase = localDemoResponse(prompt, selectedAgents, mode);
+      const demo = hasImages
+        ? `${demoBase}\n\n> ⚠ ${imagePayload.length} image${imagePayload.length > 1 ? "s were" : " was"} attached but the AI backend is offline. No visual analysis was performed. Reconnect the AI backend to enable RAH Vision.`
+        : demoBase;
       const cmd = await rah.addCommand({
         prompt, agents: selectedAgents, mode, fileIds: [],
-        projectId: rah.activeProject?.id, inputType: listening ? "voice" : "text",
+        projectId: rah.activeProject?.id,
+        inputType: hasImages ? "screen" : (listening ? "voice" : "text"),
         status: "done", resultSummary: demo, demo: true,
+        attachments: attachmentsMeta, visionUsed: false,
       });
       setResponse({
         id: cmd.id, prompt, agents: selectedAgents, text: demo,
         state: "done", demo: true, startedAt, latencyMs: 0,
         provider: "Local Demo Engine",
+        visionUsed: false, attachmentCount: attachmentsMeta.length,
       });
       toast.message("Local Demo Response (no live AI).");
       return;
@@ -144,6 +225,7 @@ export function CommandBar() {
       prompt, agents: selectedAgents, text: "",
       state: "thinking", startedAt,
       provider: "Lovable AI Gateway",
+      visionUsed: false, attachmentCount: attachmentsMeta.length,
     });
 
     const memory = rah.prefs.memoryEnabled
@@ -156,6 +238,7 @@ export function CommandBar() {
       let latencyMs = 0;
       let usage: unknown = null;
       let finalText = "";
+      let visionUsed = false;
 
       await streamChat({
         prompt, agents: selectedAgents, mode,
@@ -165,11 +248,16 @@ export function CommandBar() {
           projectGoals: rah.activeProject?.goals,
           memory,
         },
+        images: imagePayload,
       }, {
         onStart: (info) => {
           providerLabel = info.provider;
           modelLabel = info.model;
           setResponse((r) => r ? { ...r, state: "streaming", provider: info.provider, model: info.model } : r);
+        },
+        onVision: (info) => {
+          visionUsed = info.imageCount > 0;
+          setResponse((r) => r ? { ...r, visionUsed: true, attachmentCount: info.imageCount } : r);
         },
         onDelta: (_c, full) => {
           finalText = full;
@@ -187,17 +275,25 @@ export function CommandBar() {
         },
       });
 
+      const finalAttachments = attachmentsMeta.map((a) => ({
+        ...a,
+        analyzed: a.included && visionUsed,
+      }));
       const cmd = await rah.addCommand({
         prompt, agents: selectedAgents, mode, fileIds: [],
-        projectId: rah.activeProject?.id, inputType: listening ? "voice" : "text",
+        projectId: rah.activeProject?.id,
+        inputType: hasImages ? "screen" : (listening ? "voice" : "text"),
         status: "done", resultSummary: finalText,
         provider: providerLabel, model: modelLabel, latencyMs, usage, demo: false,
+        attachments: finalAttachments, visionUsed,
       });
       setResponse({
         id: cmd.id, prompt, agents: selectedAgents, text: finalText,
         state: "done", provider: providerLabel, model: modelLabel,
         latencyMs, usage, demo: false, startedAt,
+        visionUsed, attachmentCount: finalAttachments.length,
       });
+      clearImages();
     } catch (err) {
       if (ac.signal.aborted) {
         setResponse((r) => r ? { ...r, state: "cancelled" } : r);
@@ -205,16 +301,21 @@ export function CommandBar() {
           prompt, agents: selectedAgents, mode, fileIds: [],
           projectId: rah.activeProject?.id, inputType: listening ? "voice" : "text",
           status: "error", resultSummary: "Cancelled by user.", errorMessage: "aborted",
+          attachments: attachmentsMeta, visionUsed: false,
         });
         toast.message("Cancelled.");
         return;
       }
       const msg = err instanceof Error ? err.message : String(err);
-      setResponse((r) => r ? { ...r, state: "error", error: msg } : r);
+      const hint = hasImages && /image|multimodal|unsupported|size|payload|too large/i.test(msg)
+        ? " — try removing images or reducing their size, then Retry as text-only."
+        : "";
+      setResponse((r) => r ? { ...r, state: "error", error: msg + hint } : r);
       await rah.addCommand({
         prompt, agents: selectedAgents, mode, fileIds: [],
         projectId: rah.activeProject?.id, inputType: listening ? "voice" : "text",
         status: "error", resultSummary: `Error: ${msg}`, errorMessage: msg,
+        attachments: attachmentsMeta, visionUsed: false,
       });
       toast.error("AI request failed: " + msg);
       void refreshHealth();
@@ -226,7 +327,12 @@ export function CommandBar() {
 
   return (
     <div className="space-y-4">
-    <div className="glass-panel gold-border p-4 md:p-5 space-y-3">
+    <div
+      className={"glass-panel gold-border p-4 md:p-5 space-y-3 relative " + (dragging ? "ring-2 ring-primary/60" : "")}
+      onDragOver={(e) => { if (Array.from(e.dataTransfer.types).includes("Files")) { e.preventDefault(); setDragging(true); } }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={onDrop}
+    >
       <div className="flex flex-wrap items-center gap-2 text-xs">
         <Select value={rah.activeProject?.id ?? "none"} onValueChange={(v) => void rah.setActiveProject(v === "none" ? undefined : v)}>
           <SelectTrigger className="h-8 w-[180px]"><SelectValue placeholder="Project" /></SelectTrigger>
@@ -291,11 +397,65 @@ export function CommandBar() {
             void send();
           }
         }}
-        placeholder='Try: "Ask the coding, design, and business agents to review this project."  (Enter to send · Shift+Enter for new line)'
+        placeholder='Try: "Ask the coding, design, and business agents to review this project."  (Enter to send · Shift+Enter for new line · drop or paste images to analyze)'
         rows={4}
         className="resize-y bg-background/60"
         aria-label="Command input"
       />
+
+      {images.length > 0 && (
+        <div className="rounded-md border border-border/60 bg-background/40 p-3 space-y-2">
+          <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+            <span className="uppercase tracking-widest">Image attachments</span>
+            <span>· {images.filter((i) => i.state === "ready" && i.included).length} of {images.length} will be sent to the AI</span>
+            <button type="button" onClick={clearImages} className="ml-auto text-destructive hover:underline">Remove all</button>
+          </div>
+          <ul className="flex flex-wrap gap-2">
+            {images.map((im) => {
+              const badge =
+                im.state !== "ready" ? im.state.replace("_", " ") :
+                im.included ? "Included for AI" : "Excluded";
+              return (
+                <li key={im.id} className={"relative w-40 rounded-md border p-1.5 " + (im.included && im.state === "ready" ? "border-primary/50" : "border-border")}>
+                  <img src={im.thumbUrl} alt={`Attachment thumbnail: ${im.name}`} className="w-full h-24 object-cover rounded" />
+                  <div className="mt-1 text-[10px] leading-tight">
+                    <div className="truncate" title={im.name}>{im.name}</div>
+                    <div className="text-muted-foreground">{im.width || "?"}×{im.height || "?"} · {im.mime.replace("image/", "")} · {(im.sizeBytes / 1024).toFixed(0)}KB</div>
+                    <div className={
+                      im.state !== "ready" ? "text-destructive" :
+                      im.included ? "text-primary" : "text-muted-foreground"
+                    }>{badge}</div>
+                  </div>
+                  <div className="absolute top-1 right-1 flex gap-1">
+                    {im.state === "ready" && (
+                      <button
+                        type="button"
+                        onClick={() => toggleImageIncluded(im.id)}
+                        aria-label={im.included ? "Exclude from AI" : "Include for AI"}
+                        title={im.included ? "Exclude from AI" : "Include for AI"}
+                        className="rounded bg-background/80 border border-border/60 p-0.5 hover:bg-accent"
+                      >
+                        {im.included ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => removeImage(im.id)}
+                      aria-label={`Remove ${im.name}`}
+                      className="rounded bg-background/80 border border-border/60 p-0.5 hover:bg-destructive/20"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+          <p className="text-[10px] text-muted-foreground">
+            Only included snapshots are sent with this command. Raw image data is never saved to history — only filename, dimensions, and type.
+          </p>
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-2">
         <Button
@@ -308,6 +468,17 @@ export function CommandBar() {
           {listening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
           {listening ? "Stop listening" : "Push to talk"}
         </Button>
+        <Button type="button" variant="secondary" onClick={() => imageRef.current?.click()}>
+          <ImagePlus className="h-4 w-4" /> Add image
+        </Button>
+        <input
+          ref={imageRef}
+          type="file"
+          multiple
+          hidden
+          accept={ACCEPTED_MIME.join(",")}
+          onChange={onImagePicker}
+        />
         <Button type="button" variant="secondary" onClick={() => fileRef.current?.click()}>
           <Paperclip className="h-4 w-4" /> Attach
         </Button>
@@ -334,6 +505,11 @@ export function CommandBar() {
           </Button>
         </div>
       </div>
+      {dragging && (
+        <div className="pointer-events-none absolute inset-0 rounded-lg border-2 border-dashed border-primary/70 bg-primary/5 grid place-items-center">
+          <span className="text-primary text-sm">Drop images to attach for AI vision</span>
+        </div>
+      )}
     </div>
 
     <ResponsePanel
