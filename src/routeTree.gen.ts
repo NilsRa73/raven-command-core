@@ -25,6 +25,7 @@ import { Route as ApprovalsRouteImport } from './routes/approvals'
 import { Route as AgentsRouteImport } from './routes/agents'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ProjectsIdRouteImport } from './routes/projects.$id'
+import { Route as ApiRahVisionTestRouteImport } from './routes/api/rah-vision-test'
 import { Route as ApiRahHealthRouteImport } from './routes/api/rah-health'
 import { Route as ApiRahChatRouteImport } from './routes/api/rah-chat'
 
@@ -108,6 +109,11 @@ const ProjectsIdRoute = ProjectsIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => ProjectsRoute,
 } as any)
+const ApiRahVisionTestRoute = ApiRahVisionTestRouteImport.update({
+  id: '/api/rah-vision-test',
+  path: '/api/rah-vision-test',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiRahHealthRoute = ApiRahHealthRouteImport.update({
   id: '/api/rah-health',
   path: '/api/rah-health',
@@ -137,6 +143,7 @@ export interface FileRoutesByFullPath {
   '/voice': typeof VoiceRoute
   '/api/rah-chat': typeof ApiRahChatRoute
   '/api/rah-health': typeof ApiRahHealthRoute
+  '/api/rah-vision-test': typeof ApiRahVisionTestRoute
   '/projects/$id': typeof ProjectsIdRoute
 }
 export interface FileRoutesByTo {
@@ -157,6 +164,7 @@ export interface FileRoutesByTo {
   '/voice': typeof VoiceRoute
   '/api/rah-chat': typeof ApiRahChatRoute
   '/api/rah-health': typeof ApiRahHealthRoute
+  '/api/rah-vision-test': typeof ApiRahVisionTestRoute
   '/projects/$id': typeof ProjectsIdRoute
 }
 export interface FileRoutesById {
@@ -178,6 +186,7 @@ export interface FileRoutesById {
   '/voice': typeof VoiceRoute
   '/api/rah-chat': typeof ApiRahChatRoute
   '/api/rah-health': typeof ApiRahHealthRoute
+  '/api/rah-vision-test': typeof ApiRahVisionTestRoute
   '/projects/$id': typeof ProjectsIdRoute
 }
 export interface FileRouteTypes {
@@ -200,6 +209,7 @@ export interface FileRouteTypes {
     | '/voice'
     | '/api/rah-chat'
     | '/api/rah-health'
+    | '/api/rah-vision-test'
     | '/projects/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -220,6 +230,7 @@ export interface FileRouteTypes {
     | '/voice'
     | '/api/rah-chat'
     | '/api/rah-health'
+    | '/api/rah-vision-test'
     | '/projects/$id'
   id:
     | '__root__'
@@ -240,6 +251,7 @@ export interface FileRouteTypes {
     | '/voice'
     | '/api/rah-chat'
     | '/api/rah-health'
+    | '/api/rah-vision-test'
     | '/projects/$id'
   fileRoutesById: FileRoutesById
 }
@@ -261,6 +273,7 @@ export interface RootRouteChildren {
   VoiceRoute: typeof VoiceRoute
   ApiRahChatRoute: typeof ApiRahChatRoute
   ApiRahHealthRoute: typeof ApiRahHealthRoute
+  ApiRahVisionTestRoute: typeof ApiRahVisionTestRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -377,6 +390,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectsIdRouteImport
       parentRoute: typeof ProjectsRoute
     }
+    '/api/rah-vision-test': {
+      id: '/api/rah-vision-test'
+      path: '/api/rah-vision-test'
+      fullPath: '/api/rah-vision-test'
+      preLoaderRoute: typeof ApiRahVisionTestRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/rah-health': {
       id: '/api/rah-health'
       path: '/api/rah-health'
@@ -424,6 +444,7 @@ const rootRouteChildren: RootRouteChildren = {
   VoiceRoute: VoiceRoute,
   ApiRahChatRoute: ApiRahChatRoute,
   ApiRahHealthRoute: ApiRahHealthRoute,
+  ApiRahVisionTestRoute: ApiRahVisionTestRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
