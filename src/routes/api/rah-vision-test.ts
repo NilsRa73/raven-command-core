@@ -3,8 +3,9 @@ import { createFileRoute } from "@tanstack/react-router";
 // A fixed 8x8 solid-red PNG. Used to verify the full server-side multimodal
 // path (image bytes → provider → parseable answer). Success requires the
 // model to actually read the image and mention "red".
+// 64x64 solid red PNG (dc1e1e). Some providers reject sub-16px fixtures.
 const RED_PNG_DATAURL =
-  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAHUlEQVR4nGP8z8Dwn4GBgYGJgYGBgYGBgYGBgQEAGAsBAaW9E20AAAAASUVORK5CYII=";
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAYklEQVR4nO3PMQ0AIADAMEAI/kUhBhEcDcmqYJtn7/GzpQNeNaA1oDWgNaA1oDWgNaA1oDWgNaA1oDWgNaA1oDWgNaA1oDWgNaA1oDWgNaA1oDWgNaA1oDWgNaA1oDWgNaBdCJ0BmMJ25zMAAAAASUVORK5CYII=";
 
 export const Route = createFileRoute("/api/rah-vision-test")({
   server: {
