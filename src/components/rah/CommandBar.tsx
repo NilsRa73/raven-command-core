@@ -163,23 +163,39 @@ export function CommandBar() {
     const needsApproval = approvalMode !== "advisory";
 
     if (needsApproval) {
+      const includedImages = images.filter((i) => i.state === "ready" && i.included);
+      const memory = rah.prefs.memoryEnabled
+        ? rah.memory.filter((m) => !m.disabled && (!m.projectId || m.projectId === rah.activeProject?.id)).map((m) => m.text)
+        : [];
+      const cmd = await rah.addCommand({
+        prompt, agents: selectedAgents, mode, fileIds: [],
+        projectId: rah.activeProject?.id, inputType: listening ? "voice" : "text",
+        status: "awaiting_approval",
+        resultSummary: "Queued for approval before running.",
+        attachments: images.map((i) => metaFromPrepared(i, i.included && i.state === "ready")),
+        pending: {
+          context: {
+            projectName: rah.activeProject?.name,
+            projectGoals: rah.activeProject?.goals,
+            memory,
+          },
+          images: includedImages.map((i) => ({ name: i.name, mime: i.mime, dataUrl: i.dataUrl })),
+        },
+      });
       await rah.requestApproval({
         title: `Run "${prompt.slice(0, 60)}"`,
         reason: `Execute across agents: ${selectedAgents.join(", ")}.`,
         tools: selectedAgents,
         dataShared: rah.activeProject ? [`Project: ${rah.activeProject.name}`] : [],
-        expectedResult: "Agents produce a plan and (if configured) real results.",
+        expectedResult: aiLive
+          ? "Live AI runs after approval and the response is saved to History."
+          : "Local demo response after approval (AI backend offline).",
         risk: "low",
         category: "agent-run",
-      });
-      await rah.addCommand({
-        prompt, agents: selectedAgents, mode, fileIds: [],
-        projectId: rah.activeProject?.id, inputType: listening ? "voice" : "text",
-        status: "awaiting_approval",
-        resultSummary: "Queued for approval before running.",
-        attachments: images.map((i) => metaFromPrepared(i, false)),
+        commandId: cmd.id,
       });
       setText(""); setInterim("");
+      clearImages();
       toast.success("Queued for approval.");
       return;
     }
