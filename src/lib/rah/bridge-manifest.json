@@ -1,8 +1,8 @@
 {
-  "file": "rah-desktop-bridge-0.1.0.zip",
-  "version": "0.1.0",
-  "sha256": "482928f46a95012bb6dd240096be0d4b726120402af823e7df033c88685eaf63",
+  "file": "rah-desktop-bridge-0.1.1.zip",
+  "version": "0.1.1",
+  "sha256": "06df8dbac102a2f3e15d9822a7030f0b2cd219cf6d9721b0a7997702230a2185",
   "bytes": 24271,
-  "builtAt": "2026-07-08T15:40:01.261Z",
+  "builtAt": "2026-07-08T15:40:49.255Z",
   "nodeRequired": ">=22"
 }
