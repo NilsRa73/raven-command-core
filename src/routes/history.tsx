@@ -7,6 +7,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useRah } from "@/lib/rah/context";
 import { AGENTS, agentById } from "@/lib/rah/agents";
 
+function speak(text: string) {
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) return false;
+  try {
+    const u = new SpeechSynthesisUtterance(text);
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(u);
+    return true;
+  } catch { return false; }
+}
+
 export const Route = createFileRoute("/history")({
   head: () => ({ meta: [{ title: "Command History — RAH Listen Key" }] }),
   component: HistoryPage,
@@ -68,10 +78,23 @@ function HistoryPage() {
                 {c.projectId && ` · ${rah.projects.find((p) => p.id === c.projectId)?.name ?? "project"}`}
                 {c.demo && " · demo output"}
               </div>
-              {c.resultSummary && <div className="text-xs text-muted-foreground mt-1">{c.resultSummary}</div>}
+              {c.resultSummary && (
+                <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded-md border border-border/60 bg-background/40 p-2 text-[11px] leading-relaxed text-foreground/90 font-mono">
+                  {c.resultSummary}
+                </pre>
+              )}
             </div>
             <div className="flex gap-1">
               <Button size="sm" variant="ghost" onClick={() => rah.updateCommand(c.id, { favorite: !c.favorite })}>{c.favorite ? "★" : "☆"}</Button>
+              <Button size="sm" variant="ghost" onClick={async () => {
+                if (!c.resultSummary) return;
+                await navigator.clipboard.writeText(c.resultSummary);
+                toast.success("Copied response");
+              }}>Copy</Button>
+              <Button size="sm" variant="ghost" onClick={() => {
+                if (!c.resultSummary) return;
+                if (!speak(c.resultSummary)) toast.error("Speech synthesis unavailable in this browser.");
+              }}>Speak</Button>
               <Button size="sm" variant="secondary" onClick={async () => {
                 await rah.addCommand({ prompt: c.prompt, agents: c.agents, mode: c.mode, fileIds: c.fileIds, projectId: c.projectId, inputType: "text", status: "done", resultSummary: "Re-run recorded.", demo: c.demo });
                 toast.success("Re-ran command");
