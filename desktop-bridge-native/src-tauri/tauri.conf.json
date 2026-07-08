@@ -1,0 +1,59 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "RAH Desktop Bridge",
+  "version": "0.2.0",
+  "identifier": "studios.rah.desktop-bridge",
+  "build": {
+    "frontendDist": "../ui",
+    "devUrl": null
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "status",
+        "title": "RAH Desktop Bridge",
+        "width": 520,
+        "height": 640,
+        "resizable": false,
+        "visible": false,
+        "decorations": true,
+        "transparent": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+    },
+    "trayIcon": {
+      "id": "rah-tray",
+      "iconPath": "icons/tray.png",
+      "iconAsTemplate": false,
+      "tooltip": "RAH Desktop Bridge"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "publisher": "RAH AI Studios",
+    "category": "Utility",
+    "shortDescription": "Secure localhost companion for Raven Command",
+    "longDescription": "Runs the Raven Command Desktop Bridge on 127.0.0.1 so the web app can perform user-approved file and launch actions. Localhost only, no LAN or internet listener.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/icon.ico"
+    ],
+    "resources": [],
+    "externalBin": ["binaries/rah-bridge-sidecar"],
+    "windows": {
+      "webviewInstallMode": { "type": "downloadBootstrapper" },
+      "nsis": {
+        "installMode": "perUser",
+        "installerIcon": "icons/icon.ico",
+        "displayLanguageSelector": false
+      }
+    }
+  },
+  "plugins": {
+    "autostart": { "macosLauncher": null }
+  }
+}

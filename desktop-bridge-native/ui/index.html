@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RAH Desktop Bridge</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header>
+      <div class="mark" aria-hidden="true">◆</div>
+      <div>
+        <h1>RAH Desktop Bridge</h1>
+        <p class="subtitle">Secure localhost companion for Raven Command</p>
+      </div>
+    </header>
+    <section class="status" aria-live="polite">
+      <div class="row"><span>Status</span><strong id="state">Starting…</strong></div>
+      <div class="row"><span>Endpoint</span><code id="endpoint">http://127.0.0.1:47824</code></div>
+      <div class="row"><span>App version</span><code id="app-version">–</code></div>
+      <div class="row"><span>Bridge version</span><code id="bridge-version">–</code></div>
+      <div class="row"><span>Signature</span><strong id="signed" class="warn">Unsigned development build</strong></div>
+    </section>
+    <section class="actions">
+      <button id="btn-open">Open Raven Command</button>
+      <button id="btn-start">Start Bridge</button>
+      <button id="btn-stop">Stop Bridge</button>
+      <button id="btn-estop" class="danger">Emergency Stop</button>
+    </section>
+    <footer>
+      <p>Listens only on 127.0.0.1. Never on LAN or the internet. No unrestricted
+      shell / PowerShell / registry / keyboard / mic / webcam access. Screenshot
+      capture is intentionally disabled in this release.</p>
+    </footer>
+    <script src="./app.js"></script>
+  </body>
+</html>
