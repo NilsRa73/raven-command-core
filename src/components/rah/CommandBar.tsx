@@ -449,6 +449,9 @@ export function CommandBar() {
       <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
         <span className="uppercase tracking-widest">Route:</span>
         <span className="text-foreground">{computeRouteText(localAi, bridgeSnap)}</span>
+        {bridgeRefreshing && bridgeSnap?.ui === "paired_online" && (
+          <span className="text-[10px] text-muted-foreground/70 italic">refreshing…</span>
+        )}
         <span className="ml-auto flex items-center gap-2">
           <button
             type="button"
