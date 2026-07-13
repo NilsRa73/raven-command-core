@@ -67,7 +67,7 @@ export function buildScreenVisionRuntimeLine({
   if (typeof latencyMs === "number" && isFinite(latencyMs)) {
     parts.push("Latency: " + (latencyMs / 1000).toFixed(2) + "s");
   }
-  if (capturedAt) {
+  if (capturedAt !== undefined && capturedAt !== null && capturedAt !== "") {
     const iso = typeof capturedAt === "number" ? new Date(capturedAt).toISOString() : String(capturedAt);
     parts.push("Captured at: " + iso);
   }
