@@ -12,8 +12,10 @@ import {
   MAX_ANALYZE_EDGE, PRIVACY_NOTE, SCREEN_VISION_PRESETS, NO_FRAME_RECOVERY_HINT,
   buildScreenVisionRuntimeLine, computeCaptureSize, sharingStateLabel,
   isCaptureReady, computeSamplePoints, analyzeSamples, isLikelyBlankFrame,
-  estimateFps,
+  estimateFps, pickCaptureMethod, readinessFromSignals, formatDiagnostics,
+  PREVIEW_UNAVAILABLE_LABEL,
   type SharingState,
+  type ScreenVisionDiagnostics,
 } from "@/lib/rah/screenVision";
 
 export const Route = createFileRoute("/vision")({
@@ -53,6 +55,26 @@ function browserSupportsDisplayMedia(): boolean {
   return typeof navigator !== "undefined"
     && !!navigator.mediaDevices
     && typeof navigator.mediaDevices.getDisplayMedia === "function";
+}
+
+function browserSupportsImageCapture(): boolean {
+  return typeof window !== "undefined"
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    && typeof (window as any).ImageCapture === "function";
+}
+
+async function tryGrabFrame(track: MediaStreamTrack): Promise<ImageBitmap | null> {
+  if (!browserSupportsImageCapture()) return null;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const IC: any = (window as any).ImageCapture;
+    const cap = new IC(track);
+    const bmp: ImageBitmap = await cap.grabFrame();
+    if (!bmp || !bmp.width || !bmp.height) return null;
+    return bmp;
+  } catch {
+    return null;
+  }
 }
 
 // Wait until the <video> element actually has a drawable frame.
@@ -124,6 +146,49 @@ function sampleFrameStats(
   return analyzeSamples(samples);
 }
 
+async function encodeCanvasJpeg(canvas: HTMLCanvasElement): Promise<Blob> {
+  return new Promise<Blob>((resolve, reject) =>
+    canvas.toBlob(
+      (b) => (b ? resolve(b) : reject(new Error("Frame encode failed."))),
+      "image/jpeg", 0.85,
+    ),
+  );
+}
+
+async function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = () => reject(new Error("Frame read failed."));
+    r.readAsDataURL(blob);
+  });
+}
+
+// Capture via ImageCapture.grabFrame(): draw the bitmap to a canvas, close
+// the bitmap, encode JPEG. Returns null if ImageCapture is not viable.
+async function captureViaImageCapture(
+  track: MediaStreamTrack, maxEdge = MAX_ANALYZE_EDGE,
+): Promise<CapturedFrame | null> {
+  const bmp = await tryGrabFrame(track);
+  if (!bmp) return null;
+  try {
+    const { width, height } = computeCaptureSize(bmp.width, bmp.height, maxEdge);
+    if (width === 0 || height === 0) return null;
+    const canvas = document.createElement("canvas");
+    canvas.width = width; canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(bmp, 0, 0, width, height);
+    const stats = sampleFrameStats(ctx, width, height);
+    if (isLikelyBlankFrame(stats)) return null;
+    const blob = await encodeCanvasJpeg(canvas);
+    const dataUrl = await blobToDataUrl(blob);
+    return { dataUrl, width, height, sizeBytes: blob.size, capturedAt: Date.now() };
+  } finally {
+    try { bmp.close(); } catch { /* older browsers */ }
+  }
+}
+
 async function captureCurrentFrame(
   video: HTMLVideoElement, maxEdge = MAX_ANALYZE_EDGE,
 ): Promise<CapturedFrame> {
@@ -154,18 +219,8 @@ async function captureCurrentFrame(
       "Captured frame appears blank. " + NO_FRAME_RECOVERY_HINT,
     );
   }
-  const blob = await new Promise<Blob>((resolve, reject) =>
-    canvas.toBlob(
-      (b) => (b ? resolve(b) : reject(new Error("Frame encode failed."))),
-      "image/jpeg", 0.85,
-    ),
-  );
-  const dataUrl = await new Promise<string>((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(String(r.result));
-    r.onerror = () => reject(new Error("Frame read failed."));
-    r.readAsDataURL(blob);
-  });
+  const blob = await encodeCanvasJpeg(canvas);
+  const dataUrl = await blobToDataUrl(blob);
   return { dataUrl, width, height, sizeBytes: blob.size, capturedAt: Date.now() };
 }
 
@@ -177,6 +232,7 @@ function VisionPage() {
   const readyAbortRef = useRef<AbortController | null>(null);
   const fpsRef = useRef<number[]>([]);
   const fpsRvfcRef = useRef<number | null>(null);
+  const trackRef = useRef<MediaStreamTrack | null>(null);
 
   const [supported] = useState<boolean>(() => browserSupportsDisplayMedia());
   const [sharing, setSharing] = useState<SharingState>(supported ? "idle" : "unsupported");
@@ -186,6 +242,12 @@ function VisionPage() {
   const [resolution, setResolution] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
   const [fps, setFps] = useState<number>(0);
   const [noFrameHint, setNoFrameHint] = useState<string>("");
+  const [videoReady, setVideoReady] = useState<boolean>(false);
+  const [imageCaptureReady, setImageCaptureReady] = useState<boolean>(false);
+  const [imageCaptureLastOk, setImageCaptureLastOk] = useState<boolean>(true);
+  const [imageCaptureLastError, setImageCaptureLastError] = useState<string>("");
+  const [videoLastError, setVideoLastError] = useState<string>("");
+  const [showDiagnostics, setShowDiagnostics] = useState<boolean>(false);
 
   // Cleanup on unmount: stop any active tracks + abort any in-flight request.
   useEffect(() => {
@@ -204,12 +266,19 @@ function VisionPage() {
     const s = streamRef.current;
     if (s) s.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
+    trackRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
     setSourceLabel("");
     setResolution({ w: 0, h: 0 });
     setFps(0);
     fpsRef.current = [];
     setNoFrameHint("");
+    setVideoReady(false);
+    setImageCaptureReady(false);
+    setImageCaptureLastOk(true);
+    setImageCaptureLastError("");
+    setVideoLastError("");
+    setShowDiagnostics(false);
     setSharing(reason);
   }, []);
 
@@ -217,6 +286,12 @@ function VisionPage() {
     if (!supported) { setSharing("unsupported"); return; }
     setSharing("requesting");
     setNoFrameHint("");
+    setVideoReady(false);
+    setImageCaptureReady(false);
+    setImageCaptureLastOk(true);
+    setImageCaptureLastError("");
+    setVideoLastError("");
+    setShowDiagnostics(false);
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: { frameRate: { ideal: 15, max: 30 } },
@@ -229,6 +304,7 @@ function VisionPage() {
         toast.error("No video track was provided by the browser.");
         return;
       }
+      trackRef.current = track;
       const settings = track.getSettings?.() ?? {};
       const label = track.label
         || (settings.displaySurface ? String(settings.displaySurface) : "selected screen source");
@@ -254,12 +330,12 @@ function VisionPage() {
       readyAbortRef.current?.abort();
       const ctl = new AbortController();
       readyAbortRef.current = ctl;
-      try {
-        await waitForVideoFrame(v, 5000, ctl.signal);
-        setResolution({ w: v.videoWidth, h: v.videoHeight });
-        setSharing("ready");
 
-        // Kick off a lightweight FPS estimator (rVFC preferred, rAF fallback).
+      // Dual readiness: whichever path yields a real frame first wins. We
+      // do NOT fail the session just because <video> stays black — Chromium
+      // often decodes into ImageCapture even when the preview cannot paint.
+      let done = false;
+      const kickFpsLoop = () => {
         fpsRef.current = [];
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const rvfc = (v as any).requestVideoFrameCallback?.bind(v);
@@ -284,10 +360,62 @@ function VisionPage() {
           };
           requestAnimationFrame(loop);
         }
-      } catch (err) {
-        if ((err as { name?: string })?.name === "AbortError") return;
-        setNoFrameHint((err as Error)?.message || NO_FRAME_RECOVERY_HINT);
+      };
+
+      // Path A: HTMLVideoElement first-frame.
+      const videoPath = (async () => {
+        try {
+          await waitForVideoFrame(v, 5000, ctl.signal);
+          if (done || ctl.signal.aborted) return;
+          setVideoReady(true);
+          setResolution({ w: v.videoWidth, h: v.videoHeight });
+          if (!done) { done = true; setSharing("ready"); kickFpsLoop(); }
+        } catch (err) {
+          if ((err as { name?: string })?.name !== "AbortError") {
+            setVideoLastError((err as Error)?.message || "video frame timeout");
+          }
+        }
+      })();
+
+      // Path B: ImageCapture (Chromium). Poll grabFrame() a few times.
+      const imagePath = (async () => {
+        if (!browserSupportsImageCapture()) {
+          setImageCaptureLastOk(false);
+          setImageCaptureLastError("ImageCapture not supported in this browser");
+          return;
+        }
+        const deadline = Date.now() + 5000;
+        while (Date.now() < deadline && !ctl.signal.aborted && !done) {
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const IC: any = (window as any).ImageCapture;
+            const cap = new IC(track);
+            const bmp: ImageBitmap = await cap.grabFrame();
+            if (bmp && bmp.width > 0 && bmp.height > 0) {
+              try { bmp.close(); } catch { /* older browsers */ }
+              setImageCaptureReady(true);
+              setImageCaptureLastOk(true);
+              setImageCaptureLastError("");
+              if (v.videoWidth > 0) setResolution({ w: v.videoWidth, h: v.videoHeight });
+              else setResolution({ w: bmp.width, h: bmp.height });
+              if (!done) { done = true; setSharing("ready"); kickFpsLoop(); }
+              return;
+            }
+          } catch (err) {
+            setImageCaptureLastOk(false);
+            setImageCaptureLastError((err as Error)?.message || String(err));
+          }
+          await new Promise((r) => setTimeout(r, 300));
+        }
+      })();
+
+      await Promise.race([videoPath, imagePath]);
+      // Let both settle so late signals still land.
+      await Promise.allSettled([videoPath, imagePath]);
+      if (!done && !ctl.signal.aborted) {
+        setNoFrameHint(NO_FRAME_RECOVERY_HINT);
         setSharing("error");
+        setShowDiagnostics(true);
         toast.error("Screen sharing started but no frame arrived. " + NO_FRAME_RECOVERY_HINT);
       }
     } catch (err) {
@@ -297,6 +425,7 @@ function VisionPage() {
         toast.error("Screen sharing was denied. Click 'Share screen with Raven' to try again.");
       } else {
         setSharing("error");
+        setShowDiagnostics(true);
         toast.error("Could not start screen sharing. " + (err instanceof Error ? err.message : String(err)));
       }
     }
@@ -324,10 +453,32 @@ function VisionPage() {
     });
     setSharing("capturing");
     try {
-      frame = await captureCurrentFrame(videoRef.current);
+      const method = pickCaptureMethod({
+        imageCaptureAvailable: browserSupportsImageCapture() && !!trackRef.current,
+        imageCaptureLastOk,
+        videoHasFrame: videoReady,
+      });
+      let captured: CapturedFrame | null = null;
+      if (method === "image-capture" && trackRef.current) {
+        try {
+          captured = await captureViaImageCapture(trackRef.current);
+          if (captured) {
+            setImageCaptureLastOk(true);
+            setImageCaptureLastError("");
+          }
+        } catch (err) {
+          setImageCaptureLastOk(false);
+          setImageCaptureLastError((err as Error)?.message || String(err));
+        }
+      }
+      if (!captured) {
+        captured = await captureCurrentFrame(videoRef.current);
+      }
+      frame = captured;
     } catch (err) {
       setAnalysis((a) => a ? { ...a, state: "error", error: err instanceof Error ? err.message : String(err) } : a);
       setSharing("ready");
+      setShowDiagnostics(true);
       return;
     }
     setSharing("analyzing");
@@ -418,7 +569,7 @@ function VisionPage() {
     } finally {
       setSharing((s) => (s === "analyzing" || s === "capturing") ? "ready" : s);
     }
-  }, [sharing, sourceLabel]);
+  }, [sharing, sourceLabel, imageCaptureLastOk, videoReady]);
 
   const sendAnswerToCommandCenter = useCallback(() => {
     if (!analysis?.frame.dataUrl) { toast.error("No captured frame to send."); return; }
@@ -436,9 +587,41 @@ function VisionPage() {
 
   const statusLabel = useMemo(() => sharingStateLabel(sharing), [sharing]);
   const streaming = analysis?.state === "streaming" || analysis?.state === "capturing";
-  const ready = isCaptureReady(sharing);
+  const ready = isCaptureReady(sharing) || readinessFromSignals({ videoReady, imageCaptureReady });
   const active = ready || sharing === "waiting-frame" || sharing === "stream-connected"
     || sharing === "capturing" || sharing === "analyzing";
+  const previewAvailable = videoReady;
+
+  const diagnostics: ScreenVisionDiagnostics = useMemo(() => {
+    const v = videoRef.current;
+    const t = trackRef.current;
+    const settings = t?.getSettings?.() ?? {};
+    return {
+      userAgent: typeof navigator !== "undefined" ? navigator.userAgent : undefined,
+      supportsGetDisplayMedia: supported,
+      supportsImageCapture: browserSupportsImageCapture(),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      supportsVideoFrameCallback: !!(v && typeof (v as any).requestVideoFrameCallback === "function"),
+      videoReadyState: v?.readyState,
+      videoWidth: v?.videoWidth,
+      videoHeight: v?.videoHeight,
+      videoPaused: v?.paused,
+      videoEnded: v?.ended,
+      trackReadyState: t?.readyState,
+      trackMuted: t?.muted,
+      trackLabel: t?.label,
+      displaySurface: (settings as { displaySurface?: string }).displaySurface,
+      imageCaptureLastOk,
+      imageCaptureLastError: imageCaptureLastError || undefined,
+      videoLastError: videoLastError || undefined,
+      previewAvailable,
+      captureMethod: pickCaptureMethod({
+        imageCaptureAvailable: browserSupportsImageCapture() && !!t,
+        imageCaptureLastOk,
+        videoHasFrame: videoReady,
+      }),
+    };
+  }, [sharing, supported, imageCaptureLastOk, imageCaptureLastError, videoLastError, previewAvailable, videoReady]);
 
   return (
     <div className="space-y-6">
