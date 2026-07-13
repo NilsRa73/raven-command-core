@@ -9,8 +9,10 @@ import { Button } from "@/components/ui/button";
 import { Markdown } from "@/components/rah/Markdown";
 import { queuePendingImage } from "@/lib/rah/images";
 import {
-  MAX_ANALYZE_EDGE, PRIVACY_NOTE, SCREEN_VISION_PRESETS,
+  MAX_ANALYZE_EDGE, PRIVACY_NOTE, SCREEN_VISION_PRESETS, NO_FRAME_RECOVERY_HINT,
   buildScreenVisionRuntimeLine, computeCaptureSize, sharingStateLabel,
+  isCaptureReady, computeSamplePoints, analyzeSamples, isLikelyBlankFrame,
+  estimateFps,
   type SharingState,
 } from "@/lib/rah/screenVision";
 
@@ -53,9 +55,81 @@ function browserSupportsDisplayMedia(): boolean {
     && typeof navigator.mediaDevices.getDisplayMedia === "function";
 }
 
+// Wait until the <video> element actually has a drawable frame.
+// Prefers requestVideoFrameCallback when available; falls back to rAF polling.
+// Rejects on timeout or abort with a clear message.
+function waitForVideoFrame(
+  video: HTMLVideoElement,
+  timeoutMs = 5000,
+  signal?: AbortSignal,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) { reject(new Error("Aborted waiting for first video frame.")); return; }
+    const ready = () =>
+      video.readyState >= 2 /* HAVE_CURRENT_DATA */
+      && video.videoWidth > 0
+      && video.videoHeight > 0;
+    if (ready()) { cleanup(); resolve(); return; }
+
+    let done = false;
+    const timer = setTimeout(() => {
+      if (done) return;
+      cleanup();
+      reject(new Error("Timed out waiting for the first video frame. " + NO_FRAME_RECOVERY_HINT));
+    }, Math.max(500, timeoutMs));
+
+    const onAbort = () => {
+      if (done) return;
+      cleanup();
+      reject(new Error("Aborted waiting for first video frame."));
+    };
+    signal?.addEventListener("abort", onAbort);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rvfc = (video as any).requestVideoFrameCallback?.bind(video) as
+      | ((cb: (now: number, meta: unknown) => void) => number) | undefined;
+
+    let rafId = 0;
+    const tick = () => {
+      if (done) return;
+      if (ready()) { cleanup(); resolve(); return; }
+      rafId = requestAnimationFrame(tick);
+    };
+    if (rvfc) {
+      const spin = () => { if (done) return; if (ready()) { cleanup(); resolve(); return; } rvfc(spin); };
+      rvfc(spin);
+      // also poll rAF as a safety net in case rvfc stalls
+      rafId = requestAnimationFrame(tick);
+    } else {
+      rafId = requestAnimationFrame(tick);
+    }
+
+    function cleanup() {
+      done = true;
+      clearTimeout(timer);
+      if (rafId) cancelAnimationFrame(rafId);
+      signal?.removeEventListener("abort", onAbort);
+    }
+  });
+}
+
+function sampleFrameStats(
+  ctx: CanvasRenderingContext2D, width: number, height: number,
+) {
+  const pts = computeSamplePoints(width, height);
+  const samples = pts.map(({ x, y }) => {
+    const d = ctx.getImageData(x, y, 1, 1).data;
+    return { r: d[0], g: d[1], b: d[2] };
+  });
+  return analyzeSamples(samples);
+}
+
 async function captureCurrentFrame(
   video: HTMLVideoElement, maxEdge = MAX_ANALYZE_EDGE,
 ): Promise<CapturedFrame> {
+  // Ensure a fresh, drawable frame right before capture — protects against
+  // minimized/hidden/backgrounded tabs returning a stale/black frame.
+  await waitForVideoFrame(video, 4000);
   const srcW = video.videoWidth, srcH = video.videoHeight;
   const { width, height } = computeCaptureSize(srcW, srcH, maxEdge);
   if (width === 0 || height === 0) throw new Error("No video frame available yet.");
@@ -63,7 +137,23 @@ async function captureCurrentFrame(
   canvas.width = width; canvas.height = height;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Canvas 2D unavailable.");
-  ctx.drawImage(video, 0, 0, width, height);
+  // Draw with up to a few retries if the first frame comes back blank.
+  let stats = { avgLuma: 0, maxLuma: 0, nonBlackRatio: 0, count: 0 };
+  const MAX_ATTEMPTS = 4;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    ctx.drawImage(video, 0, 0, width, height);
+    stats = sampleFrameStats(ctx, width, height);
+    if (!isLikelyBlankFrame(stats)) break;
+    if (attempt < MAX_ATTEMPTS) {
+      await new Promise((r) => setTimeout(r, 120));
+      try { await waitForVideoFrame(video, 1500); } catch { /* fall through */ }
+    }
+  }
+  if (isLikelyBlankFrame(stats)) {
+    throw new Error(
+      "Captured frame appears blank. " + NO_FRAME_RECOVERY_HINT,
+    );
+  }
   const blob = await new Promise<Blob>((resolve, reject) =>
     canvas.toBlob(
       (b) => (b ? resolve(b) : reject(new Error("Frame encode failed."))),
@@ -84,17 +174,24 @@ function VisionPage() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const readyAbortRef = useRef<AbortController | null>(null);
+  const fpsRef = useRef<number[]>([]);
+  const fpsRvfcRef = useRef<number | null>(null);
 
   const [supported] = useState<boolean>(() => browserSupportsDisplayMedia());
   const [sharing, setSharing] = useState<SharingState>(supported ? "idle" : "unsupported");
   const [sourceLabel, setSourceLabel] = useState<string>("");
   const [question, setQuestion] = useState<string>("");
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
+  const [resolution, setResolution] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
+  const [fps, setFps] = useState<number>(0);
+  const [noFrameHint, setNoFrameHint] = useState<string>("");
 
   // Cleanup on unmount: stop any active tracks + abort any in-flight request.
   useEffect(() => {
     return () => {
       abortRef.current?.abort();
+      readyAbortRef.current?.abort();
       const s = streamRef.current;
       if (s) s.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
@@ -102,17 +199,24 @@ function VisionPage() {
   }, []);
 
   const stopSharing = useCallback((reason: SharingState = "idle") => {
+    readyAbortRef.current?.abort();
+    readyAbortRef.current = null;
     const s = streamRef.current;
     if (s) s.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
     setSourceLabel("");
+    setResolution({ w: 0, h: 0 });
+    setFps(0);
+    fpsRef.current = [];
+    setNoFrameHint("");
     setSharing(reason);
   }, []);
 
   const startSharing = useCallback(async () => {
     if (!supported) { setSharing("unsupported"); return; }
     setSharing("requesting");
+    setNoFrameHint("");
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: { frameRate: { ideal: 15, max: 30 } },
@@ -130,14 +234,62 @@ function VisionPage() {
         || (settings.displaySurface ? String(settings.displaySurface) : "selected screen source");
       setSourceLabel(label);
       track.addEventListener("ended", () => {
-        // User clicked "Stop sharing" in the browser chrome, or the source closed.
         stopSharing("ended");
       });
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        try { await videoRef.current.play(); } catch { /* autoplay policy is fine */ }
+      const v = videoRef.current;
+      if (!v) { stopSharing("error"); return; }
+      setSharing("stream-connected");
+      v.srcObject = stream;
+
+      // Wait for metadata so width/height are known.
+      await new Promise<void>((resolve) => {
+        if (v.readyState >= 1 && v.videoWidth > 0) return resolve();
+        const onMeta = () => { v.removeEventListener("loadedmetadata", onMeta); resolve(); };
+        v.addEventListener("loadedmetadata", onMeta);
+      });
+      try { await v.play(); } catch { /* autoplay policy — playsInline handles it */ }
+      setSharing("waiting-frame");
+      setResolution({ w: v.videoWidth, h: v.videoHeight });
+
+      readyAbortRef.current?.abort();
+      const ctl = new AbortController();
+      readyAbortRef.current = ctl;
+      try {
+        await waitForVideoFrame(v, 5000, ctl.signal);
+        setResolution({ w: v.videoWidth, h: v.videoHeight });
+        setSharing("ready");
+
+        // Kick off a lightweight FPS estimator (rVFC preferred, rAF fallback).
+        fpsRef.current = [];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const rvfc = (v as any).requestVideoFrameCallback?.bind(v);
+        const push = (t: number) => {
+          const arr = fpsRef.current;
+          arr.push(t);
+          if (arr.length > 30) arr.shift();
+          if (arr.length % 5 === 0) setFps(estimateFps(arr));
+        };
+        if (rvfc) {
+          const loop = (now: number) => {
+            if (!streamRef.current) return;
+            push(now);
+            fpsRvfcRef.current = rvfc(loop);
+          };
+          fpsRvfcRef.current = rvfc(loop);
+        } else {
+          const loop = () => {
+            if (!streamRef.current) return;
+            push(performance.now());
+            requestAnimationFrame(loop);
+          };
+          requestAnimationFrame(loop);
+        }
+      } catch (err) {
+        if ((err as { name?: string })?.name === "AbortError") return;
+        setNoFrameHint((err as Error)?.message || NO_FRAME_RECOVERY_HINT);
+        setSharing("error");
+        toast.error("Screen sharing started but no frame arrived. " + NO_FRAME_RECOVERY_HINT);
       }
-      setSharing("active");
     } catch (err) {
       const name = (err as { name?: string } | null)?.name ?? "";
       if (name === "NotAllowedError" || name === "SecurityError") {
@@ -157,7 +309,7 @@ function VisionPage() {
   }, []);
 
   const analyzeNow = useCallback(async (userQuestion: string) => {
-    if (sharing !== "active" || !videoRef.current) {
+    if (!isCaptureReady(sharing) || !videoRef.current) {
       toast.error("Start screen sharing first.");
       return;
     }
@@ -170,12 +322,15 @@ function VisionPage() {
       runtimeLine: buildScreenVisionRuntimeLine({ sourceLabel: sourceLabel || undefined }),
       startedAt: Date.now(),
     });
+    setSharing("capturing");
     try {
       frame = await captureCurrentFrame(videoRef.current);
     } catch (err) {
       setAnalysis((a) => a ? { ...a, state: "error", error: err instanceof Error ? err.message : String(err) } : a);
+      setSharing("ready");
       return;
     }
+    setSharing("analyzing");
 
     abortRef.current?.abort();
     const ctrl = new AbortController();
@@ -260,6 +415,8 @@ function VisionPage() {
       const message = err instanceof Error ? err.message : String(err);
       setAnalysis((a) => a ? { ...a, state: "error", error: message } : a);
       toast.error("Vision analysis failed: " + message);
+    } finally {
+      setSharing((s) => (s === "analyzing" || s === "capturing") ? "ready" : s);
     }
   }, [sharing, sourceLabel]);
 
@@ -279,6 +436,9 @@ function VisionPage() {
 
   const statusLabel = useMemo(() => sharingStateLabel(sharing), [sharing]);
   const streaming = analysis?.state === "streaming" || analysis?.state === "capturing";
+  const ready = isCaptureReady(sharing);
+  const active = ready || sharing === "waiting-frame" || sharing === "stream-connected"
+    || sharing === "capturing" || sharing === "analyzing";
 
   return (
     <div className="space-y-6">
@@ -300,7 +460,7 @@ function VisionPage() {
         aria-labelledby="rah-vision-primary"
       >
         <div className="flex flex-wrap items-center gap-3">
-          {sharing !== "active" ? (
+          {!active ? (
             <Button
               size="lg"
               type="button"
@@ -315,11 +475,16 @@ function VisionPage() {
           ) : (
             <>
               <span
-                className="inline-flex items-center gap-2 rounded-full border border-primary bg-primary/15 px-4 py-2 text-sm font-semibold text-primary pulse-gold"
+                className={
+                  "inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold pulse-gold " +
+                  (ready
+                    ? "border-primary bg-primary/15 text-primary"
+                    : "border-yellow-500/60 bg-yellow-500/10 text-yellow-500")
+                }
                 role="status"
                 aria-live="polite"
               >
-                <span className="inline-block h-2.5 w-2.5 rounded-full bg-primary animate-pulse" />
+                <span className={"inline-block h-2.5 w-2.5 rounded-full animate-pulse " + (ready ? "bg-primary" : "bg-yellow-500")} />
                 {statusLabel}
               </span>
               <Button
@@ -331,9 +496,16 @@ function VisionPage() {
               </Button>
             </>
           )}
-          {sharing === "active" && sourceLabel && (
-            <span className="text-xs text-muted-foreground truncate max-w-[40ch]" title={sourceLabel}>
+          {active && sourceLabel && (
+            <span className="text-xs text-muted-foreground truncate max-w-[60ch]" title={sourceLabel}>
               Sharing: <span className="text-foreground">{sourceLabel}</span>
+              {resolution.w > 0 && (
+                <span className="ml-2 text-muted-foreground/80">
+                  · {resolution.w}×{resolution.h}
+                  {ready && fps > 0 ? <> · ~{fps.toFixed(0)} fps</> : null}
+                  · {ready ? "frame ready" : "waiting for first frame"}
+                </span>
+              )}
             </span>
           )}
         </div>
@@ -353,20 +525,29 @@ function VisionPage() {
             Screen sharing ended. Click <strong>Share screen with Raven</strong> to start again.
           </div>
         )}
+        {sharing === "error" && noFrameHint && (
+          <div className="rounded-md border border-yellow-500/60 bg-yellow-500/10 p-3 text-sm">
+            <strong>Preview connected but no frame arrived.</strong> {NO_FRAME_RECOVERY_HINT}
+          </div>
+        )}
 
         <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
-          <div className="rounded-md overflow-hidden border border-border/60 bg-black/60 aspect-video grid place-items-center">
-            {sharing === "active" ? (
-              <video
-                ref={videoRef}
-                autoPlay muted playsInline
-                className="w-full h-full object-contain"
-                aria-label="Live preview of your shared screen"
-              />
-            ) : (
+          <div className="relative rounded-md overflow-hidden border border-border/60 bg-black/60 aspect-video grid place-items-center">
+            <video
+              ref={videoRef}
+              autoPlay muted playsInline
+              className={"w-full h-full object-contain " + (active ? "" : "hidden")}
+              aria-label="Live preview of your shared screen"
+            />
+            {!active && (
               <div className="text-center p-6 text-sm text-muted-foreground">
                 <MonitorPlay className="h-8 w-8 mx-auto mb-2 opacity-60" />
                 Live preview will appear here after you approve the browser prompt.
+              </div>
+            )}
+            {active && !ready && (
+              <div className="absolute text-xs text-yellow-500 bg-black/50 rounded px-2 py-1">
+                Waiting for first frame…
               </div>
             )}
           </div>
@@ -399,7 +580,7 @@ function VisionPage() {
               <Button
                 type="button"
                 onClick={() => void analyzeNow(question)}
-                disabled={sharing !== "active" || streaming}
+                disabled={!ready || streaming}
                 className="min-w-40"
               >
                 <Camera className="h-4 w-4" /> Capture & Analyze
@@ -408,7 +589,7 @@ function VisionPage() {
                 type="button"
                 variant="secondary"
                 onClick={() => void analyzeNow(question)}
-                disabled={sharing !== "active" || streaming || !question.trim()}
+                disabled={!ready || streaming || !question.trim()}
               >
                 <MessageSquare className="h-4 w-4" /> Ask about current screen
               </Button>
@@ -417,7 +598,7 @@ function VisionPage() {
                   <Button
                     type="button" variant="ghost"
                     onClick={() => void analyzeNow(analysis.question)}
-                    disabled={sharing !== "active" || streaming}
+                    disabled={!ready || streaming}
                   >
                     <RotateCcw className="h-4 w-4" /> Retake
                   </Button>
