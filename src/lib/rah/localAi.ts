@@ -13,8 +13,7 @@
 import { buildSystemPrompt, type PromptContext } from "./systemPrompts";
 import type { ExecutionMode } from "./db";
 import type { AiState, HealthResult, StreamCallbacks, StreamRequest } from "./ai";
-import { bridgeSignedFetch, isBridgePaired } from "./bridge";
-import { bridgeStatusSnapshot } from "./bridge";
+import { bridgeSignedFetch, isBridgePaired, bridgeStatusSnapshot } from "./bridge";
 
 export type AiEngine = "cloud" | "lmstudio" | "ollama" | "demo";
 export type LocalAiTransport = "auto" | "bridge" | "direct";
