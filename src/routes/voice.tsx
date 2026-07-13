@@ -277,7 +277,7 @@ function VoicePage() {
 
     // Route through existing pipeline.
     if (payload.status === "awaiting_approval") {
-      const cmd = await rah.addCommand(payload);
+      const cmd = await rah.addCommand(payload as any);
       await rah.requestApproval({
         title: `Voice: "${prompt.slice(0, 60)}"`,
         reason: "Executed from Voice Assistant (spoken command).",
@@ -375,7 +375,7 @@ function VoicePage() {
 
   async function saveSummaryToMemory() {
     if (!summarySuggestion) return;
-    await rah.createProjectMemory(summarySuggestion.draft);
+    await rah.createProjectMemory(summarySuggestion.draft as any);
     toast.success("Voice session summary saved to Project Memory.");
     setSummarySuggestion(null);
   }
