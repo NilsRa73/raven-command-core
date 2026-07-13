@@ -150,7 +150,7 @@ function CommandCenter() {
   );
   const deviceSummary = useMemo(() => {
     const manual = loadManualDevices();
-    const live = bridgeDeviceRecord(bridge, sys);
+    const live = bridgeDeviceRecord({ snapshot: bridge, sys });
     const all = live ? [live, ...manual] : manual;
     const connected = all.filter((d) => d.status === "Connected").length;
     const offline = all.filter((d) => d.status === "Offline").length;
