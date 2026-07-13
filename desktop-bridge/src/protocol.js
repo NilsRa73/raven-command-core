@@ -43,9 +43,13 @@ export const CAPABILITIES = {
 };
 
 // v0.2.0 — authenticated Local AI proxy targets. Only loopback destinations,
-// no arbitrary hosts. Enforced by src/localai.js.
-export const LOCAL_AI_LMSTUDIO_BASE = "http://127.0.0.1:1234/v1";
-export const LOCAL_AI_OLLAMA_BASE = "http://127.0.0.1:11434";
+// no arbitrary hosts. Enforced by src/localai.js at request time. The env
+// overrides exist for tests (spinning fakes on ephemeral loopback ports) —
+// they cannot escape loopback because assertLoopback() re-checks every call.
+export const LOCAL_AI_LMSTUDIO_BASE =
+  process.env.RAH_LMSTUDIO_BASE || "http://127.0.0.1:1234/v1";
+export const LOCAL_AI_OLLAMA_BASE =
+  process.env.RAH_OLLAMA_BASE || "http://127.0.0.1:11434";
 
 export const DISABLED_CAPABILITIES = Object.entries(CAPABILITIES)
   .filter(([, v]) => v.disabled)
