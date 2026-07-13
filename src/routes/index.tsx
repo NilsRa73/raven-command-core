@@ -90,9 +90,6 @@ function CommandCenter() {
             : bridge?.ui === "emergency_stopped" ? "emergency stop"
             : "offline"}
         </span>
-        {rah.emergencyActive && (
-          <span className="rounded-full border border-destructive text-destructive px-2 py-1">Emergency Stop active</span>
-        )}
         {stats.pending > 0 && (
           <Link to="/approvals" className="rounded-full border border-primary/60 text-primary px-2 py-1">
             {stats.pending} pending approval{stats.pending > 1 ? "s" : ""} →
