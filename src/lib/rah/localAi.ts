@@ -49,7 +49,7 @@ export interface LocalDiagnostic {
 }
 
 export const DEFAULT_LOCAL_SETTINGS: LocalAiSettings = {
-  engine: "cloud",
+  engine: "lmstudio",
   lmStudioUrl: "http://127.0.0.1:1234/v1",
   ollamaUrl: "http://127.0.0.1:11434",
   lmStudioModel: "google/gemma-4-e4b",
@@ -58,11 +58,12 @@ export const DEFAULT_LOCAL_SETTINGS: LocalAiSettings = {
   contextLength: 4096,
   systemPromptExtra: "",
   firstRunDismissed: false,
-  transport: "auto",
+  transport: "bridge",
 };
 
 const SETTINGS_KEY = "rah:localAi:v1";
 const DIAG_KEY = "rah:localAi:diag:v1";
+const MIGRATION_KEY = "rah:localAi:migration:bridge-default:v1";
 
 type Listener = (s: LocalAiSettings) => void;
 const listeners = new Set<Listener>();
@@ -107,6 +108,44 @@ export function getLastDiagnostic(): LocalDiagnostic | null {
 
 export function isLocalEngine(e: AiEngine): boolean {
   return e === "lmstudio" || e === "ollama";
+}
+
+/**
+ * One-time migration: existing browsers still on the old cloud/default
+ * settings are auto-switched to "LM Studio via Bridge" the first time the
+ * app loads with a paired+online bridge. Explicit user choices of Ollama,
+ * Demo, Direct transport, or a custom LM Studio model are preserved.
+ */
+export async function applyBridgeAutoMigration(): Promise<LocalAiSettings> {
+  const cur = getLocalAiSettings();
+  if (typeof window === "undefined") return cur;
+  try {
+    if (window.localStorage.getItem(MIGRATION_KEY) === "1") return cur;
+  } catch { /* ignore */ }
+
+  // Preserve explicit user choices.
+  const isDefaultLmModel =
+    !cur.lmStudioModel || cur.lmStudioModel === DEFAULT_LOCAL_SETTINGS.lmStudioModel
+    || cur.lmStudioModel === "google/gemma-4-e4b";
+  const canMigrate =
+    (cur.engine === "cloud" || (cur.engine === "lmstudio" && cur.transport !== "direct" && isDefaultLmModel))
+    && cur.transport !== "direct"
+    && cur.engine !== "ollama"
+    && cur.engine !== "demo";
+  if (!canMigrate) {
+    try { window.localStorage.setItem(MIGRATION_KEY, "1"); } catch { /* ignore */ }
+    return cur;
+  }
+
+  const snap = await bridgeStatusSnapshot();
+  if (snap.ui !== "paired_online") return cur; // try again next load
+  const next = saveLocalAiSettings({
+    engine: "lmstudio",
+    transport: "bridge",
+    lmStudioModel: cur.lmStudioModel || "google/gemma-4-e4b",
+  });
+  try { window.localStorage.setItem(MIGRATION_KEY, "1"); } catch { /* ignore */ }
+  return next;
 }
 
 /**
