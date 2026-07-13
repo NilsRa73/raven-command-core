@@ -12,6 +12,7 @@ import {
   type BridgeStatusSnapshot,
 } from "@/lib/rah/bridge";
 import type { BridgeSystemStatus, BridgeCapabilities } from "@/lib/rah/bridge-protocol";
+import { LocalAiPanel } from "@/components/rah/LocalAiPanel";
 
 export const Route = createFileRoute("/connections")({
   head: () => ({ meta: [
@@ -172,6 +173,8 @@ function Connections() {
           </div>
         )}
       </section>
+
+      <LocalAiPanel />
 
       {/* Vision */}
       <section className="glass-panel gold-border p-5 space-y-3">

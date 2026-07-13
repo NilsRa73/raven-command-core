@@ -13,6 +13,7 @@ import { Link } from "@tanstack/react-router";
 import { streamChat } from "@/lib/rah/ai";
 import { ResponsePanel, type LiveResponse } from "./ResponsePanel";
 import { AiStatusBadge, useAiHealth } from "./AiStatusBadge";
+import { LocalAiBadge } from "./LocalAiPanel";
 import {
   prepareImage, releasePrepared, validateBatch, metaFromPrepared,
   drainPendingImages, preparedFromPending, ACCEPTED_MIME,
@@ -376,6 +377,7 @@ export function CommandBar() {
           </SelectContent>
         </Select>
         <div className="ml-auto flex items-center gap-2">
+          <LocalAiBadge />
           <AiStatusBadge health={health} loading={healthLoading} />
           {!aiLive && !healthLoading && (
             <Link to="/connections" className="text-[11px] text-primary hover:underline">Fix →</Link>
