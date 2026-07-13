@@ -1,12 +1,5 @@
-export interface Snap {
-  ui: string;
-  paired?: boolean;
-  version?: string;
-  latencyMs?: number;
-  message?: string;
-}
-export interface SharedState {
-  snapshot: Snap | null;
+export interface SharedState<S = unknown> {
+  snapshot: S | null;
   loading: boolean;
   refreshing: boolean;
   lastUpdated: number | null;
@@ -14,15 +7,15 @@ export interface SharedState {
   error: string | null;
   consecutiveFailures: number;
 }
-export function initialSharedState(): SharedState;
-export function reduceRefreshStart(state: SharedState): SharedState;
-export function reduceRefreshResult(
-  state: SharedState,
-  result: { ok: true; snapshot: Snap } | { ok: false; error?: string; snapshot?: Snap | null },
+export function initialSharedState<S = unknown>(): SharedState<S>;
+export function reduceRefreshStart<S>(state: SharedState<S>): SharedState<S>;
+export function reduceRefreshResult<S>(
+  state: SharedState<S>,
+  result: { ok: true; snapshot: S } | { ok: false; error?: string; snapshot?: S | null },
   now?: number,
-): SharedState;
-export function reduceNoteExternalSnapshot(
-  state: SharedState,
-  snap: Snap,
+): SharedState<S>;
+export function reduceNoteExternalSnapshot<S>(
+  state: SharedState<S>,
+  snap: S,
   now?: number,
-): SharedState;
+): SharedState<S>;
