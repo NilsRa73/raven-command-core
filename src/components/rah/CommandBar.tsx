@@ -19,6 +19,7 @@ import {
   engineLabel, isLocalEngine,
   type LocalAiSettings,
 } from "@/lib/rah/localAi";
+import { bridgeStatusSnapshot, type BridgeStatusSnapshot } from "@/lib/rah/bridge";
 import {
   prepareImage, releasePrepared, validateBatch, metaFromPrepared,
   drainPendingImages, preparedFromPending, ACCEPTED_MIME,
@@ -48,6 +49,22 @@ export function CommandBar() {
   const [localAi, setLocalAi] = useState<LocalAiSettings>(() => getLocalAiSettings());
   useEffect(() => subscribeLocalAi(setLocalAi), []);
   const streaming = response?.state === "thinking" || response?.state === "streaming";
+  const [bridgeSnap, setBridgeSnap] = useState<BridgeStatusSnapshot | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const tick = async () => {
+      const s = await bridgeStatusSnapshot();
+      if (!cancelled) setBridgeSnap(s);
+    };
+    void tick();
+    const id = window.setInterval(() => void tick(), 5000);
+    return () => { cancelled = true; window.clearInterval(id); };
+  }, []);
+  const localOffline =
+    isLocalEngine(localAi.engine) && localAi.transport !== "direct" &&
+    bridgeSnap !== null && bridgeSnap.ui !== "paired_online";
+  const localServerOffline =
+    isLocalEngine(localAi.engine) && health?.ok === false && bridgeSnap?.ui === "paired_online";
 
   useEffect(() => rah.registerCommandBarFocus(() => ref.current?.focus()), [rah]);
   useEffect(() => {
