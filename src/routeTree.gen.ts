@@ -10,7 +10,6 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as VoiceRouteImport } from './routes/voice'
-import { Route as VisionRouteImport } from './routes/vision'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ProjectsRouteImport } from './routes/projects'
@@ -32,11 +31,6 @@ import { Route as ApiRahChatRouteImport } from './routes/api/rah-chat'
 const VoiceRoute = VoiceRouteImport.update({
   id: '/voice',
   path: '/voice',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const VisionRoute = VisionRouteImport.update({
-  id: '/vision',
-  path: '/vision',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
@@ -139,7 +133,6 @@ export interface FileRoutesByFullPath {
   '/projects': typeof ProjectsRouteWithChildren
   '/settings': typeof SettingsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
-  '/vision': typeof VisionRoute
   '/voice': typeof VoiceRoute
   '/api/rah-chat': typeof ApiRahChatRoute
   '/api/rah-health': typeof ApiRahHealthRoute
@@ -160,7 +153,6 @@ export interface FileRoutesByTo {
   '/projects': typeof ProjectsRouteWithChildren
   '/settings': typeof SettingsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
-  '/vision': typeof VisionRoute
   '/voice': typeof VoiceRoute
   '/api/rah-chat': typeof ApiRahChatRoute
   '/api/rah-health': typeof ApiRahHealthRoute
@@ -182,7 +174,6 @@ export interface FileRoutesById {
   '/projects': typeof ProjectsRouteWithChildren
   '/settings': typeof SettingsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
-  '/vision': typeof VisionRoute
   '/voice': typeof VoiceRoute
   '/api/rah-chat': typeof ApiRahChatRoute
   '/api/rah-health': typeof ApiRahHealthRoute
@@ -205,7 +196,6 @@ export interface FileRouteTypes {
     | '/projects'
     | '/settings'
     | '/sitemap.xml'
-    | '/vision'
     | '/voice'
     | '/api/rah-chat'
     | '/api/rah-health'
@@ -226,7 +216,6 @@ export interface FileRouteTypes {
     | '/projects'
     | '/settings'
     | '/sitemap.xml'
-    | '/vision'
     | '/voice'
     | '/api/rah-chat'
     | '/api/rah-health'
@@ -247,7 +236,6 @@ export interface FileRouteTypes {
     | '/projects'
     | '/settings'
     | '/sitemap.xml'
-    | '/vision'
     | '/voice'
     | '/api/rah-chat'
     | '/api/rah-health'
@@ -269,7 +257,6 @@ export interface RootRouteChildren {
   ProjectsRoute: typeof ProjectsRouteWithChildren
   SettingsRoute: typeof SettingsRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
-  VisionRoute: typeof VisionRoute
   VoiceRoute: typeof VoiceRoute
   ApiRahChatRoute: typeof ApiRahChatRoute
   ApiRahHealthRoute: typeof ApiRahHealthRoute
@@ -283,13 +270,6 @@ declare module '@tanstack/react-router' {
       path: '/voice'
       fullPath: '/voice'
       preLoaderRoute: typeof VoiceRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/vision': {
-      id: '/vision'
-      path: '/vision'
-      fullPath: '/vision'
-      preLoaderRoute: typeof VisionRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sitemap.xml': {
@@ -440,7 +420,6 @@ const rootRouteChildren: RootRouteChildren = {
   ProjectsRoute: ProjectsRouteWithChildren,
   SettingsRoute: SettingsRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
-  VisionRoute: VisionRoute,
   VoiceRoute: VoiceRoute,
   ApiRahChatRoute: ApiRahChatRoute,
   ApiRahHealthRoute: ApiRahHealthRoute,
