@@ -12,6 +12,7 @@ import { systemStatus } from "./system.js";
 import { createJob, getJob, approveJob, updateJob, publicJob } from "./jobs.js";
 import { PathContainmentError, assertContained } from "./paths.js";
 import { UnsafeUrlError, assertSafeUrl } from "./urlCheck.js";
+import { matchLocalAiRoute, handleLocalAiProxy } from "./localai.js";
 
 // Strict origin allowlist (no env-based expansion — the bridge only trusts
 // these fixed browser origins):
@@ -228,6 +229,14 @@ async function handleRoute(req, res, url, rawBody, cfg, origin) {
   // Blocked when emergency stopped, except stop/resume/status/health above.
   if (emergency.isStopped()) {
     return json(res, 423, { error: "emergency_stopped" }, corsHeaders(origin));
+  }
+
+  // Local AI proxy (LM Studio / Ollama). Signed + rate-limited above.
+  // Response is streamed straight back to the caller.
+  const localRoute = matchLocalAiRoute(method, p);
+  if (localRoute) {
+    await handleLocalAiProxy(localRoute, req, res, rawBody, corsHeaders(origin));
+    return;
   }
 
   let body = {}; try { body = rawBody ? JSON.parse(rawBody) : {}; } catch { return json(res, 400, { error: "bad_json" }, corsHeaders(origin)); }

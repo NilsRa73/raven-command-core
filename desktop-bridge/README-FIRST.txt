@@ -1,4 +1,4 @@
-RAH Desktop Bridge v0.1.0
+RAH Desktop Bridge v0.2.0
 =========================
 
 What this is
@@ -31,6 +31,19 @@ Config location
 
 That folder holds your device token and an audit log of every request.
 Never share the config folder or its contents.
+
+Local AI proxy (v0.2.0)
+-----------------------
+The bridge can proxy authenticated calls from Raven Command to LM Studio
+and Ollama running on THIS PC, so the browser does not need to talk to
+those local ports directly (no CORS setup required).
+
+- LM Studio: http://127.0.0.1:1234/v1     (start its Local Server)
+- Ollama:    http://127.0.0.1:11434        (installed and running)
+
+Only these two loopback destinations are permitted. The bridge is NOT an
+open proxy — arbitrary hosts are rejected. Prompt contents are never
+logged; audit records provider, endpoint, status, latency, and model id.
 
 Security in this release
 ------------------------

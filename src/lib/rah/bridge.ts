@@ -148,6 +148,36 @@ export async function bridgeDisconnect() {
   }
 }
 
+/**
+ * Signed raw fetch to the bridge for streaming responses (Local AI proxy).
+ * Returns a native Response so callers can stream body chunks directly.
+ *
+ * `subpath` is appended after `/v1` (e.g. "/localai/lmstudio/models").
+ */
+export async function bridgeSignedFetch(
+  method: "GET" | "POST",
+  subpath: string,
+  body?: unknown,
+  init?: { signal?: AbortSignal; port?: number },
+): Promise<Response> {
+  const creds = await loadCredentials();
+  if (!creds) throw new Error("Bridge not paired");
+  const raw = body === undefined ? "" : JSON.stringify(body);
+  const path = `/${PROTOCOL_VERSION}${subpath}`;
+  const headers = await signHeaders(method, path, raw, creds.deviceToken, creds.hmacSecret);
+  return await fetch(`${baseUrl(init?.port ?? DEFAULT_BRIDGE_PORT)}${path}`, {
+    method,
+    headers,
+    body: method === "GET" ? undefined : raw,
+    signal: init?.signal,
+  });
+}
+
+/** True if bridge credentials are stored (paired at some point). */
+export async function isBridgePaired(): Promise<boolean> {
+  try { return !!(await loadCredentials()); } catch { return false; }
+}
+
 export type BridgeUiState =
   | "offline" | "pairing_required" | "paired_online" | "emergency_stopped"
   | "version_mismatch" | "error";

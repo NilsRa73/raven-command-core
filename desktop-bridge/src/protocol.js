@@ -1,7 +1,7 @@
 // Shared protocol constants between the RAH Desktop Bridge and Raven Command.
 // Any change here must be reflected in src/lib/rah/bridge-protocol.ts on the web side.
 
-export const BRIDGE_VERSION = "0.1.1";
+export const BRIDGE_VERSION = "0.2.0";
 export const PROTOCOL_VERSION = "v1";
 export const DEFAULT_PORT = 47824;
 export const MAX_REQUEST_TIMESTAMP_SKEW_MS = 60_000;
@@ -41,6 +41,15 @@ export const CAPABILITIES = {
   "launch.program":     { risk: "high",   requiresApproval: true,  category: "launch", disabled: true },
   "screenshot.capture": { risk: "medium", requiresApproval: true,  category: "screen", disabled: true },
 };
+
+// v0.2.0 — authenticated Local AI proxy targets. Only loopback destinations,
+// no arbitrary hosts. Enforced by src/localai.js at request time. The env
+// overrides exist for tests (spinning fakes on ephemeral loopback ports) —
+// they cannot escape loopback because assertLoopback() re-checks every call.
+export const LOCAL_AI_LMSTUDIO_BASE =
+  process.env.RAH_LMSTUDIO_BASE || "http://127.0.0.1:1234/v1";
+export const LOCAL_AI_OLLAMA_BASE =
+  process.env.RAH_OLLAMA_BASE || "http://127.0.0.1:11434";
 
 export const DISABLED_CAPABILITIES = Object.entries(CAPABILITIES)
   .filter(([, v]) => v.disabled)
