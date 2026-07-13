@@ -128,10 +128,9 @@ export async function applyBridgeAutoMigration(): Promise<LocalAiSettings> {
     !cur.lmStudioModel || cur.lmStudioModel === DEFAULT_LOCAL_SETTINGS.lmStudioModel
     || cur.lmStudioModel === "google/gemma-4-e4b";
   const canMigrate =
-    (cur.engine === "cloud" || (cur.engine === "lmstudio" && cur.transport !== "direct" && isDefaultLmModel))
-    && cur.transport !== "direct"
-    && cur.engine !== "ollama"
-    && cur.engine !== "demo";
+    cur.transport !== "direct" &&
+    (cur.engine === "cloud" ||
+      (cur.engine === "lmstudio" && isDefaultLmModel));
   if (!canMigrate) {
     try { window.localStorage.setItem(MIGRATION_KEY, "1"); } catch { /* ignore */ }
     return cur;
