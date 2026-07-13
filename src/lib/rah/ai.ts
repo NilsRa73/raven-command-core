@@ -1,5 +1,10 @@
 import type { ExecutionMode } from "./db";
 import type { PromptContext } from "./systemPrompts";
+import {
+  getLocalAiSettings, checkLocalHealth,
+  streamLmStudio, streamOllama,
+} from "./localAi";
+import { localDemoResponse } from "./demo";
 
 export type AiState =
   | "unknown"
@@ -22,6 +27,10 @@ export interface HealthResult {
 }
 
 export async function checkHealth(signal?: AbortSignal): Promise<HealthResult> {
+  const s = getLocalAiSettings();
+  if (s.engine !== "cloud") {
+    return checkLocalHealth(s, signal);
+  }
   try {
     const res = await fetch("/api/rah-health", { signal });
     return (await res.json()) as HealthResult;
@@ -54,6 +63,16 @@ export interface StreamRequest {
 }
 
 export async function streamChat(req: StreamRequest, cb: StreamCallbacks): Promise<string> {
+  const settings = getLocalAiSettings();
+  if (settings.engine === "lmstudio") return streamLmStudio(req, settings, cb);
+  if (settings.engine === "ollama") return streamOllama(req, settings, cb);
+  if (settings.engine === "demo") {
+    const text = localDemoResponse(req.prompt, req.agents ?? ["brain"], req.mode);
+    cb.onStart?.({ provider: "Local Demo Engine", model: "demo" });
+    cb.onDelta?.(text, text);
+    cb.onDone?.({ text, model: "demo", provider: "Local Demo Engine", latencyMs: 0, usage: null });
+    return text;
+  }
   let full = "";
   const res = await fetch("/api/rah-chat", {
     method: "POST",
