@@ -20,6 +20,7 @@ import {
   loadFocusMode, saveFocusMode,
 } from "@/lib/rah/missionControl";
 import { memoryDiagnostics } from "@/lib/rah/projectMemory";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/")({
   component: CommandCenter,
