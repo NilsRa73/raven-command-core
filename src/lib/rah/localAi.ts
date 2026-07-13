@@ -13,8 +13,11 @@
 import { buildSystemPrompt, type PromptContext } from "./systemPrompts";
 import type { ExecutionMode } from "./db";
 import type { AiState, HealthResult, StreamCallbacks, StreamRequest } from "./ai";
+import { bridgeSignedFetch, isBridgePaired } from "./bridge";
 
 export type AiEngine = "cloud" | "lmstudio" | "ollama" | "demo";
+export type LocalAiTransport = "auto" | "bridge" | "direct";
+export type LocalAiTransportUsed = "bridge" | "direct";
 
 export interface LocalAiSettings {
   engine: AiEngine;
@@ -26,6 +29,13 @@ export interface LocalAiSettings {
   contextLength: number;
   systemPromptExtra: string;
   firstRunDismissed: boolean;
+  /**
+   * "auto" (default) uses the RAH Desktop Bridge when paired, otherwise
+   * falls back to a direct browser fetch (dev only — requires CORS on the
+   * local server). "bridge" forces bridge-only. "direct" is a developer
+   * escape hatch for local development.
+   */
+  transport: LocalAiTransport;
 }
 
 export interface LocalDiagnostic {
@@ -48,6 +58,7 @@ export const DEFAULT_LOCAL_SETTINGS: LocalAiSettings = {
   contextLength: 4096,
   systemPromptExtra: "",
   firstRunDismissed: false,
+  transport: "auto",
 };
 
 const SETTINGS_KEY = "rah:localAi:v1";
@@ -98,6 +109,24 @@ export function isLocalEngine(e: AiEngine): boolean {
   return e === "lmstudio" || e === "ollama";
 }
 
+/**
+ * Resolve which transport to use for a Local AI call.
+ * - "bridge": force bridge (fails if not paired).
+ * - "direct": force direct browser fetch (dev only).
+ * - "auto":   bridge when paired, otherwise direct.
+ */
+export async function resolveTransport(settings: LocalAiSettings): Promise<LocalAiTransportUsed> {
+  if (settings.transport === "direct") return "direct";
+  if (settings.transport === "bridge") return "bridge";
+  return (await isBridgePaired()) ? "bridge" : "direct";
+}
+
+/** Bridge subpath for a given engine + operation. */
+function bridgeSubpath(engine: "lmstudio" | "ollama", op: "discover" | "chat"): string {
+  if (engine === "lmstudio") return op === "discover" ? "/localai/lmstudio/models" : "/localai/lmstudio/chat";
+  return op === "discover" ? "/localai/ollama/tags" : "/localai/ollama/chat";
+}
+
 export function engineLabel(e: AiEngine): string {
   switch (e) {
     case "cloud": return "Lovable AI Gateway";
@@ -119,8 +148,9 @@ function classifyFetchError(err: unknown): { state: AiState; message: string; er
       state: "network_error",
       errorType: "TypeError",
       message:
-        "Browser blocked the request. This is usually CORS or the local server not running. " +
-        "Check that LM Studio's Local Server is started (or Ollama is running) and that CORS is enabled for this origin.",
+        "Browser blocked the request. In production, install the RAH Desktop Bridge and pair it in Connections — " +
+        "the browser will then reach LM Studio / Ollama through the authenticated bridge on 127.0.0.1:47824. " +
+        "For local development only, you can enable direct mode and CORS on the local server.",
     };
   }
   return { state: "network_error", errorType: err instanceof Error ? err.name : "Error", message: msg };
@@ -130,34 +160,44 @@ function classifyFetchError(err: unknown): { state: AiState; message: string; er
 
 export interface DiscoveredModel { id: string; label?: string }
 
-export async function listLmStudioModels(baseUrl: string, signal?: AbortSignal): Promise<DiscoveredModel[]> {
-  const url = `${normalizeUrl(baseUrl)}/models`;
+export async function listLmStudioModels(settings: LocalAiSettings, signal?: AbortSignal): Promise<DiscoveredModel[]> {
+  const transport = await resolveTransport(settings);
   const started = Date.now();
+  const endpoint = transport === "bridge"
+    ? "bridge:/v1/localai/lmstudio/models"
+    : `${normalizeUrl(settings.lmStudioUrl)}/models`;
   try {
-    const res = await fetch(url, { signal });
-    recordDiagnostic({ engine: "lmstudio", endpoint: url, op: "GET /models", status: res.status, errorType: null, ok: res.ok, timestamp: started });
+    const res = transport === "bridge"
+      ? await bridgeSignedFetch("GET", bridgeSubpath("lmstudio", "discover"), undefined, { signal })
+      : await fetch(endpoint, { signal });
+    recordDiagnostic({ engine: "lmstudio", endpoint, op: `GET /models via ${transport}`, status: res.status, errorType: null, ok: res.ok, timestamp: started });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const j = (await res.json()) as { data?: { id: string }[] };
     return (j.data ?? []).map((m) => ({ id: m.id }));
   } catch (err) {
     const c = classifyFetchError(err);
-    recordDiagnostic({ engine: "lmstudio", endpoint: url, op: "GET /models", status: null, errorType: c.errorType, ok: false, timestamp: started });
+    recordDiagnostic({ engine: "lmstudio", endpoint, op: `GET /models via ${transport}`, status: null, errorType: c.errorType, ok: false, timestamp: started });
     throw err;
   }
 }
 
-export async function listOllamaModels(baseUrl: string, signal?: AbortSignal): Promise<DiscoveredModel[]> {
-  const url = `${normalizeUrl(baseUrl)}/api/tags`;
+export async function listOllamaModels(settings: LocalAiSettings, signal?: AbortSignal): Promise<DiscoveredModel[]> {
+  const transport = await resolveTransport(settings);
   const started = Date.now();
+  const endpoint = transport === "bridge"
+    ? "bridge:/v1/localai/ollama/tags"
+    : `${normalizeUrl(settings.ollamaUrl)}/api/tags`;
   try {
-    const res = await fetch(url, { signal });
-    recordDiagnostic({ engine: "ollama", endpoint: url, op: "GET /api/tags", status: res.status, errorType: null, ok: res.ok, timestamp: started });
+    const res = transport === "bridge"
+      ? await bridgeSignedFetch("GET", bridgeSubpath("ollama", "discover"), undefined, { signal })
+      : await fetch(endpoint, { signal });
+    recordDiagnostic({ engine: "ollama", endpoint, op: `GET /api/tags via ${transport}`, status: res.status, errorType: null, ok: res.ok, timestamp: started });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const j = (await res.json()) as { models?: { name: string }[] };
     return (j.models ?? []).map((m) => ({ id: m.name }));
   } catch (err) {
     const c = classifyFetchError(err);
-    recordDiagnostic({ engine: "ollama", endpoint: url, op: "GET /api/tags", status: null, errorType: c.errorType, ok: false, timestamp: started });
+    recordDiagnostic({ engine: "ollama", endpoint, op: `GET /api/tags via ${transport}`, status: null, errorType: c.errorType, ok: false, timestamp: started });
     throw err;
   }
 }
@@ -169,19 +209,21 @@ export async function checkLocalHealth(settings: LocalAiSettings, signal?: Abort
     return { ok: true, state: "connected", provider: engineLabel("demo"), model: "demo", latencyMs: 0, sample: "" };
   }
   const started = Date.now();
+  const transport = await resolveTransport(settings);
+  const transportSuffix = transport === "bridge" ? " (via Bridge)" : " (direct)";
   try {
     if (settings.engine === "lmstudio") {
-      const models = await listLmStudioModels(settings.lmStudioUrl, signal);
+      const models = await listLmStudioModels(settings, signal);
       return {
-        ok: true, state: "connected", provider: engineLabel("lmstudio"),
+        ok: true, state: "connected", provider: engineLabel("lmstudio") + transportSuffix,
         model: settings.lmStudioModel || models[0]?.id || "unknown",
         latencyMs: Date.now() - started,
         sample: models.length ? `${models.length} model(s) loaded` : "no models loaded",
       };
     }
-    const models = await listOllamaModels(settings.ollamaUrl, signal);
+    const models = await listOllamaModels(settings, signal);
     return {
-      ok: true, state: "connected", provider: engineLabel("ollama"),
+      ok: true, state: "connected", provider: engineLabel("ollama") + transportSuffix,
       model: settings.ollamaModel || models[0]?.id || "unknown",
       latencyMs: Date.now() - started,
       sample: models.length ? `${models.length} model(s) installed` : "no models installed",
@@ -190,7 +232,7 @@ export async function checkLocalHealth(settings: LocalAiSettings, signal?: Abort
     const c = classifyFetchError(err);
     return {
       ok: false, state: c.state,
-      provider: engineLabel(settings.engine),
+      provider: engineLabel(settings.engine) + transportSuffix,
       message: c.message,
       latencyMs: Date.now() - started,
     };
@@ -212,25 +254,31 @@ function buildMessages(req: StreamRequest, settings: LocalAiSettings): { role: s
 }
 
 export async function streamLmStudio(req: StreamRequest, settings: LocalAiSettings, cb: StreamCallbacks): Promise<string> {
-  const url = `${normalizeUrl(settings.lmStudioUrl)}/chat/completions`;
+  const transport = await resolveTransport(settings);
+  const url = transport === "bridge"
+    ? "bridge:/v1/localai/lmstudio/chat"
+    : `${normalizeUrl(settings.lmStudioUrl)}/chat/completions`;
   const model = settings.lmStudioModel || "google/gemma-4-e4b";
   const started = Date.now();
-  cb.onStart?.({ provider: engineLabel("lmstudio"), model });
+  cb.onStart?.({ provider: engineLabel("lmstudio") + (transport === "bridge" ? " (via Bridge)" : " (direct)"), model });
   if (req.images?.length) cb.onVision?.({ imageCount: 0, attachments: [] });
   let res: Response;
+  const payload = {
+    model,
+    stream: true,
+    temperature: settings.temperature,
+    max_tokens: settings.contextLength,
+    messages: buildMessages(req, settings),
+  };
   try {
-    res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      signal: req.signal,
-      body: JSON.stringify({
-        model,
-        stream: true,
-        temperature: settings.temperature,
-        max_tokens: settings.contextLength,
-        messages: buildMessages(req, settings),
-      }),
-    });
+    res = transport === "bridge"
+      ? await bridgeSignedFetch("POST", bridgeSubpath("lmstudio", "chat"), payload, { signal: req.signal })
+      : await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: req.signal,
+          body: JSON.stringify(payload),
+        });
   } catch (err) {
     const c = classifyFetchError(err);
     recordDiagnostic({ engine: "lmstudio", endpoint: url, op: "POST /chat/completions", status: null, errorType: c.errorType, ok: false, timestamp: started });
@@ -269,24 +317,30 @@ export async function streamLmStudio(req: StreamRequest, settings: LocalAiSettin
 }
 
 export async function streamOllama(req: StreamRequest, settings: LocalAiSettings, cb: StreamCallbacks): Promise<string> {
-  const url = `${normalizeUrl(settings.ollamaUrl)}/api/chat`;
+  const transport = await resolveTransport(settings);
+  const url = transport === "bridge"
+    ? "bridge:/v1/localai/ollama/chat"
+    : `${normalizeUrl(settings.ollamaUrl)}/api/chat`;
   const model = settings.ollamaModel || "llama3.1";
   const started = Date.now();
-  cb.onStart?.({ provider: engineLabel("ollama"), model });
+  cb.onStart?.({ provider: engineLabel("ollama") + (transport === "bridge" ? " (via Bridge)" : " (direct)"), model });
   if (req.images?.length) cb.onVision?.({ imageCount: 0, attachments: [] });
   let res: Response;
+  const payload = {
+    model,
+    stream: true,
+    options: { temperature: settings.temperature, num_ctx: settings.contextLength },
+    messages: buildMessages(req, settings),
+  };
   try {
-    res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      signal: req.signal,
-      body: JSON.stringify({
-        model,
-        stream: true,
-        options: { temperature: settings.temperature, num_ctx: settings.contextLength },
-        messages: buildMessages(req, settings),
-      }),
-    });
+    res = transport === "bridge"
+      ? await bridgeSignedFetch("POST", bridgeSubpath("ollama", "chat"), payload, { signal: req.signal })
+      : await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: req.signal,
+          body: JSON.stringify(payload),
+        });
   } catch (err) {
     const c = classifyFetchError(err);
     recordDiagnostic({ engine: "ollama", endpoint: url, op: "POST /api/chat", status: null, errorType: c.errorType, ok: false, timestamp: started });
