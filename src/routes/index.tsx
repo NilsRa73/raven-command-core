@@ -95,6 +95,14 @@ function CommandCenter() {
             {stats.pending} pending approval{stats.pending > 1 ? "s" : ""} →
           </Link>
         )}
+        <Link
+          to="/vision"
+          className="ml-auto inline-flex items-center gap-1 rounded-full border border-primary/60 bg-primary/10 px-3 py-1 text-primary hover:bg-primary/20"
+          aria-label="Open Raven Screen Vision"
+          title="Share your screen and let Raven analyze what's on it"
+        >
+          👁 Analyze screen →
+        </Link>
       </div>
 
       <CommandBar />
