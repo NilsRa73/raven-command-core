@@ -22,6 +22,13 @@ export interface LiveResponse {
   favorite?: boolean;
   visionUsed?: boolean;
   attachmentCount?: number;
+  /**
+   * App-supplied runtime line rendered verbatim above the response body.
+   * Never sourced from model output — this line is proof-of-runtime for
+   * the user and mirrors the RAH RUNTIME IDENTITY block we inject into
+   * the system prompt for local engines.
+   */
+  runtimeLine?: string;
 }
 
 function speak(text: string) {
@@ -84,6 +91,15 @@ export function ResponsePanel({
       </header>
 
       <div className="rounded-md border border-border/60 bg-background/40 p-3 min-h-[80px] max-h-[60vh] overflow-auto">
+        {response.runtimeLine && (
+          <div
+            className="mb-2 rounded border border-primary/40 bg-primary/5 px-2 py-1 text-[11px] text-primary"
+            title="Runtime metadata from Raven Command app state (not from the model)."
+            data-testid="rah-runtime-line"
+          >
+            {response.runtimeLine}
+          </div>
+        )}
         {response.state === "error" ? (
           <div className="text-sm text-destructive whitespace-pre-wrap">
             <strong>{response.errorState ?? "error"}:</strong> {response.error ?? "Unknown error."}
