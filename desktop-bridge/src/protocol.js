@@ -1,7 +1,12 @@
 // Shared protocol constants between the RAH Desktop Bridge and Raven Command.
 // Any change here must be reflected in src/lib/rah/bridge-protocol.ts on the web side.
 
-export const BRIDGE_VERSION = "0.2.0";
+export const BRIDGE_VERSION = "0.2.1";
+
+// Feature flags advertised on GET /v1/health so the web client can gate
+// behaviour on the presence of a capability instead of a version string
+// alone. Never remove a flag once shipped; add new ones for new features.
+export const BRIDGE_FEATURES = ["localAiProxy"];
 export const PROTOCOL_VERSION = "v1";
 export const DEFAULT_PORT = 47824;
 export const MAX_REQUEST_TIMESTAMP_SKEW_MS = 60_000;
