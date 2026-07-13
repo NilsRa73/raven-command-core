@@ -14,6 +14,12 @@ import { streamChat } from "@/lib/rah/ai";
 import { ResponsePanel, type LiveResponse } from "./ResponsePanel";
 import { AiStatusBadge, useAiHealth } from "./AiStatusBadge";
 import { LocalAiBadge } from "./LocalAiPanel";
+import { OrchestrationPanel } from "./OrchestrationPanel";
+import { useOrchestration } from "@/lib/rah/orchestrationRuntime";
+import {
+  TEAM_MODE_LABEL, buildTeamSummarySuggestion,
+  type TeamMode,
+} from "@/lib/rah/orchestrator";
 import {
   getLocalAiSettings, saveLocalAiSettings, subscribeLocalAi,
   engineLabel, isLocalEngine,
@@ -33,6 +39,7 @@ export function CommandBar() {
   const [selectedAgents, setSelectedAgents] = useState<string[]>(["brain"]);
   const [mode, setMode] = useState(rah.prefs.defaultMode);
   const [approvalMode, setApprovalMode] = useState(rah.prefs.approvalMode);
+  const [teamMode, setTeamMode] = useState<TeamMode>("fast");
   const [listening, setListening] = useState(false);
   const [interim, setInterim] = useState("");
   const [voiceSupported, setVoiceSupported] = useState(false);
@@ -51,6 +58,7 @@ export function CommandBar() {
   useEffect(() => subscribeLocalAi(setLocalAi), []);
   const streaming = response?.state === "thinking" || response?.state === "streaming";
   const { snapshot: bridgeSnap, refresh: refreshBridge, refreshing: bridgeRefreshing } = useBridgeStatus();
+  const orch = useOrchestration();
   // Also kick a refresh whenever the CommandBar mounts (e.g. user returns to
   // Command Center from another route) so the route line and offline banner
   // reflect current truth immediately, not the 5s-old poll tick.
@@ -206,6 +214,15 @@ export function CommandBar() {
     const prompt = text.trim();
     if (!prompt) { toast.error("Type or dictate a command first."); return; }
     stopListening();
+    // Team run: fan out to specialists, then Master Brain synthesis.
+    // Team runs bypass the queued-approval flow — the run itself is visible
+    // in the live Team panel with a Cancel button, and any side-effect tool
+    // calls still surface their own approval card at execution time.
+    if (teamMode !== "fast") {
+      await runTeam(prompt);
+      setText(""); setInterim("");
+      return;
+    }
     const needsApproval = approvalMode !== "advisory";
 
     if (needsApproval) {
@@ -250,6 +267,68 @@ export function CommandBar() {
 
     await runInference(prompt);
     setText(""); setInterim("");
+  }
+
+  async function runTeam(prompt: string) {
+    const memory = rah.prefs.memoryEnabled
+      ? rah.memory.filter((m) => !m.disabled && (!m.projectId || m.projectId === rah.activeProject?.id)).map((m) => m.text)
+      : [];
+    const projectMemoryBlock = rah.prefs.memoryEnabled ? rah.buildProjectMemoryContext().memoryBlock : "";
+    const bridgeOnline = bridgeSnap?.ui === "paired_online";
+    setResponse(null);
+    await orch.start({
+      userPrompt: prompt,
+      teamMode,
+      manualSelection: teamMode === "manual" ? selectedAgents.filter((a) => a !== "brain") : undefined,
+      context: {
+        projectName: rah.activeProject?.name,
+        projectGoals: rah.activeProject?.goals,
+        memory, projectMemoryBlock,
+      },
+      bridgeOnline,
+      onFinal: async (final) => {
+        // Persist ONE final synthesized command to History.
+        await rah.addCommand({
+          prompt: final.prompt,
+          agents: ["brain", ...final.specialists],
+          mode,
+          fileIds: [],
+          projectId: rah.activeProject?.id,
+          inputType: listening ? "voice" : "text",
+          status: "done",
+          resultSummary: final.synthesis,
+          provider: final.provider,
+          model: final.model,
+          latencyMs: final.latencyMs,
+          attachments: [],
+          visionUsed: false,
+        });
+        toast.success(`Team run complete — ${final.specialists.length} specialist${final.specialists.length > 1 ? "s" : ""} synthesized (${final.privacy}).`);
+      },
+    });
+  }
+
+  async function saveTeamSummary() {
+    if (!orch.state) return;
+    const sug = buildTeamSummarySuggestion({
+      userPrompt: orch.state.userPrompt,
+      taskStates: orch.state.tasks.map((t) => ({
+        agentId: t.agentId, agentName: t.agentName,
+        state: t.state === "queued" || t.state === "running" ? "failed" : t.state,
+        text: t.text, error: t.error,
+      })),
+      synthesis: orch.state.synthesis,
+      projectId: rah.activeProject?.id ?? null,
+    });
+    if (!sug) { toast.error("Nothing to save yet."); return; }
+    await rah.addMemory({
+      layer: sug.draft.projectId ? "project" : "personal",
+      projectId: sug.draft.projectId ?? undefined,
+      text: `[${new Date().toLocaleString()}] ${sug.draft.title}\n---\n${sug.draft.content}`,
+      category: "team_run_summary",
+      source: "team_run",
+    });
+    toast.success("Saved team summary to Memory.");
   }
 
   async function runInference(prompt: string) {
@@ -417,6 +496,15 @@ export function CommandBar() {
             <SelectItem value="expert">Expert Team</SelectItem>
             <SelectItem value="debate">Debate Mode</SelectItem>
             <SelectItem value="deep_project">Deep Project</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={teamMode} onValueChange={(v) => setTeamMode(v as TeamMode)}>
+          <SelectTrigger className="h-8 w-[170px]" aria-label="Team mode"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="fast">Solo (Master Brain)</SelectItem>
+            <SelectItem value="team_review">Team Review (2–3)</SelectItem>
+            <SelectItem value="full_council">Full Council (up to 5)</SelectItem>
+            <SelectItem value="manual">Manual selection</SelectItem>
           </SelectContent>
         </Select>
         <Select value={approvalMode} onValueChange={(v) => setApprovalMode(v as any)}>
@@ -662,6 +750,36 @@ export function CommandBar() {
       }}
       onClear={() => setResponse(null)}
     />
+    {orch.state && (
+      <OrchestrationPanel
+        state={orch.state}
+        onCancelAll={orch.cancelAll}
+        onCancelTask={orch.cancelTask}
+        onRetryAgent={(id) => void orch.retryAgent(id, {
+          context: {
+            projectName: rah.activeProject?.name,
+            projectGoals: rah.activeProject?.goals,
+            memory: rah.prefs.memoryEnabled
+              ? rah.memory.filter((m) => !m.disabled && (!m.projectId || m.projectId === rah.activeProject?.id)).map((m) => m.text)
+              : [],
+            projectMemoryBlock: rah.prefs.memoryEnabled ? rah.buildProjectMemoryContext().memoryBlock : "",
+          },
+          bridgeOnline: bridgeSnap?.ui === "paired_online",
+        })}
+        onRetrySynthesis={() => void orch.retrySynthesis({
+          context: {
+            projectName: rah.activeProject?.name,
+            projectGoals: rah.activeProject?.goals,
+            memory: rah.prefs.memoryEnabled
+              ? rah.memory.filter((m) => !m.disabled && (!m.projectId || m.projectId === rah.activeProject?.id)).map((m) => m.text)
+              : [],
+            projectMemoryBlock: rah.prefs.memoryEnabled ? rah.buildProjectMemoryContext().memoryBlock : "",
+          },
+        })}
+        onSaveSummary={saveTeamSummary}
+        onClose={orch.reset}
+      />
+    )}
     </div>
   );
 }
