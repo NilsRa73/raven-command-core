@@ -14,20 +14,10 @@ import crypto from "node:crypto";
 const testCfgDir = fs.mkdtempSync(path.join(os.tmpdir(), "rah-bridge-localai-"));
 process.env.RAH_BRIDGE_CONFIG_DIR = testCfgDir;
 
-const { createServer, newPairing } = await import("../src/server.js");
-const { loadConfig, saveConfig } = await import("../src/config.js");
-const { signRequest, _resetNonceCacheForTests } = await import("../src/auth.js");
-const { matchLocalAiRoute, listLocalAiRoutes } = await import("../src/localai.js");
-
-const ORIGIN = "http://localhost:8080";
-const cfg = loadConfig();
-cfg.approvedRoots = [];
-saveConfig(cfg);
-
-// Fake LM Studio + Ollama on ephemeral loopback ports.
-let lmPort, olPort, lmSeen = [], olSeen = [];
+// Spin up fake LM Studio + Ollama on ephemeral loopback ports FIRST, then
+// import the bridge so protocol.js picks up the env overrides.
+let lmPort, olPort;
 const lmServer = http.createServer((req, res) => {
-  lmSeen.push({ method: req.method, url: req.url });
   if (req.url === "/v1/models") {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ data: [{ id: "google/gemma-4-e4b" }] }));
@@ -38,7 +28,6 @@ const lmServer = http.createServer((req, res) => {
   } else res.writeHead(404).end();
 });
 const olServer = http.createServer((req, res) => {
-  olSeen.push({ method: req.method, url: req.url });
   if (req.url === "/api/tags") {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ models: [{ name: "llama3.2:3b" }] }));
@@ -48,31 +37,28 @@ const olServer = http.createServer((req, res) => {
     res.end(JSON.stringify({ done: true }) + "\n");
   } else res.writeHead(404).end();
 });
+await new Promise((r) => lmServer.listen(0, "127.0.0.1", r));
+await new Promise((r) => olServer.listen(0, "127.0.0.1", r));
+lmPort = lmServer.address().port;
+olPort = olServer.address().port;
+process.env.RAH_LMSTUDIO_BASE = `http://127.0.0.1:${lmPort}/v1`;
+process.env.RAH_OLLAMA_BASE = `http://127.0.0.1:${olPort}`;
 
-// Override protocol constants before the bridge starts by rewriting the
-// module — instead, we point the shared constants at the fake servers by
-// monkey-patching after import.
-const proto = await import("../src/protocol.js");
+const { createServer, newPairing } = await import("../src/server.js");
+const { loadConfig, saveConfig } = await import("../src/config.js");
+const { signRequest, _resetNonceCacheForTests } = await import("../src/auth.js");
+const { matchLocalAiRoute, listLocalAiRoutes } = await import("../src/localai.js");
+
+const ORIGIN = "http://localhost:8080";
+const cfg = loadConfig();
+cfg.approvedRoots = [];
+saveConfig(cfg);
 
 let bridge;
 let baseUrl;
 let deviceToken, hmacSecret;
 
 before(async () => {
-  await new Promise((r) => lmServer.listen(0, "127.0.0.1", r));
-  await new Promise((r) => olServer.listen(0, "127.0.0.1", r));
-  lmPort = lmServer.address().port;
-  olPort = olServer.address().port;
-  // Redirect the fixed loopback bases to our fakes.
-  proto.LOCAL_AI_LMSTUDIO_BASE; // touch to ensure loaded
-  // We can't reassign an ES module binding — instead, rebuild the route
-  // table via a module replacement. Use env-injected overrides supported
-  // by the module by re-importing after setting URL constants via a shim.
-  // Simplest: replace the getter by re-requiring after patching the module
-  // exports object using Object.defineProperty.
-  Object.defineProperty(proto, "LOCAL_AI_LMSTUDIO_BASE", { value: `http://127.0.0.1:${lmPort}/v1`, configurable: true });
-  Object.defineProperty(proto, "LOCAL_AI_OLLAMA_BASE",  { value: `http://127.0.0.1:${olPort}`, configurable: true });
-
   bridge = createServer(cfg);
   await new Promise((r) => bridge.listen(0, "127.0.0.1", r));
   baseUrl = `http://127.0.0.1:${bridge.address().port}`;
