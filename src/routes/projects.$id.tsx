@@ -149,11 +149,13 @@ function ProjectDetail() {
       </nav>
 
       {tab === "overview" && <OverviewTab project={project} overview={overview} health={health} rah={rah} files={files} />}
+      {tab === "goals"    && <GoalsTab project={project} rah={rah} />}
       {tab === "memory"   && <MemoryTab project={project} rah={rah} />}
-      {tab === "files"    && <FilesTab project={project} files={files.filter((f) => f.projectId === project.id)} bridgeOnline={bridge.snapshot?.ui === "paired_online"} />}
+      {tab === "assets"   && <FilesTab project={project} files={files.filter((f) => f.projectId === project.id)} bridgeOnline={bridge.snapshot?.ui === "paired_online"} />}
       {tab === "timeline" && <TimelineTab project={project} rah={rah} />}
       {tab === "decisions" && <DecisionsTab project={project} rah={rah} />}
       {tab === "roadmap"  && <RoadmapTab project={project} rah={rah} />}
+      {tab === "issues"   && <IssuesTab project={project} rah={rah} />}
     </div>
   );
 }
