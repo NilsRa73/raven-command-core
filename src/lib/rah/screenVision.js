@@ -137,6 +137,66 @@ export function estimateFps(timestamps) {
 export const NO_FRAME_RECOVERY_HINT =
   "Try selecting Entire Screen or a different window, then share again.";
 
+// Pick which capture pipeline to use for the next frame grab.
+//   - "image-capture": Chromium's ImageCapture API is available and its last
+//     grabFrame worked (or has not failed).
+//   - "video-canvas":  drawImage(<video>) is the only viable route.
+//   - "none":          neither path has produced a frame yet.
+// Signals are booleans — keep this pure so it's unit-testable in Node.
+export function pickCaptureMethod(signals) {
+  const s = signals || {};
+  const imageCaptureAvailable = !!s.imageCaptureAvailable;
+  const imageCaptureLastOk = s.imageCaptureLastOk !== false; // default true
+  const videoHasFrame = !!s.videoHasFrame;
+  if (imageCaptureAvailable && imageCaptureLastOk) return "image-capture";
+  if (videoHasFrame) return "video-canvas";
+  if (imageCaptureAvailable) return "image-capture"; // last-ditch retry
+  return "none";
+}
+
+// Readiness = EITHER the video element has a drawable frame, OR ImageCapture
+// has successfully returned a bitmap. Preview failure alone must not fail
+// the whole share session.
+export function readinessFromSignals(signals) {
+  const s = signals || {};
+  return !!(s.videoReady || s.imageCaptureReady);
+}
+
+// Format the diagnostics object for the on-error panel and the "Copy
+// diagnostics" button. Only includes fields that are present so we never
+// invent values. Order is stable for snapshot-style checks.
+export function formatDiagnostics(diag) {
+  const d = diag || {};
+  const rows = [];
+  const push = (k, v) => {
+    if (v === undefined || v === null || v === "") return;
+    rows.push(k + ": " + String(v));
+  };
+  push("browser", d.userAgent);
+  push("supportsGetDisplayMedia", d.supportsGetDisplayMedia);
+  push("supportsImageCapture", d.supportsImageCapture);
+  push("supportsVideoFrameCallback", d.supportsVideoFrameCallback);
+  push("video.readyState", d.videoReadyState);
+  push("video.videoWidth", d.videoWidth);
+  push("video.videoHeight", d.videoHeight);
+  push("video.paused", d.videoPaused);
+  push("video.ended", d.videoEnded);
+  push("track.readyState", d.trackReadyState);
+  push("track.muted", d.trackMuted);
+  push("track.label", d.trackLabel);
+  push("displaySurface", d.displaySurface);
+  push("imageCapture.lastOk", d.imageCaptureLastOk);
+  push("imageCapture.lastError", d.imageCaptureLastError);
+  push("video.lastError", d.videoLastError);
+  push("previewAvailable", d.previewAvailable);
+  push("captureMethod", d.captureMethod);
+  return "RAH Screen Vision diagnostics\n" + rows.join("\n");
+}
+
+// Human label for the "ready but no live preview" state.
+export const PREVIEW_UNAVAILABLE_LABEL =
+  "Capture ready · live preview unavailable in this browser/source";
+
 // The runtime line rendered ABOVE the vision answer. This text is produced
 // by the app, never by the model — it is proof-of-runtime for the user so
 // the model cannot misrepresent what was captured or where it came from.

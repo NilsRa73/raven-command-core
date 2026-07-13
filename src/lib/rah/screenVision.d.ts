@@ -23,6 +23,38 @@ export function analyzeSamples(samples: { r: number; g: number; b: number }[]): 
 export function isLikelyBlankFrame(stats: FrameStats, opts?: { maxLumaFloor?: number; nonBlackRatioFloor?: number }): boolean;
 export function estimateFps(timestamps: number[]): number;
 export const NO_FRAME_RECOVERY_HINT: string;
+export const PREVIEW_UNAVAILABLE_LABEL: string;
+export type CaptureMethod = "image-capture" | "video-canvas" | "none";
+export function pickCaptureMethod(signals: {
+  imageCaptureAvailable?: boolean;
+  imageCaptureLastOk?: boolean;
+  videoHasFrame?: boolean;
+}): CaptureMethod;
+export function readinessFromSignals(signals: {
+  videoReady?: boolean;
+  imageCaptureReady?: boolean;
+}): boolean;
+export interface ScreenVisionDiagnostics {
+  userAgent?: string;
+  supportsGetDisplayMedia?: boolean;
+  supportsImageCapture?: boolean;
+  supportsVideoFrameCallback?: boolean;
+  videoReadyState?: number;
+  videoWidth?: number;
+  videoHeight?: number;
+  videoPaused?: boolean;
+  videoEnded?: boolean;
+  trackReadyState?: string;
+  trackMuted?: boolean;
+  trackLabel?: string;
+  displaySurface?: string;
+  imageCaptureLastOk?: boolean;
+  imageCaptureLastError?: string;
+  videoLastError?: string;
+  previewAvailable?: boolean;
+  captureMethod?: CaptureMethod;
+}
+export function formatDiagnostics(diag: ScreenVisionDiagnostics): string;
 export function buildScreenVisionRuntimeLine(input?: {
   provider?: string; model?: string; latencyMs?: number;
   capturedAt?: number | string; sourceLabel?: string;
