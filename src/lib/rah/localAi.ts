@@ -13,7 +13,7 @@
 import { buildSystemPrompt, type PromptContext } from "./systemPrompts";
 import type { ExecutionMode } from "./db";
 import type { AiState, HealthResult, StreamCallbacks, StreamRequest } from "./ai";
-import { bridgeSignedFetch, isBridgePaired } from "./bridge";
+import { bridgeSignedFetch, isBridgePaired, bridgeStatusSnapshot } from "./bridge";
 
 export type AiEngine = "cloud" | "lmstudio" | "ollama" | "demo";
 export type LocalAiTransport = "auto" | "bridge" | "direct";
@@ -118,6 +118,13 @@ export function isLocalEngine(e: AiEngine): boolean {
 export async function resolveTransport(settings: LocalAiSettings): Promise<LocalAiTransportUsed> {
   if (settings.transport === "direct") return "direct";
   if (settings.transport === "bridge") return "bridge";
+  // "auto": in production ALWAYS prefer the authenticated Bridge. Direct
+  // localhost happening to answer must never masquerade as a production
+  // connection. In dev builds we allow the direct fallback so contributors
+  // can iterate without the desktop bridge installed.
+  const isDev = typeof import.meta !== "undefined"
+    && (import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV === true;
+  if (!isDev) return "bridge";
   return (await isBridgePaired()) ? "bridge" : "direct";
 }
 
@@ -211,6 +218,24 @@ export async function checkLocalHealth(settings: LocalAiSettings, signal?: Abort
   const started = Date.now();
   const transport = await resolveTransport(settings);
   const transportSuffix = transport === "bridge" ? " (via Bridge)" : " (direct)";
+  // Bridge preflight — if we intend to use the bridge, surface an honest
+  // "Bridge offline / unpaired" state instead of probing anything else.
+  if (transport === "bridge") {
+    const snap = await bridgeStatusSnapshot();
+    if (snap.ui !== "paired_online") {
+      const msg =
+        snap.ui === "offline" ? "Bridge offline — start RAH Desktop Bridge on this computer."
+        : snap.ui === "pairing_required" ? "Bridge unpaired — pair it in Connections."
+        : snap.ui === "emergency_stopped" ? "Bridge is in Emergency Stop."
+        : snap.ui === "version_mismatch" ? "Bridge version too old — update from Connections."
+        : (snap.message || "Bridge unavailable.");
+      return {
+        ok: false, state: "network_error",
+        provider: engineLabel(settings.engine) + transportSuffix,
+        message: msg, latencyMs: Date.now() - started,
+      };
+    }
+  }
   try {
     if (settings.engine === "lmstudio") {
       const models = await listLmStudioModels(settings, signal);

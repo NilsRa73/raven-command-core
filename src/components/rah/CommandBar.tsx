@@ -15,6 +15,11 @@ import { ResponsePanel, type LiveResponse } from "./ResponsePanel";
 import { AiStatusBadge, useAiHealth } from "./AiStatusBadge";
 import { LocalAiBadge } from "./LocalAiPanel";
 import {
+  getLocalAiSettings, saveLocalAiSettings, subscribeLocalAi,
+  engineLabel, isLocalEngine,
+  type LocalAiSettings,
+} from "@/lib/rah/localAi";
+import {
   prepareImage, releasePrepared, validateBatch, metaFromPrepared,
   drainPendingImages, preparedFromPending, ACCEPTED_MIME,
   type PreparedImage,
@@ -40,6 +45,9 @@ export function CommandBar() {
   const abortRef = useRef<AbortController | null>(null);
   const { health, loading: healthLoading, refresh: refreshHealth } = useAiHealth(true);
   const aiLive = health?.state === "connected";
+  const [localAi, setLocalAi] = useState<LocalAiSettings>(() => getLocalAiSettings());
+  useEffect(() => subscribeLocalAi(setLocalAi), []);
+  const streaming = response?.state === "thinking" || response?.state === "streaming";
 
   useEffect(() => rah.registerCommandBarFocus(() => ref.current?.focus()), [rah]);
   useEffect(() => {
@@ -377,12 +385,50 @@ export function CommandBar() {
           </SelectContent>
         </Select>
         <div className="ml-auto flex items-center gap-2">
+          <Select
+            value={localAi.engine}
+            onValueChange={(v) => setLocalAi(saveLocalAiSettings({ engine: v as LocalAiSettings["engine"] }))}
+          >
+            <SelectTrigger className="h-8 w-[180px]" aria-label="AI engine">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="cloud">Lovable Cloud</SelectItem>
+              <SelectItem value="lmstudio">LM Studio (Bridge)</SelectItem>
+              <SelectItem value="ollama">Ollama (Bridge)</SelectItem>
+              <SelectItem value="demo">Demo / Offline</SelectItem>
+            </SelectContent>
+          </Select>
           <LocalAiBadge />
           <AiStatusBadge health={health} loading={healthLoading} />
           {!aiLive && !healthLoading && (
             <Link to="/connections" className="text-[11px] text-primary hover:underline">Fix →</Link>
           )}
         </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+        <span className="uppercase tracking-widest">Route:</span>
+        <span className="text-foreground">
+          {engineLabel(localAi.engine)}
+          {isLocalEngine(localAi.engine)
+            ? ` · ${localAi.engine === "lmstudio" ? (localAi.lmStudioModel || "no model") : (localAi.ollamaModel || "no model")} · via Bridge`
+            : localAi.engine === "cloud" ? " · Lovable AI Gateway"
+            : ""}
+        </span>
+        <span className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => { setText(""); setInterim(""); setResponse(null); ref.current?.focus(); }}
+            className="rounded-md border border-border/70 px-2 py-1 hover:bg-accent"
+          >New chat</button>
+          <button
+            type="button"
+            onClick={() => abortRef.current?.abort()}
+            disabled={!streaming}
+            className="rounded-md border border-border/70 px-2 py-1 hover:bg-accent disabled:opacity-40"
+          >Stop generation</button>
+        </span>
       </div>
 
       <div className="flex flex-wrap gap-1.5">
