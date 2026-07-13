@@ -14,6 +14,7 @@ import { buildSystemPrompt, type PromptContext } from "./systemPrompts";
 import type { ExecutionMode } from "./db";
 import type { AiState, HealthResult, StreamCallbacks, StreamRequest } from "./ai";
 import { bridgeSignedFetch, isBridgePaired, bridgeStatusSnapshot } from "./bridge";
+import { buildRuntimeIdentityPrompt, type RahRuntimeIdentity } from "./runtimeIdentity";
 
 export type AiEngine = "cloud" | "lmstudio" | "ollama" | "demo";
 export type LocalAiTransport = "auto" | "bridge" | "direct";
@@ -305,16 +306,51 @@ export async function checkLocalHealth(settings: LocalAiSettings, signal?: Abort
 
 /* ---------------- Chat streaming ---------------- */
 
-function buildMessages(req: StreamRequest, settings: LocalAiSettings): { role: string; content: string }[] {
+function buildMessages(
+  req: StreamRequest,
+  settings: LocalAiSettings,
+  identity: RahRuntimeIdentity,
+): { role: string; content: string }[] {
   const ctx: PromptContext = { ...(req.context ?? {}) };
   const base = buildSystemPrompt(req.agents ?? ["brain"], req.mode as ExecutionMode, ctx);
-  const system = settings.systemPromptExtra
+  const persona = settings.systemPromptExtra
     ? `${base}\n\nAdditional instructions:\n${settings.systemPromptExtra}`
     : base;
+  // Runtime identity is emitted as a SEPARATE, first system message so
+  // persona/mode text cannot silently overwrite it and so it survives any
+  // downstream concatenation done by the local server.
   return [
-    { role: "system", content: system },
+    { role: "system", content: buildRuntimeIdentityPrompt(identity) },
+    { role: "system", content: persona },
     { role: "user", content: req.prompt },
   ];
+}
+
+async function resolveRuntimeIdentity(
+  engine: "lmstudio" | "ollama",
+  model: string,
+  transport: LocalAiTransportUsed,
+): Promise<RahRuntimeIdentity> {
+  let bridgeVersion: string | undefined;
+  let bridgeStatus: string | undefined;
+  if (transport === "bridge") {
+    try {
+      const snap = await bridgeStatusSnapshot();
+      bridgeVersion = snap.version ?? "unknown";
+      bridgeStatus = snap.ui;
+    } catch {
+      bridgeVersion = "unknown";
+      bridgeStatus = "unknown";
+    }
+  }
+  return {
+    engine,
+    engineLabel: engineLabel(engine),
+    model: model || "unknown",
+    transport,
+    bridgeVersion,
+    bridgeStatus,
+  };
 }
 
 export async function streamLmStudio(req: StreamRequest, settings: LocalAiSettings, cb: StreamCallbacks): Promise<string> {
@@ -327,12 +363,13 @@ export async function streamLmStudio(req: StreamRequest, settings: LocalAiSettin
   cb.onStart?.({ provider: engineLabel("lmstudio") + (transport === "bridge" ? " (via Bridge)" : " (direct)"), model });
   if (req.images?.length) cb.onVision?.({ imageCount: 0, attachments: [] });
   let res: Response;
+  const identity = await resolveRuntimeIdentity("lmstudio", model, transport);
   const payload = {
     model,
     stream: true,
     temperature: settings.temperature,
     max_tokens: settings.contextLength,
-    messages: buildMessages(req, settings),
+    messages: buildMessages(req, settings, identity),
   };
   try {
     res = transport === "bridge"
@@ -390,11 +427,12 @@ export async function streamOllama(req: StreamRequest, settings: LocalAiSettings
   cb.onStart?.({ provider: engineLabel("ollama") + (transport === "bridge" ? " (via Bridge)" : " (direct)"), model });
   if (req.images?.length) cb.onVision?.({ imageCount: 0, attachments: [] });
   let res: Response;
+  const identity = await resolveRuntimeIdentity("ollama", model, transport);
   const payload = {
     model,
     stream: true,
     options: { temperature: settings.temperature, num_ctx: settings.contextLength },
-    messages: buildMessages(req, settings),
+    messages: buildMessages(req, settings, identity),
   };
   try {
     res = transport === "bridge"
