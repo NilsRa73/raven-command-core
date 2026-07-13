@@ -66,6 +66,27 @@ export function CommandBar() {
   const localServerOffline =
     isLocalEngine(localAi.engine) && health?.ok === false && bridgeSnap?.ui === "paired_online";
 
+  /**
+   * Non-model-generated runtime metadata line rendered above every response.
+   * Sourced entirely from app state (settings + bridge snapshot) so the user
+   * has an out-of-band proof of what actually served the reply.
+   */
+  function currentRuntimeLine(): string {
+    const eng = localAi.engine;
+    const label = engineLabel(eng);
+    if (eng === "cloud") return `Runtime: ${label} · cloud`;
+    if (eng === "demo") return `Runtime: ${label} · no model call`;
+    const model = eng === "lmstudio"
+      ? (localAi.lmStudioModel || "unknown")
+      : (localAi.ollamaModel || "unknown");
+    const transport = localAi.transport === "direct" ? "Direct" : "Bridge";
+    const version = bridgeSnap?.version;
+    const tail = transport === "Bridge"
+      ? ` · via Bridge${version ? ` v${version}` : ""}`
+      : " · direct";
+    return `Runtime: ${label} · ${model}${tail}`;
+  }
+
   useEffect(() => rah.registerCommandBarFocus(() => ref.current?.focus()), [rah]);
   useEffect(() => {
     const cancel = () => { stopListening(); abortRef.current?.abort(); };
@@ -259,6 +280,7 @@ export function CommandBar() {
         state: "done", demo: true, startedAt, latencyMs: 0,
         provider: "Local Demo Engine",
         visionUsed: false, attachmentCount: attachmentsMeta.length,
+        runtimeLine: currentRuntimeLine(),
       });
       toast.message("Local Demo Response (no live AI).");
       return;
@@ -269,6 +291,7 @@ export function CommandBar() {
       state: "thinking", startedAt,
       provider: "Lovable AI Gateway",
       visionUsed: false, attachmentCount: attachmentsMeta.length,
+      runtimeLine: currentRuntimeLine(),
     });
 
     const memory = rah.prefs.memoryEnabled
@@ -335,6 +358,7 @@ export function CommandBar() {
         state: "done", provider: providerLabel, model: modelLabel,
         latencyMs, usage, demo: false, startedAt,
         visionUsed, attachmentCount: finalAttachments.length,
+        runtimeLine: currentRuntimeLine(),
       });
       clearImages();
     } catch (err) {
