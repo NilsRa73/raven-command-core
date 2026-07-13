@@ -172,11 +172,12 @@ function CommandCenter() {
       <header className="glass-panel gold-border p-4">
         <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4 sm:flex sm:flex-wrap sm:items-center">
           <div className="min-w-0">
-            <div className="text-[11px] uppercase tracking-widest text-muted-foreground">Mission Control</div>
+            <div className="text-[11px] uppercase tracking-widest text-muted-foreground">Raven Home · Alpha 0.1</div>
             <h1 className="display text-2xl md:text-3xl gold-text truncate">
-              {rah.activeProject ? `${rah.activeProject.icon} ${rah.activeProject.name}` : "No active project"}
+              Welcome back, Nils. Let’s build something worthwhile today.
             </h1>
             <div className="mt-1 text-xs text-muted-foreground">
+              {rah.activeProject ? <>Active project: <span className="text-foreground">{rah.activeProject.icon} {rah.activeProject.name}</span> · </> : <>No active project · </>}
               {localDate} · {localTime}
               {rah.activeProject?.goals ? <> · Goal: <span className="text-foreground">{rah.activeProject.goals.slice(0, 90)}</span></> : null}
             </div>
@@ -209,16 +210,26 @@ function CommandCenter() {
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
           <button
-            type="button" onClick={() => rah.focusCommandBar()}
+            type="button"
+            onClick={() => {
+              if (rah.activeProject) rah.focusCommandBar();
+              else toast.message("No active project", { description: "Open Projects to pick one, then continue today’s mission." });
+            }}
             className="inline-flex h-8 items-center rounded-md bg-primary px-3 text-primary-foreground hover:bg-primary/90"
           >
-            Continue mission →
+            Continue today’s mission →
           </button>
           <Link to="/memory" className="inline-flex h-8 items-center rounded-md border border-border/70 px-3 hover:border-primary/60">
             View memory
           </Link>
           <Link to="/projects" className="inline-flex h-8 items-center rounded-md border border-border/70 px-3 hover:border-primary/60">
             Change project
+          </Link>
+          <Link to="/devices" className="inline-flex h-8 items-center rounded-md border border-border/70 px-3 hover:border-primary/60">
+            Device Center
+          </Link>
+          <Link to="/chronicle" className="inline-flex h-8 items-center rounded-md border border-border/70 px-3 hover:border-primary/60">
+            Chronicle
           </Link>
           {pendingApprovals > 0 && (
             <Link to="/approvals" className="ml-auto rounded-full border border-primary/60 bg-primary/10 px-3 py-1 text-primary">
