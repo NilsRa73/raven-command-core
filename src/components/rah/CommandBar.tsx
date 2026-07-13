@@ -215,31 +215,10 @@ export function CommandBar() {
     if (!prompt) { toast.error("Type or dictate a command first."); return; }
     stopListening();
     // Team run: fan out to specialists, then Master Brain synthesis.
-    // A single approval covers the whole team run when approvals are on.
+    // Team runs bypass the queued-approval flow — the run itself is visible
+    // in the live Team panel with a Cancel button, and any side-effect tool
+    // calls still surface their own approval card at execution time.
     if (teamMode !== "fast") {
-      const needsApproval = approvalMode !== "advisory";
-      if (needsApproval) {
-        const cmd = await rah.addCommand({
-          prompt, agents: teamMode === "manual" ? selectedAgents : [], mode, fileIds: [],
-          projectId: rah.activeProject?.id, inputType: listening ? "voice" : "text",
-          status: "awaiting_approval",
-          resultSummary: `Team run queued (${TEAM_MODE_LABEL[teamMode]}) — awaiting approval.`,
-          attachments: [],
-        });
-        await rah.requestApproval({
-          title: `Team run: "${prompt.slice(0, 60)}"`,
-          reason: `Fan out to specialists (${TEAM_MODE_LABEL[teamMode]}), then Master Brain synthesis.`,
-          tools: teamMode === "manual" ? selectedAgents : ["auto-routing"],
-          dataShared: rah.activeProject ? [`Project: ${rah.activeProject.name}`] : [],
-          expectedResult: "Live team run after approval; one synthesized reply is saved to History.",
-          risk: "low",
-          category: "team-run",
-          commandId: cmd.id,
-        });
-        setText(""); setInterim("");
-        toast.success("Team run queued for approval.");
-        return;
-      }
       await runTeam(prompt);
       setText(""); setInterim("");
       return;
