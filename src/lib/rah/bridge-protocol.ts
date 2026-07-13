@@ -1,5 +1,5 @@
 // MUST match desktop-bridge/src/protocol.js
-export const BRIDGE_MIN_VERSION = "0.1.1";
+export const BRIDGE_MIN_VERSION = "0.2.0";
 export const PROTOCOL_VERSION = "v1";
 export const DEFAULT_BRIDGE_PORT = 47824;
 
