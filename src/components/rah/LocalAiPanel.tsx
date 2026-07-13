@@ -8,10 +8,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   getLocalAiSettings, saveLocalAiSettings, subscribeLocalAi,
   listLmStudioModels, listOllamaModels, getLastDiagnostic,
-  engineLabel, isLocalEngine,
+  engineLabel, isLocalEngine, resolveTransport,
   type LocalAiSettings, type DiscoveredModel, type LocalDiagnostic,
 } from "@/lib/rah/localAi";
 import { checkHealth, type HealthResult } from "@/lib/rah/ai";
+import { bridgeStatusSnapshot, type BridgeStatusSnapshot } from "@/lib/rah/bridge";
 
 type Status = "idle" | "connecting" | "connected" | "offline" | "cors_blocked";
 
@@ -34,8 +35,20 @@ export function LocalAiPanel() {
   const [health, setHealth] = useState<HealthResult | null>(null);
   const [diag, setDiag] = useState<LocalDiagnostic | null>(() => getLastDiagnostic());
   const [showGuide, setShowGuide] = useState(false);
+  const [bridge, setBridge] = useState<BridgeStatusSnapshot | null>(null);
+  const [transportUsed, setTransportUsed] = useState<"bridge" | "direct" | null>(null);
 
   useEffect(() => subscribeLocalAi(setSettings), []);
+  useEffect(() => {
+    let cancelled = false;
+    const tick = async () => {
+      const [snap, t] = await Promise.all([bridgeStatusSnapshot(), resolveTransport(settings)]);
+      if (!cancelled) { setBridge(snap); setTransportUsed(t); }
+    };
+    void tick();
+    const id = window.setInterval(() => void tick(), 5000);
+    return () => { cancelled = true; window.clearInterval(id); };
+  }, [settings]);
 
   useEffect(() => {
     // First-run guide when user first switches to a local engine.
@@ -81,6 +94,20 @@ export function LocalAiPanel() {
     cors_blocked: "CORS / Browser blocked",
   } as Record<Status, string>)[status];
 
+  const bridgeLabel =
+    !isLocalEngine(settings.engine) ? null :
+    transportUsed === "direct" && settings.transport !== "direct"
+      ? "Bridge offline / unpaired — falling back to direct (dev only)"
+      : transportUsed === "direct"
+        ? "Direct mode (developer)"
+        : bridge?.ui === "paired_online"
+          ? "Bridge connected"
+          : bridge?.ui === "emergency_stopped"
+            ? "Bridge emergency-stopped"
+            : bridge?.ui === "version_mismatch"
+              ? "Bridge version too old — update from Connections"
+              : "Bridge offline";
+
   const statusTone = status === "connected" ? "border-primary text-primary"
     : status === "connecting" ? "border-primary/60 text-primary animate-pulse"
     : status === "idle" ? "border-border text-muted-foreground"
@@ -94,6 +121,11 @@ export function LocalAiPanel() {
         {isLocalEngine(settings.engine) && (
           <span className="rounded-full border border-primary/60 bg-primary/10 px-2 py-0.5 text-[10px] text-primary">
             LOCAL — prompts stay on this computer
+          </span>
+        )}
+        {bridgeLabel && (
+          <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">
+            {bridgeLabel}
           </span>
         )}
         <Button size="sm" variant="secondary" className="ml-auto" onClick={() => setShowGuide(true)}>Setup guide</Button>
@@ -151,6 +183,16 @@ export function LocalAiPanel() {
         )}
         {isLocalEngine(settings.engine) && (
           <>
+            <Row label="Transport">
+              <Select value={settings.transport} onValueChange={(v) => update({ transport: v as LocalAiSettings["transport"] })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto">Auto (Bridge when paired, else direct)</SelectItem>
+                  <SelectItem value="bridge">Bridge only (recommended for production)</SelectItem>
+                  <SelectItem value="direct">Direct (developer / local dev only)</SelectItem>
+                </SelectContent>
+              </Select>
+            </Row>
             <Row label={`Temperature (${settings.temperature.toFixed(2)})`}>
               <Slider value={[settings.temperature]} min={0} max={2} step={0.05}
                 onValueChange={(v) => update({ temperature: v[0] })} />
