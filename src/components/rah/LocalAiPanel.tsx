@@ -12,7 +12,7 @@ import {
   type LocalAiSettings, type DiscoveredModel, type LocalDiagnostic,
 } from "@/lib/rah/localAi";
 import { checkHealth, type HealthResult } from "@/lib/rah/ai";
-import { useBridgeStatus } from "@/lib/rah/bridgeStatus";
+import { useBridgeStatus, refreshBridgeStatus } from "@/lib/rah/bridgeStatus";
 
 type Status = "idle" | "connecting" | "connected" | "offline" | "cors_blocked";
 
@@ -70,7 +70,15 @@ export function LocalAiPanel() {
       const h = await checkHealth();
       setHealth(h);
       setDiag(getLastDiagnostic());
-      if (h.ok) { setStatus("connected"); toast.success(`Connected · ${h.provider}`); }
+      if (h.ok) {
+        setStatus("connected");
+        toast.success(`Connected · ${h.provider}`);
+        // Successful Local-AI-through-Bridge test means the bridge is
+        // demonstrably paired_online right now. Refresh the shared bridge
+        // store so Command Center / CommandBar update immediately instead of
+        // waiting for the next 5s poll — and absorb any prior transient hiccup.
+        void refreshBridgeStatus();
+      }
       else if (h.message?.toLowerCase().includes("cors")) { setStatus("cors_blocked"); toast.error("Browser blocked (CORS)"); }
       else { setStatus("offline"); toast.error(h.message ?? "Offline"); }
     } catch (err) {

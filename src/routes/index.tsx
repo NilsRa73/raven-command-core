@@ -5,7 +5,7 @@ import { useRah } from "@/lib/rah/context";
 import { AGENTS, agentById } from "@/lib/rah/agents";
 import { RavenMark } from "@/components/rah/RavenMark";
 import { getLocalAiSettings, engineLabel, subscribeLocalAi, isLocalEngine, type LocalAiSettings } from "@/lib/rah/localAi";
-import { useBridgeStatus } from "@/lib/rah/bridgeStatus";
+import { useBridgeStatus, refreshBridgeStatus } from "@/lib/rah/bridgeStatus";
 import { bridgeShortLabel, bridgeUiKind } from "@/lib/rah/bridgeStatusLabels";
 
 export const Route = createFileRoute("/")({
@@ -26,7 +26,11 @@ function CommandCenter() {
   const rah = useRah();
   const [localAi, setLocalAi] = useState<LocalAiSettings>(() => getLocalAiSettings());
   useEffect(() => subscribeLocalAi(setLocalAi), []);
-  const { snapshot: bridge, loading: bridgeLoading } = useBridgeStatus();
+  const { snapshot: bridge, loading: bridgeLoading, refreshing: bridgeRefreshing } = useBridgeStatus();
+  // Route navigation back to the Command Center must trigger a fresh bridge
+  // check immediately rather than waiting for the 5s poll tick — this is what
+  // guarantees the strip below is never stale after returning from Connections.
+  useEffect(() => { void refreshBridgeStatus(); }, []);
   const bridgeKind = bridgeUiKind(bridge, bridgeLoading);
   const stats = useMemo(() => {
     const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -79,9 +83,12 @@ function CommandCenter() {
             : bridgeKind === "emergency" || bridgeKind === "error" ? "border-destructive text-destructive"
             : bridgeKind === "checking" ? "border-primary/40 text-primary/80 animate-pulse"
             : "border-border/70 text-muted-foreground")
-        }>
+        } title={bridgeRefreshing ? "Refreshing bridge status…" : undefined}>
           Bridge: {bridgeShortLabel(bridge, bridgeLoading)}
           {bridgeKind === "connected" && bridge?.version ? ` v${bridge.version}` : ""}
+          {bridgeKind === "connected" && bridgeRefreshing && (
+            <span className="ml-1 opacity-60">·</span>
+          )}
         </span>
         {stats.pending > 0 && (
           <Link to="/approvals" className="rounded-full border border-primary/60 text-primary px-2 py-1">
