@@ -1,6 +1,6 @@
 {
   "name": "rah-desktop-bridge",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "private": true,
   "description": "RAH Desktop Bridge — secure localhost companion for Raven Command.",
   "type": "module",
