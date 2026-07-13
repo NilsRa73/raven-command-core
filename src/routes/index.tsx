@@ -7,6 +7,7 @@ import { RavenMark } from "@/components/rah/RavenMark";
 import { getLocalAiSettings, engineLabel, subscribeLocalAi, isLocalEngine, type LocalAiSettings } from "@/lib/rah/localAi";
 import { useBridgeStatus, refreshBridgeStatus } from "@/lib/rah/bridgeStatus";
 import { bridgeShortLabel, bridgeUiKind } from "@/lib/rah/bridgeStatusLabels";
+import { selectWelcomeSummary, memoryDiagnostics, MEMORY_TYPE_LABEL } from "@/lib/rah/projectMemory";
 
 export const Route = createFileRoute("/")({
   component: CommandCenter,
@@ -24,6 +25,11 @@ function Stat({ label, value, hint }: { label: string; value: string | number; h
 
 function CommandCenter() {
   const rah = useRah();
+  const welcome = useMemo(
+    () => selectWelcomeSummary(rah.projectMemory, { projectId: rah.activeProject?.id ?? null }),
+    [rah.projectMemory, rah.activeProject?.id],
+  );
+  const memDiag = useMemo(() => memoryDiagnostics(rah.projectMemory), [rah.projectMemory]);
   const [localAi, setLocalAi] = useState<LocalAiSettings>(() => getLocalAiSettings());
   useEffect(() => subscribeLocalAi(setLocalAi), []);
   const { snapshot: bridge, loading: bridgeLoading, refreshing: bridgeRefreshing } = useBridgeStatus();

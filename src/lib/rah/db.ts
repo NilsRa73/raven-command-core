@@ -1,4 +1,6 @@
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
+import type { ProjectMemoryRecord } from "./projectMemory";
+export type { ProjectMemoryRecord } from "./projectMemory";
 
 export type ApprovalMode = "advisory" | "ask_every" | "trusted_low_risk";
 export type Theme = "raven" | "forest" | "arctic" | "hc";
@@ -52,7 +54,7 @@ export interface CommandRecord {
   visionUsed?: boolean;
   /** Payload retained for a queued command awaiting approval so it can be executed after Approve. */
   pending?: {
-    context?: { projectName?: string; projectGoals?: string; memory?: string[] };
+    context?: { projectName?: string; projectGoals?: string; memory?: string[]; projectMemoryBlock?: string };
     images?: { name: string; mime: string; dataUrl: string }[];
   };
 }
@@ -126,28 +128,36 @@ interface Schema extends DBSchema {
   files: { key: string; value: FileItem; indexes: { createdAt: number; projectId: string } };
   approvals: { key: string; value: Approval; indexes: { status: string } };
   prefs: { key: string; value: Preferences };
+  projectMemory: { key: string; value: ProjectMemoryRecord; indexes: { updatedAt: number; projectId: string } };
 }
 
 let dbp: Promise<IDBPDatabase<Schema>> | null = null;
 export function getDB() {
   if (typeof indexedDB === "undefined") throw new Error("IndexedDB unavailable");
   if (!dbp) {
-    dbp = openDB<Schema>("rah-listen-key", 1, {
-      upgrade(db) {
-        const p = db.createObjectStore("projects", { keyPath: "id" });
-        p.createIndex("updatedAt", "updatedAt");
-        const c = db.createObjectStore("commands", { keyPath: "id" });
-        c.createIndex("createdAt", "createdAt");
-        c.createIndex("projectId", "projectId");
-        const m = db.createObjectStore("memory", { keyPath: "id" });
-        m.createIndex("layer", "layer");
-        m.createIndex("projectId", "projectId");
-        const f = db.createObjectStore("files", { keyPath: "id" });
-        f.createIndex("createdAt", "createdAt");
-        f.createIndex("projectId", "projectId");
-        const a = db.createObjectStore("approvals", { keyPath: "id" });
-        a.createIndex("status", "status");
-        db.createObjectStore("prefs", { keyPath: "id" });
+    dbp = openDB<Schema>("rah-listen-key", 2, {
+      upgrade(db, oldVersion) {
+        if (oldVersion < 1) {
+          const p = db.createObjectStore("projects", { keyPath: "id" });
+          p.createIndex("updatedAt", "updatedAt");
+          const c = db.createObjectStore("commands", { keyPath: "id" });
+          c.createIndex("createdAt", "createdAt");
+          c.createIndex("projectId", "projectId");
+          const m = db.createObjectStore("memory", { keyPath: "id" });
+          m.createIndex("layer", "layer");
+          m.createIndex("projectId", "projectId");
+          const f = db.createObjectStore("files", { keyPath: "id" });
+          f.createIndex("createdAt", "createdAt");
+          f.createIndex("projectId", "projectId");
+          const a = db.createObjectStore("approvals", { keyPath: "id" });
+          a.createIndex("status", "status");
+          db.createObjectStore("prefs", { keyPath: "id" });
+        }
+        if (oldVersion < 2) {
+          const pm = db.createObjectStore("projectMemory", { keyPath: "id" });
+          pm.createIndex("updatedAt", "updatedAt");
+          pm.createIndex("projectId", "projectId");
+        }
       },
     });
   }
@@ -233,9 +243,78 @@ export async function exportAll(): Promise<Blob> {
 
 export async function wipeAll() {
   const db = await getDB();
-  for (const store of ["projects", "commands", "memory", "files", "approvals", "prefs"] as const) {
+  for (const store of ["projects", "commands", "memory", "files", "approvals", "prefs", "projectMemory"] as const) {
     await db.clear(store);
   }
+}
+
+// ─── Seeded Project Memory ──────────────────────────────────────────────
+// First-run entries so Command Center is useful before the user types
+// anything. Kept small and deterministic. Never re-seeded once present.
+
+export const SEEDED_PROJECT_MEMORY: Omit<ProjectMemoryRecord, "id" | "createdAt" | "updatedAt">[] = [
+  {
+    projectId: null,
+    title: "Desktop Bridge connected",
+    content: "RAH Desktop Bridge is paired and online on 127.0.0.1:47824.",
+    type: "fact",
+    tags: ["bridge"],
+    source: "seed",
+    archived: false,
+    pinned: true,
+  },
+  {
+    projectId: null,
+    title: "LM Studio google/gemma-4-e4b via Bridge v0.2.1",
+    content: "Default local engine is LM Studio, model google/gemma-4-e4b, routed through RAH Desktop Bridge v0.2.1.",
+    type: "fact",
+    tags: ["engine", "lmstudio"],
+    source: "seed",
+    archived: false,
+    pinned: true,
+  },
+  {
+    projectId: null,
+    title: "Screen Vision working with ImageCapture fallback",
+    content: "Screen Vision uses a dual pipeline: video element + ImageCapture.grabFrame() fallback for sources that render black in <video>.",
+    type: "milestone",
+    tags: ["vision"],
+    source: "seed",
+    archived: false,
+    pinned: false,
+  },
+  {
+    projectId: null,
+    title: "Current priority: finish Project Memory, then Voice, then parallel agents",
+    content: "Sprint order: 1) Project Memory (in-progress) → 2) Voice Assistant hardening → 3) Parallel agents.",
+    type: "next_action",
+    tags: ["roadmap"],
+    source: "seed",
+    archived: false,
+    pinned: true,
+  },
+  {
+    projectId: null,
+    title: "Current blocker: none",
+    content: "No open blockers as of the Project Memory sprint kickoff.",
+    type: "note",
+    tags: ["status"],
+    source: "seed",
+    archived: false,
+    pinned: false,
+  },
+];
+
+export async function seedProjectMemoryIfEmpty() {
+  const db = await getDB();
+  const count = await db.count("projectMemory");
+  if (count > 0) return;
+  const now = Date.now();
+  const tx = db.transaction("projectMemory", "readwrite");
+  for (const r of SEEDED_PROJECT_MEMORY) {
+    await tx.store.put({ ...r, id: uid(), createdAt: now, updatedAt: now });
+  }
+  await tx.done;
 }
 
 export async function storageEstimate() {

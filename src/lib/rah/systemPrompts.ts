@@ -27,6 +27,8 @@ export interface PromptContext {
   projectName?: string;
   projectGoals?: string;
   memory?: string[];
+  /** Deterministic Project Memory block built by the app (never by the model). */
+  projectMemoryBlock?: string;
   attachments?: { name: string; mime: string; size: number }[];
   attachmentsIncluded?: boolean;
 }
@@ -82,6 +84,7 @@ export function buildSystemPrompt(
     `Selected agents:\n${roster}`,
     perAgent,
     contextLines.length ? `Context:\n${contextLines.join("\n")}` : "",
+    ctx.projectMemoryBlock ? ctx.projectMemoryBlock : "",
     `Formatting: use GitHub-flavoured Markdown. Use fenced code blocks with language tags. Keep answers scannable.`,
   ]
     .filter(Boolean)
