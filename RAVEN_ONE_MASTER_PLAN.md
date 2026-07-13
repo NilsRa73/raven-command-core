@@ -63,6 +63,23 @@ progress, or telemetry.
 
 ## Backlog
 
+## Sprint 2 — In progress
+
+- [x] Raven Morning: dynamic greeting phase, Welcome Back card with
+      current / next / blocker / ETA fields sourced from the active project
+      (falls back to memory). Deterministic in `src/lib/rah/morning.js`.
+- [x] Global Command Palette (`Ctrl+Space` or `Ctrl/Cmd+K`) with
+      navigation, actions, and freeform `> prompt` handoff to the Command
+      Bar. Pure catalog + fuzzy filter in `src/lib/rah/commandPalette.js`.
+- [x] Project DNA task tracking: `currentTask`, `nextTask`, `blocker`,
+      `estimatedCompletionAt` on `Project`, edited in Goals tab with
+      explicit Save (no silent writes).
+- [x] Device Center Cluster overview: counts by status and role,
+      foundation for multi-device Raven. Planned nodes stay honestly
+      labelled Planned / Offline.
+- [x] Tests: `morning.test.js`, `command-palette.test.js` (10 new tests,
+      total 225 passing).
+
 - Device Center v0.2: role-based dashboards, hardware history charts.
 - Chronicle v0.2: per-project chronicle views, weekly summary drafts.
 - Project DNA v0.2: roadmap milestone drag-and-drop, decisions changelog.
