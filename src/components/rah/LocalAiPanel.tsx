@@ -247,22 +247,27 @@ export function LocalAiPanel() {
           <div className="glass-panel gold-border p-6 max-w-lg w-full space-y-3" onClick={(e) => e.stopPropagation()}>
             <h3 className="display text-xl">Local AI setup</h3>
             <div className="text-sm space-y-2">
-              <p className="font-medium text-foreground">LM Studio</p>
+              <p className="font-medium text-foreground">Recommended: route through the RAH Desktop Bridge</p>
               <ol className="list-decimal pl-5 space-y-1 text-muted-foreground">
-                <li>Open LM Studio → <em>Local Server</em> tab.</li>
-                <li>Load a model (any Gemma / Llama / Qwen).</li>
-                <li>Click <em>Start Server</em>. Default: <code>http://127.0.0.1:1234/v1</code>.</li>
-                <li>Enable <em>CORS</em> in server settings so the browser can call it.</li>
+                <li>Open <em>Connections</em> → download and start the RAH Desktop Bridge (v0.2.0+).</li>
+                <li>Pair the bridge with the 6-digit code.</li>
+                <li>Set Transport to <em>Auto</em> or <em>Bridge only</em>. No CORS setup required.</li>
               </ol>
-              <p className="font-medium text-foreground pt-2">Ollama</p>
+              <p className="font-medium text-foreground pt-2">LM Studio (Windows)</p>
               <ol className="list-decimal pl-5 space-y-1 text-muted-foreground">
-                <li>Install Ollama and run <code>ollama pull llama3.1</code>.</li>
-                <li>Start the app (it listens on <code>http://127.0.0.1:11434</code>).</li>
-                <li>Set <code>OLLAMA_ORIGINS=*</code> env var to allow browser calls if blocked.</li>
+                <li>Open LM Studio → <em>Local Server</em> tab. Load a model (e.g. <code>google/gemma-4-e4b</code>).</li>
+                <li>Click <em>Start Server</em>. Default: <code>http://127.0.0.1:1234/v1</code>.</li>
+                <li>The bridge proxies to that address — no CORS toggle needed.</li>
+              </ol>
+              <p className="font-medium text-foreground pt-2">Ollama (Windows)</p>
+              <ol className="list-decimal pl-5 space-y-1 text-muted-foreground">
+                <li>Install Ollama, run <code>ollama pull llama3.2:3b</code>.</li>
+                <li>Start Ollama (listens on <code>http://127.0.0.1:11434</code>).</li>
+                <li>The bridge proxies to that address — no <code>OLLAMA_ORIGINS</code> needed.</li>
               </ol>
               <p className="text-xs text-muted-foreground pt-2">
-                When Local AI is active, prompts never leave your computer.
-                If the browser blocks localhost, the diagnostics panel will show a CORS / TypeError result.
+                Prompts never leave your computer. The bridge proxies only to loopback (127.0.0.1) LM Studio / Ollama;
+                arbitrary hosts are rejected. Prompt contents are never audited.
               </p>
             </div>
             <div className="flex justify-end">
