@@ -3,22 +3,24 @@ import { useState, type ReactNode } from "react";
 import {
   LayoutDashboard, Mic, MonitorPlay, Users, FolderKanban, Workflow, FileText,
   History as HistoryIcon, Brain, Cable, ShieldCheck, Settings as SettingsIcon,
-  Menu, X, StopCircle, ClipboardCheck,
+  Menu, X, StopCircle, ClipboardCheck, MonitorSmartphone, BookMarked,
 } from "lucide-react";
 import { RavenMark } from "./RavenMark";
 import { useRah } from "@/lib/rah/context";
 import { Button } from "@/components/ui/button";
 
 const nav = [
-  { to: "/", label: "Command Center", icon: LayoutDashboard },
+  { to: "/", label: "Raven Home", icon: LayoutDashboard },
   { to: "/voice", label: "Voice Assistant", icon: Mic },
   { to: "/vision", label: "Screen Vision", icon: MonitorPlay },
   { to: "/agents", label: "Agent Team", icon: Users },
   { to: "/projects", label: "Projects", icon: FolderKanban },
+  { to: "/devices", label: "Device Center", icon: MonitorSmartphone },
   { to: "/automations", label: "Automations", icon: Workflow },
   { to: "/files", label: "Files & Knowledge", icon: FileText },
   { to: "/history", label: "Command History", icon: HistoryIcon },
   { to: "/memory", label: "Memory", icon: Brain },
+  { to: "/chronicle", label: "Chronicle", icon: BookMarked },
   { to: "/approvals", label: "Approvals", icon: ClipboardCheck },
   { to: "/connections", label: "Connections", icon: Cable },
   { to: "/privacy", label: "Privacy", icon: ShieldCheck },
@@ -49,6 +51,12 @@ export function AppShell({ children }: { children: ReactNode }) {
             <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">RAH AI Studios</div>
           </div>
         </Link>
+        <span
+          className="hidden sm:inline-flex items-center rounded-full border border-primary/60 bg-primary/10 px-2 py-0.5 text-[10px] uppercase tracking-widest text-primary"
+          title="Raven One product line — Alpha 0.1"
+        >
+          Raven One · Alpha 0.1
+        </span>
         <div className="ml-auto flex items-center gap-2">
           {activeProject && (
             <div className="hidden md:flex items-center gap-2 rounded-full border border-border/70 px-3 py-1 text-xs">
