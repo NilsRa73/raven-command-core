@@ -6,11 +6,12 @@ import { AiStatusBadge, useAiHealth } from "@/components/rah/AiStatusBadge";
 import { testVision, type VisionTestResult } from "@/lib/rah/ai";
 import { toast } from "sonner";
 import {
-  bridgeStatusSnapshot, bridgePair, bridgeSystemStatus, bridgeCapabilities,
+  bridgePair, bridgeSystemStatus, bridgeCapabilities,
   bridgeEmergencyStop, bridgeResume, forgetCredentials, loadCredentials,
   bridgeDisconnect,
   type BridgeStatusSnapshot,
 } from "@/lib/rah/bridge";
+import { useBridgeStatus, refreshBridgeStatus } from "@/lib/rah/bridgeStatus";
 import type { BridgeSystemStatus, BridgeCapabilities } from "@/lib/rah/bridge-protocol";
 import { LocalAiPanel } from "@/components/rah/LocalAiPanel";
 
@@ -74,38 +75,27 @@ function Connections() {
   }
 
   // Bridge
-  const [snap, setSnap] = useState<BridgeStatusSnapshot | null>(null);
+  const { snapshot: snap, loading: snapLoading, error: snapError } = useBridgeStatus();
   const [sysStatus, setSysStatus] = useState<BridgeSystemStatus | null>(null);
   const [caps, setCaps] = useState<BridgeCapabilities | null>(null);
-  const [pollErr, setPollErr] = useState<string | null>(null);
   const [tokenAge, setTokenAge] = useState<string>("");
 
   const refreshBridge = useCallback(async () => {
-    try {
-      const s = await bridgeStatusSnapshot();
-      setSnap(s);
-      setPollErr(null);
-      if (s.ui === "paired_online" || s.ui === "emergency_stopped") {
-        try { setSysStatus(await bridgeSystemStatus()); } catch (e) { /* ignore */ }
-        try { setCaps(await bridgeCapabilities()); } catch (e) { /* ignore */ }
-      } else {
-        setSysStatus(null); setCaps(null);
-      }
-      const c = await loadCredentials();
-      if (c) {
-        const days = Math.floor((Date.now() - c.pairedAt) / 86400000);
-        setTokenAge(days === 0 ? "today" : days === 1 ? "1 day ago" : `${days} days ago`);
-      } else setTokenAge("");
-    } catch (err) {
-      setPollErr(err instanceof Error ? err.message : String(err));
+    const s = await refreshBridgeStatus();
+    if (s && (s.ui === "paired_online" || s.ui === "emergency_stopped")) {
+      try { setSysStatus(await bridgeSystemStatus()); } catch { /* ignore */ }
+      try { setCaps(await bridgeCapabilities()); } catch { /* ignore */ }
+    } else {
+      setSysStatus(null); setCaps(null);
     }
+    const c = await loadCredentials();
+    if (c) {
+      const days = Math.floor((Date.now() - c.pairedAt) / 86400000);
+      setTokenAge(days === 0 ? "today" : days === 1 ? "1 day ago" : `${days} days ago`);
+    } else setTokenAge("");
   }, []);
 
-  useEffect(() => {
-    void refreshBridge();
-    const id = setInterval(() => { void refreshBridge(); }, 5000);
-    return () => clearInterval(id);
-  }, [refreshBridge]);
+  useEffect(() => { void refreshBridge(); }, [refreshBridge, snap?.ui]);
 
   // Pairing wizard
   const [wizardOpen, setWizardOpen] = useState(false);
@@ -147,7 +137,7 @@ function Connections() {
     }
   }
 
-  const ui = snap?.ui ?? "offline";
+  const ui: BridgeStatusSnapshot["ui"] = snap?.ui ?? (snapLoading ? "offline" : "offline");
   const paired = snap?.paired ?? false;
 
   return (
@@ -225,7 +215,7 @@ function Connections() {
               <div>Approved roots: <span className="text-foreground">{sysStatus.approvedRootsCount}</span></div>
             </>
           )}
-          {pollErr && <div className="text-destructive md:col-span-2">Poll error: {pollErr}</div>}
+          {snapError && <div className="text-destructive md:col-span-2">Poll error: {snapError}</div>}
         </div>
 
         {(ui === "version_mismatch" || ui === "feature_missing") && snap?.message && (
