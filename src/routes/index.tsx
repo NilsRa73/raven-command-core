@@ -1,9 +1,11 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CommandBar } from "@/components/rah/CommandBar";
 import { useRah } from "@/lib/rah/context";
 import { AGENTS, agentById } from "@/lib/rah/agents";
 import { RavenMark } from "@/components/rah/RavenMark";
+import { getLocalAiSettings, engineLabel, subscribeLocalAi, isLocalEngine, type LocalAiSettings } from "@/lib/rah/localAi";
+import { bridgeStatusSnapshot, type BridgeStatusSnapshot } from "@/lib/rah/bridge";
 
 export const Route = createFileRoute("/")({
   component: CommandCenter,
@@ -21,6 +23,16 @@ function Stat({ label, value, hint }: { label: string; value: string | number; h
 
 function CommandCenter() {
   const rah = useRah();
+  const [localAi, setLocalAi] = useState<LocalAiSettings>(() => getLocalAiSettings());
+  useEffect(() => subscribeLocalAi(setLocalAi), []);
+  const [bridge, setBridge] = useState<BridgeStatusSnapshot | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const tick = async () => { const s = await bridgeStatusSnapshot(); if (!cancelled) setBridge(s); };
+    void tick();
+    const id = window.setInterval(() => void tick(), 5000);
+    return () => { cancelled = true; window.clearInterval(id); };
+  }, []);
   const stats = useMemo(() => {
     const today = new Date(); today.setHours(0, 0, 0, 0);
     const todayCount = rah.commands.filter((c) => c.createdAt >= today.getTime()).length;
@@ -53,6 +65,39 @@ function CommandCenter() {
       <div>
         <h1 className="display text-3xl md:text-4xl">Command Center</h1>
         <p className="text-muted-foreground mt-1">Speak. Show. Command. Create.</p>
+      </div>
+
+      <div className="glass-panel p-3 flex flex-wrap items-center gap-2 text-[11px]">
+        <span className="rounded-full border border-border/70 px-2 py-1">
+          <span className="text-muted-foreground">Engine:</span>{" "}
+          <span className="text-foreground">{engineLabel(localAi.engine)}</span>
+        </span>
+        {isLocalEngine(localAi.engine) && (
+          <span className="rounded-full border border-primary/60 bg-primary/10 px-2 py-1 text-primary">LOCAL</span>
+        )}
+        {localAi.engine === "cloud" && (
+          <span className="rounded-full border border-border/70 px-2 py-1 text-muted-foreground">CLOUD</span>
+        )}
+        <span className={
+          "rounded-full border px-2 py-1 " +
+          (bridge?.ui === "paired_online" ? "border-primary/60 text-primary"
+            : bridge?.ui === "emergency_stopped" ? "border-destructive text-destructive"
+            : "border-border/70 text-muted-foreground")
+        }>
+          Bridge: {bridge?.ui === "paired_online" ? "connected"
+            : bridge?.ui === "pairing_required" ? "pair required"
+            : bridge?.ui === "version_mismatch" ? "update required"
+            : bridge?.ui === "emergency_stopped" ? "emergency stop"
+            : "offline"}
+        </span>
+        {rah.emergencyActive && (
+          <span className="rounded-full border border-destructive text-destructive px-2 py-1">Emergency Stop active</span>
+        )}
+        {stats.pending > 0 && (
+          <Link to="/approvals" className="rounded-full border border-primary/60 text-primary px-2 py-1">
+            {stats.pending} pending approval{stats.pending > 1 ? "s" : ""} →
+          </Link>
+        )}
       </div>
 
       <CommandBar />
