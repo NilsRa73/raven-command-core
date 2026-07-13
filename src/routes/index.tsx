@@ -5,7 +5,8 @@ import { useRah } from "@/lib/rah/context";
 import { AGENTS, agentById } from "@/lib/rah/agents";
 import { RavenMark } from "@/components/rah/RavenMark";
 import { getLocalAiSettings, engineLabel, subscribeLocalAi, isLocalEngine, type LocalAiSettings } from "@/lib/rah/localAi";
-import { bridgeStatusSnapshot, type BridgeStatusSnapshot } from "@/lib/rah/bridge";
+import { useBridgeStatus } from "@/lib/rah/bridgeStatus";
+import { bridgeShortLabel, bridgeUiKind } from "@/lib/rah/bridgeStatusLabels";
 
 export const Route = createFileRoute("/")({
   component: CommandCenter,
@@ -25,14 +26,8 @@ function CommandCenter() {
   const rah = useRah();
   const [localAi, setLocalAi] = useState<LocalAiSettings>(() => getLocalAiSettings());
   useEffect(() => subscribeLocalAi(setLocalAi), []);
-  const [bridge, setBridge] = useState<BridgeStatusSnapshot | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    const tick = async () => { const s = await bridgeStatusSnapshot(); if (!cancelled) setBridge(s); };
-    void tick();
-    const id = window.setInterval(() => void tick(), 5000);
-    return () => { cancelled = true; window.clearInterval(id); };
-  }, []);
+  const { snapshot: bridge, loading: bridgeLoading } = useBridgeStatus();
+  const bridgeKind = bridgeUiKind(bridge, bridgeLoading);
   const stats = useMemo(() => {
     const today = new Date(); today.setHours(0, 0, 0, 0);
     const todayCount = rah.commands.filter((c) => c.createdAt >= today.getTime()).length;
@@ -80,15 +75,13 @@ function CommandCenter() {
         )}
         <span className={
           "rounded-full border px-2 py-1 " +
-          (bridge?.ui === "paired_online" ? "border-primary/60 text-primary"
-            : bridge?.ui === "emergency_stopped" ? "border-destructive text-destructive"
+          (bridgeKind === "connected" ? "border-primary/60 text-primary"
+            : bridgeKind === "emergency" || bridgeKind === "error" ? "border-destructive text-destructive"
+            : bridgeKind === "checking" ? "border-primary/40 text-primary/80 animate-pulse"
             : "border-border/70 text-muted-foreground")
         }>
-          Bridge: {bridge?.ui === "paired_online" ? "connected"
-            : bridge?.ui === "pairing_required" ? "pair required"
-            : bridge?.ui === "version_mismatch" ? "update required"
-            : bridge?.ui === "emergency_stopped" ? "emergency stop"
-            : "offline"}
+          Bridge: {bridgeShortLabel(bridge, bridgeLoading)}
+          {bridgeKind === "connected" && bridge?.version ? ` v${bridge.version}` : ""}
         </span>
         {stats.pending > 0 && (
           <Link to="/approvals" className="rounded-full border border-primary/60 text-primary px-2 py-1">
