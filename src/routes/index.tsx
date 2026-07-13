@@ -7,6 +7,7 @@ import { RavenMark } from "@/components/rah/RavenMark";
 import { getLocalAiSettings, engineLabel, subscribeLocalAi, isLocalEngine, type LocalAiSettings } from "@/lib/rah/localAi";
 import { useBridgeStatus, refreshBridgeStatus } from "@/lib/rah/bridgeStatus";
 import { bridgeShortLabel, bridgeUiKind } from "@/lib/rah/bridgeStatusLabels";
+import { selectWelcomeSummary, memoryDiagnostics, MEMORY_TYPE_LABEL } from "@/lib/rah/projectMemory";
 
 export const Route = createFileRoute("/")({
   component: CommandCenter,
@@ -22,8 +23,23 @@ function Stat({ label, value, hint }: { label: string; value: string | number; h
   );
 }
 
+function WelcomeCell({ label, value, tone }: { label: string; value: string; tone?: "warn" | "ok" }) {
+  const cls = tone === "warn" ? "text-yellow-400" : tone === "ok" ? "text-primary" : "text-foreground";
+  return (
+    <div className="rounded-md border border-border/60 bg-background/40 p-3">
+      <div className="text-[10px] uppercase tracking-widest text-muted-foreground">{label}</div>
+      <div className={"mt-0.5 text-sm truncate " + cls} title={value}>{value}</div>
+    </div>
+  );
+}
+
 function CommandCenter() {
   const rah = useRah();
+  const welcome = useMemo(
+    () => selectWelcomeSummary(rah.projectMemory, { projectId: rah.activeProject?.id ?? null }),
+    [rah.projectMemory, rah.activeProject?.id],
+  );
+  const memDiag = useMemo(() => memoryDiagnostics(rah.projectMemory), [rah.projectMemory]);
   const [localAi, setLocalAi] = useState<LocalAiSettings>(() => getLocalAiSettings());
   useEffect(() => subscribeLocalAi(setLocalAi), []);
   const { snapshot: bridge, loading: bridgeLoading, refreshing: bridgeRefreshing } = useBridgeStatus();
@@ -65,6 +81,35 @@ function CommandCenter() {
         <h1 className="display text-3xl md:text-4xl">Command Center</h1>
         <p className="text-muted-foreground mt-1">Speak. Show. Command. Create.</p>
       </div>
+
+      {(welcome.lastMilestone || welcome.currentBlocker || welcome.nextAction || rah.activeProject) && (
+        <section className="glass-panel gold-border p-4" aria-label="Welcome back summary">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-primary text-lg">🜛</span>
+            <div className="display text-lg gold-text">Welcome back</div>
+            <span className="ml-auto text-[11px] text-muted-foreground">Local memory · never uploaded</span>
+          </div>
+          <div className="grid gap-3 md:grid-cols-4">
+            <WelcomeCell label="Active project" value={rah.activeProject ? `${rah.activeProject.icon} ${rah.activeProject.name}` : "None"} />
+            <WelcomeCell label="Last milestone" value={welcome.lastMilestone?.title ?? "—"} />
+            <WelcomeCell label="Current blocker" value={welcome.currentBlocker?.title ?? "None"} tone={welcome.currentBlocker ? "warn" : "ok"} />
+            <WelcomeCell label="Next action" value={welcome.nextAction?.title ?? "—"} />
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+            <button
+              type="button"
+              onClick={() => rah.focusCommandBar()}
+              className="inline-flex h-8 items-center rounded-md bg-primary px-3 text-primary-foreground hover:bg-primary/90"
+            >
+              Continue →
+            </button>
+            <Link to="/memory" className="text-primary hover:underline">Open Project Memory →</Link>
+            <span className="ml-auto text-muted-foreground">
+              {memDiag.total} record{memDiag.total === 1 ? "" : "s"} · {memDiag.pinned} pinned · {memDiag.archived} archived
+            </span>
+          </div>
+        </section>
+      )}
 
       <div className="glass-panel p-3 flex flex-wrap items-center gap-2 text-[11px]">
         <span className="rounded-full border border-border/70 px-2 py-1">

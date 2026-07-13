@@ -213,6 +213,7 @@ export function CommandBar() {
       const memory = rah.prefs.memoryEnabled
         ? rah.memory.filter((m) => !m.disabled && (!m.projectId || m.projectId === rah.activeProject?.id)).map((m) => m.text)
         : [];
+      const projectMemoryBlock = rah.prefs.memoryEnabled ? rah.buildProjectMemoryContext().memoryBlock : "";
       const cmd = await rah.addCommand({
         prompt, agents: selectedAgents, mode, fileIds: [],
         projectId: rah.activeProject?.id, inputType: listening ? "voice" : "text",
@@ -224,6 +225,7 @@ export function CommandBar() {
             projectName: rah.activeProject?.name,
             projectGoals: rah.activeProject?.goals,
             memory,
+            projectMemoryBlock,
           },
           images: includedImages.map((i) => ({ name: i.name, mime: i.mime, dataUrl: i.dataUrl })),
         },
@@ -295,6 +297,7 @@ export function CommandBar() {
     const memory = rah.prefs.memoryEnabled
       ? rah.memory.filter((m) => !m.disabled && (!m.projectId || m.projectId === rah.activeProject?.id)).map((m) => m.text)
       : [];
+    const projectMemoryBlock = rah.prefs.memoryEnabled ? rah.buildProjectMemoryContext().memoryBlock : "";
 
     try {
       let providerLabel = "Lovable AI Gateway";
@@ -311,6 +314,7 @@ export function CommandBar() {
           projectName: rah.activeProject?.name,
           projectGoals: rah.activeProject?.goals,
           memory,
+          projectMemoryBlock,
         },
         images: imagePayload,
       }, {

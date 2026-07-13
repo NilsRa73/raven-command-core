@@ -1,8 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { getDB, getPrefs, savePrefs, seedIfEmpty, uid, type Approval, type CommandRecord, type MemoryItem, type Preferences, type Project } from "./db";
+import { getDB, getPrefs, savePrefs, seedIfEmpty, seedProjectMemoryIfEmpty, uid, type Approval, type CommandRecord, type MemoryItem, type Preferences, type Project, type ProjectMemoryRecord } from "./db";
 import { streamChat } from "./ai";
 import { toast } from "sonner";
 import { applyBridgeAutoMigration } from "./localAi";
+import { selectRelevantForPrompt, buildMemoryInjectionBlock } from "./projectMemory";
 
 type Ctx = {
   ready: boolean;
@@ -25,6 +26,14 @@ type Ctx = {
   reloadMemory: () => Promise<void>;
   addMemory: (m: Omit<MemoryItem, "id" | "createdAt">) => Promise<void>;
   deleteMemory: (id: string) => Promise<void>;
+  projectMemory: ProjectMemoryRecord[];
+  reloadProjectMemory: () => Promise<void>;
+  createProjectMemory: (m: Omit<ProjectMemoryRecord, "id" | "createdAt" | "updatedAt">) => Promise<ProjectMemoryRecord>;
+  updateProjectMemory: (id: string, patch: Partial<ProjectMemoryRecord>) => Promise<void>;
+  deleteProjectMemory: (id: string) => Promise<void>;
+  togglePinProjectMemory: (id: string) => Promise<void>;
+  toggleArchiveProjectMemory: (id: string) => Promise<void>;
+  buildProjectMemoryContext: () => { memoryBlock: string; count: number };
   approvals: Approval[];
   reloadApprovals: () => Promise<void>;
   requestApproval: (a: Omit<Approval, "id" | "createdAt" | "status">) => Promise<Approval>;
@@ -49,6 +58,7 @@ export function RahProvider({ children }: { children: ReactNode }) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [commands, setCommands] = useState<CommandRecord[]>([]);
   const [memory, setMemory] = useState<MemoryItem[]>([]);
+  const [projectMemory, setProjectMemory] = useState<ProjectMemoryRecord[]>([]);
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const focusRef = useRef<() => void>(() => {});
 
@@ -66,6 +76,11 @@ export function RahProvider({ children }: { children: ReactNode }) {
     const db = await getDB();
     setMemory(await db.getAll("memory"));
   }, []);
+  const reloadProjectMemory = useCallback(async () => {
+    const db = await getDB();
+    const all = await db.getAll("projectMemory");
+    setProjectMemory(all.sort((a, b) => b.updatedAt - a.updatedAt));
+  }, []);
   const reloadApprovals = useCallback(async () => {
     const db = await getDB();
     setApprovals((await db.getAll("approvals")).sort((a, b) => b.createdAt - a.createdAt));
@@ -75,15 +90,16 @@ export function RahProvider({ children }: { children: ReactNode }) {
     (async () => {
       try {
         await seedIfEmpty();
+        await seedProjectMemoryIfEmpty();
         const p = await getPrefs();
         setPrefs(p);
-        await Promise.all([reloadProjects(), reloadCommands(), reloadMemory(), reloadApprovals()]);
+        await Promise.all([reloadProjects(), reloadCommands(), reloadMemory(), reloadApprovals(), reloadProjectMemory()]);
         void applyBridgeAutoMigration();
       } finally {
         setReady(true);
       }
     })();
-  }, [reloadProjects, reloadCommands, reloadMemory, reloadApprovals]);
+  }, [reloadProjects, reloadCommands, reloadMemory, reloadApprovals, reloadProjectMemory]);
 
   // apply theme + text size + reduced motion to <html>
   useEffect(() => {
@@ -179,6 +195,41 @@ export function RahProvider({ children }: { children: ReactNode }) {
     await db.delete("memory", id);
     await reloadMemory();
   }, [reloadMemory]);
+
+  const createProjectMemory = useCallback<Ctx["createProjectMemory"]>(async (m) => {
+    const now = Date.now();
+    const rec: ProjectMemoryRecord = { ...m, id: uid(), createdAt: now, updatedAt: now };
+    const db = await getDB();
+    await db.put("projectMemory", rec);
+    await reloadProjectMemory();
+    return rec;
+  }, [reloadProjectMemory]);
+  const updateProjectMemory = useCallback<Ctx["updateProjectMemory"]>(async (id, patch) => {
+    const db = await getDB();
+    const cur = await db.get("projectMemory", id);
+    if (!cur) return;
+    await db.put("projectMemory", { ...cur, ...patch, updatedAt: Date.now() });
+    await reloadProjectMemory();
+  }, [reloadProjectMemory]);
+  const deleteProjectMemory = useCallback<Ctx["deleteProjectMemory"]>(async (id) => {
+    const db = await getDB();
+    await db.delete("projectMemory", id);
+    await reloadProjectMemory();
+  }, [reloadProjectMemory]);
+  const togglePinProjectMemory = useCallback<Ctx["togglePinProjectMemory"]>(async (id) => {
+    const db = await getDB();
+    const cur = await db.get("projectMemory", id);
+    if (!cur) return;
+    await db.put("projectMemory", { ...cur, pinned: !cur.pinned, updatedAt: Date.now() });
+    await reloadProjectMemory();
+  }, [reloadProjectMemory]);
+  const toggleArchiveProjectMemory = useCallback<Ctx["toggleArchiveProjectMemory"]>(async (id) => {
+    const db = await getDB();
+    const cur = await db.get("projectMemory", id);
+    if (!cur) return;
+    await db.put("projectMemory", { ...cur, archived: !cur.archived, updatedAt: Date.now() });
+    await reloadProjectMemory();
+  }, [reloadProjectMemory]);
 
   const requestApproval = useCallback<Ctx["requestApproval"]>(async (a) => {
     const rec: Approval = { ...a, id: uid(), createdAt: Date.now(), status: "pending" };
@@ -285,6 +336,18 @@ export function RahProvider({ children }: { children: ReactNode }) {
     activeProject, setActiveProject,
     commands, reloadCommands, addCommand, updateCommand, deleteCommand,
     memory, reloadMemory, addMemory, deleteMemory,
+    projectMemory, reloadProjectMemory, createProjectMemory, updateProjectMemory, deleteProjectMemory,
+    togglePinProjectMemory, toggleArchiveProjectMemory,
+    buildProjectMemoryContext: () => {
+      const picked = selectRelevantForPrompt(projectMemory, {
+        projectId: activeProject?.id ?? null,
+        limit: 8,
+      });
+      return {
+        memoryBlock: buildMemoryInjectionBlock(picked, { projectName: activeProject?.name }),
+        count: picked.length,
+      };
+    },
     approvals, reloadApprovals, requestApproval, resolveApproval,
     runApprovedCommand,
     emergencyStop,
