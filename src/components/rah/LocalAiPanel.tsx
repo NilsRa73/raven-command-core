@@ -12,7 +12,7 @@ import {
   type LocalAiSettings, type DiscoveredModel, type LocalDiagnostic,
 } from "@/lib/rah/localAi";
 import { checkHealth, type HealthResult } from "@/lib/rah/ai";
-import { bridgeStatusSnapshot, type BridgeStatusSnapshot } from "@/lib/rah/bridge";
+import { useBridgeStatus } from "@/lib/rah/bridgeStatus";
 
 type Status = "idle" | "connecting" | "connected" | "offline" | "cors_blocked";
 
@@ -35,19 +35,14 @@ export function LocalAiPanel() {
   const [health, setHealth] = useState<HealthResult | null>(null);
   const [diag, setDiag] = useState<LocalDiagnostic | null>(() => getLastDiagnostic());
   const [showGuide, setShowGuide] = useState(false);
-  const [bridge, setBridge] = useState<BridgeStatusSnapshot | null>(null);
+  const { snapshot: bridge, loading: bridgeLoading } = useBridgeStatus();
   const [transportUsed, setTransportUsed] = useState<"bridge" | "direct" | null>(null);
 
   useEffect(() => subscribeLocalAi(setSettings), []);
   useEffect(() => {
     let cancelled = false;
-    const tick = async () => {
-      const [snap, t] = await Promise.all([bridgeStatusSnapshot(), resolveTransport(settings)]);
-      if (!cancelled) { setBridge(snap); setTransportUsed(t); }
-    };
-    void tick();
-    const id = window.setInterval(() => void tick(), 5000);
-    return () => { cancelled = true; window.clearInterval(id); };
+    void resolveTransport(settings).then((t) => { if (!cancelled) setTransportUsed(t); });
+    return () => { cancelled = true; };
   }, [settings]);
 
   useEffect(() => {
@@ -96,17 +91,18 @@ export function LocalAiPanel() {
 
   const bridgeLabel =
     !isLocalEngine(settings.engine) ? null :
-    transportUsed === "direct" && settings.transport !== "direct"
+    bridge == null ? "Checking bridge…"
+    : transportUsed === "direct" && settings.transport !== "direct"
       ? "Bridge offline / unpaired — falling back to direct (dev only)"
       : transportUsed === "direct"
         ? "Direct mode (developer)"
         : bridge?.ui === "paired_online"
-          ? "Bridge connected"
+          ? `Bridge connected${bridge.version ? ` v${bridge.version}` : ""}`
           : bridge?.ui === "emergency_stopped"
             ? "Bridge emergency-stopped"
             : bridge?.ui === "version_mismatch"
               ? "Bridge version too old — update from Connections"
-              : "Bridge offline";
+              : bridgeLoading ? "Checking bridge…" : "Bridge offline";
 
   const statusTone = status === "connected" ? "border-primary text-primary"
     : status === "connecting" ? "border-primary/60 text-primary animate-pulse"
