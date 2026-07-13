@@ -19,7 +19,7 @@ import {
   engineLabel, isLocalEngine,
   type LocalAiSettings,
 } from "@/lib/rah/localAi";
-import { useBridgeStatus } from "@/lib/rah/bridgeStatus";
+import { useBridgeStatus, refreshBridgeStatus } from "@/lib/rah/bridgeStatus";
 import { routeText as computeRouteText, shouldShowBridgeOfflineBanner } from "@/lib/rah/bridgeStatusLabels";
 import {
   prepareImage, releasePrepared, validateBatch, metaFromPrepared,
@@ -50,7 +50,11 @@ export function CommandBar() {
   const [localAi, setLocalAi] = useState<LocalAiSettings>(() => getLocalAiSettings());
   useEffect(() => subscribeLocalAi(setLocalAi), []);
   const streaming = response?.state === "thinking" || response?.state === "streaming";
-  const { snapshot: bridgeSnap, refresh: refreshBridge } = useBridgeStatus();
+  const { snapshot: bridgeSnap, refresh: refreshBridge, refreshing: bridgeRefreshing } = useBridgeStatus();
+  // Also kick a refresh whenever the CommandBar mounts (e.g. user returns to
+  // Command Center from another route) so the route line and offline banner
+  // reflect current truth immediately, not the 5s-old poll tick.
+  useEffect(() => { void refreshBridgeStatus(); void refreshHealth(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const localOffline = shouldShowBridgeOfflineBanner(localAi, bridgeSnap);
   const localServerOffline =
     isLocalEngine(localAi.engine) && health?.ok === false && bridgeSnap?.ui === "paired_online";
