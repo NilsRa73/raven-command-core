@@ -8,7 +8,7 @@ import {
   type SharedState,
 } from "./bridgeStatusReducer";
 
-export type SharedBridgeState = SharedState;
+export type SharedBridgeState = SharedState<BridgeStatusSnapshot>;
 
 let state: SharedBridgeState = initialSharedState();
 
