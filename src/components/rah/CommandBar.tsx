@@ -15,6 +15,11 @@ import { ResponsePanel, type LiveResponse } from "./ResponsePanel";
 import { AiStatusBadge, useAiHealth } from "./AiStatusBadge";
 import { LocalAiBadge } from "./LocalAiPanel";
 import {
+  getLocalAiSettings, saveLocalAiSettings, subscribeLocalAi,
+  engineLabel, isLocalEngine,
+  type LocalAiSettings,
+} from "@/lib/rah/localAi";
+import {
   prepareImage, releasePrepared, validateBatch, metaFromPrepared,
   drainPendingImages, preparedFromPending, ACCEPTED_MIME,
   type PreparedImage,
@@ -40,6 +45,9 @@ export function CommandBar() {
   const abortRef = useRef<AbortController | null>(null);
   const { health, loading: healthLoading, refresh: refreshHealth } = useAiHealth(true);
   const aiLive = health?.state === "connected";
+  const [localAi, setLocalAi] = useState<LocalAiSettings>(() => getLocalAiSettings());
+  useEffect(() => subscribeLocalAi(setLocalAi), []);
+  const streaming = response?.state === "thinking" || response?.state === "streaming";
 
   useEffect(() => rah.registerCommandBarFocus(() => ref.current?.focus()), [rah]);
   useEffect(() => {
