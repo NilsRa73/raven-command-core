@@ -19,6 +19,7 @@ import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as MemoryRouteImport } from './routes/memory'
 import { Route as HistoryRouteImport } from './routes/history'
 import { Route as FilesRouteImport } from './routes/files'
+import { Route as DevicesRouteImport } from './routes/devices'
 import { Route as ConnectionsRouteImport } from './routes/connections'
 import { Route as AutomationsRouteImport } from './routes/automations'
 import { Route as ApprovalsRouteImport } from './routes/approvals'
@@ -79,6 +80,11 @@ const FilesRoute = FilesRouteImport.update({
   path: '/files',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DevicesRoute = DevicesRouteImport.update({
+  id: '/devices',
+  path: '/devices',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ConnectionsRoute = ConnectionsRouteImport.update({
   id: '/connections',
   path: '/connections',
@@ -131,6 +137,7 @@ export interface FileRoutesByFullPath {
   '/approvals': typeof ApprovalsRoute
   '/automations': typeof AutomationsRoute
   '/connections': typeof ConnectionsRoute
+  '/devices': typeof DevicesRoute
   '/files': typeof FilesRoute
   '/history': typeof HistoryRoute
   '/memory': typeof MemoryRoute
@@ -152,6 +159,7 @@ export interface FileRoutesByTo {
   '/approvals': typeof ApprovalsRoute
   '/automations': typeof AutomationsRoute
   '/connections': typeof ConnectionsRoute
+  '/devices': typeof DevicesRoute
   '/files': typeof FilesRoute
   '/history': typeof HistoryRoute
   '/memory': typeof MemoryRoute
@@ -174,6 +182,7 @@ export interface FileRoutesById {
   '/approvals': typeof ApprovalsRoute
   '/automations': typeof AutomationsRoute
   '/connections': typeof ConnectionsRoute
+  '/devices': typeof DevicesRoute
   '/files': typeof FilesRoute
   '/history': typeof HistoryRoute
   '/memory': typeof MemoryRoute
@@ -197,6 +206,7 @@ export interface FileRouteTypes {
     | '/approvals'
     | '/automations'
     | '/connections'
+    | '/devices'
     | '/files'
     | '/history'
     | '/memory'
@@ -218,6 +228,7 @@ export interface FileRouteTypes {
     | '/approvals'
     | '/automations'
     | '/connections'
+    | '/devices'
     | '/files'
     | '/history'
     | '/memory'
@@ -239,6 +250,7 @@ export interface FileRouteTypes {
     | '/approvals'
     | '/automations'
     | '/connections'
+    | '/devices'
     | '/files'
     | '/history'
     | '/memory'
@@ -261,6 +273,7 @@ export interface RootRouteChildren {
   ApprovalsRoute: typeof ApprovalsRoute
   AutomationsRoute: typeof AutomationsRoute
   ConnectionsRoute: typeof ConnectionsRoute
+  DevicesRoute: typeof DevicesRoute
   FilesRoute: typeof FilesRoute
   HistoryRoute: typeof HistoryRoute
   MemoryRoute: typeof MemoryRoute
@@ -348,6 +361,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof FilesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/devices': {
+      id: '/devices'
+      path: '/devices'
+      fullPath: '/devices'
+      preLoaderRoute: typeof DevicesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/connections': {
       id: '/connections'
       path: '/connections'
@@ -432,6 +452,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApprovalsRoute: ApprovalsRoute,
   AutomationsRoute: AutomationsRoute,
   ConnectionsRoute: ConnectionsRoute,
+  DevicesRoute: DevicesRoute,
   FilesRoute: FilesRoute,
   HistoryRoute: HistoryRoute,
   MemoryRoute: MemoryRoute,
