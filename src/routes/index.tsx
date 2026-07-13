@@ -20,6 +20,8 @@ import {
   loadFocusMode, saveFocusMode,
 } from "@/lib/rah/missionControl";
 import { memoryDiagnostics } from "@/lib/rah/projectMemory";
+import { buildChronicleEntries } from "@/lib/rah/chronicle";
+import { bridgeDeviceRecord, loadManualDevices } from "@/lib/rah/devices";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/")({
@@ -141,6 +143,20 @@ function CommandCenter() {
 
   const memDiag = useMemo(() => memoryDiagnostics(rah.projectMemory), [rah.projectMemory]);
   const pendingApprovals = rah.approvals.filter((a) => a.status === "pending").length;
+
+  const chronicle = useMemo(
+    () => buildChronicleEntries({ commands: rah.commands, projectMemory: rah.projectMemory, approvals: rah.approvals }).slice(0, 5),
+    [rah.commands, rah.projectMemory, rah.approvals],
+  );
+  const deviceSummary = useMemo(() => {
+    const manual = loadManualDevices();
+    const live = bridgeDeviceRecord(bridge, sys);
+    const all = live ? [live, ...manual] : manual;
+    const connected = all.filter((d) => d.status === "Connected").length;
+    const offline = all.filter((d) => d.status === "Offline").length;
+    const planned = all.filter((d) => d.status === "Planned").length;
+    return { total: all.length, connected, offline, planned, live };
+  }, [bridge, sys]);
 
   const bridgeKind = bridgeUiKind(bridge, bridgeLoading);
   const bridgeTone: "ok" | "warn" | "bad" | undefined =
