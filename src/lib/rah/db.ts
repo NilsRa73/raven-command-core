@@ -19,6 +19,11 @@ export interface Project {
   updatedAt: number;
   goals?: string;
   notes?: string;
+  /** Sprint 2 — task tracking (user-edited, no silent updates). */
+  currentTask?: string;
+  nextTask?: string;
+  blocker?: string;
+  estimatedCompletionAt?: number;
 }
 
 export interface CommandRecord {

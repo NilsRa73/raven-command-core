@@ -626,6 +626,25 @@ function GoalsTab({ project, rah }: { project: any; rah: ReturnType<typeof useRa
   const [draft, setDraft] = useState(project.goals ?? "");
   useEffect(() => { setDraft(project.goals ?? ""); }, [project.id, project.goals]);
   const dirty = draft !== (project.goals ?? "");
+
+  // Sprint 2 — task tracking, no silent writes.
+  const [current, setCurrent] = useState<string>(project.currentTask ?? "");
+  const [next, setNext] = useState<string>(project.nextTask ?? "");
+  const [blocker, setBlocker] = useState<string>(project.blocker ?? "");
+  const [eta, setEta] = useState<string>(() =>
+    project.estimatedCompletionAt ? new Date(project.estimatedCompletionAt).toISOString().slice(0, 10) : "");
+  useEffect(() => {
+    setCurrent(project.currentTask ?? "");
+    setNext(project.nextTask ?? "");
+    setBlocker(project.blocker ?? "");
+    setEta(project.estimatedCompletionAt ? new Date(project.estimatedCompletionAt).toISOString().slice(0, 10) : "");
+  }, [project.id, project.currentTask, project.nextTask, project.blocker, project.estimatedCompletionAt]);
+  const tasksDirty =
+    current !== (project.currentTask ?? "") ||
+    next !== (project.nextTask ?? "") ||
+    blocker !== (project.blocker ?? "") ||
+    eta !== (project.estimatedCompletionAt ? new Date(project.estimatedCompletionAt).toISOString().slice(0, 10) : "");
+
   const goalMemories = useMemo(
     () => filterMemories(rah.projectMemory, { projectId: project.id, types: ["milestone", "next_action"] }),
     [rah.projectMemory, project.id],
@@ -643,6 +662,52 @@ function GoalsTab({ project, rah }: { project: any; rah: ReturnType<typeof useRa
           <Button variant="ghost" disabled={!dirty} onClick={() => setDraft(project.goals ?? "")}>Discard</Button>
         </div>
         <p className="text-[11px] text-muted-foreground">Saved only when you click Save — no silent writes.</p>
+      </section>
+      <section className="glass-panel p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <h3 className="display text-sm uppercase tracking-widest text-muted-foreground">Task tracking</h3>
+          <span className="text-xs text-muted-foreground">Fuels Raven Home &amp; Continue Project.</span>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          <label className="text-xs">
+            <span className="text-muted-foreground">Current task</span>
+            <input value={current} onChange={(e) => setCurrent(e.target.value)} maxLength={200}
+              className="mt-1 w-full rounded-md border border-border/60 bg-background/40 px-2 py-1.5 text-sm outline-none focus:border-primary/60" />
+          </label>
+          <label className="text-xs">
+            <span className="text-muted-foreground">Next task</span>
+            <input value={next} onChange={(e) => setNext(e.target.value)} maxLength={200}
+              className="mt-1 w-full rounded-md border border-border/60 bg-background/40 px-2 py-1.5 text-sm outline-none focus:border-primary/60" />
+          </label>
+          <label className="text-xs md:col-span-2">
+            <span className="text-muted-foreground">Current blocker (optional)</span>
+            <input value={blocker} onChange={(e) => setBlocker(e.target.value)} maxLength={200}
+              className="mt-1 w-full rounded-md border border-border/60 bg-background/40 px-2 py-1.5 text-sm outline-none focus:border-yellow-500/60" />
+          </label>
+          <label className="text-xs">
+            <span className="text-muted-foreground">Estimated completion</span>
+            <input type="date" value={eta} onChange={(e) => setEta(e.target.value)}
+              className="mt-1 w-full rounded-md border border-border/60 bg-background/40 px-2 py-1.5 text-sm outline-none focus:border-primary/60" />
+          </label>
+        </div>
+        <div className="flex gap-2">
+          <Button disabled={!tasksDirty} onClick={async () => {
+            await rah.updateProject(project.id, {
+              currentTask: current.trim() || undefined,
+              nextTask: next.trim() || undefined,
+              blocker: blocker.trim() || undefined,
+              estimatedCompletionAt: eta ? new Date(eta + "T12:00:00").getTime() : undefined,
+            });
+            toast.success("Task tracking saved.");
+          }}>Save tracking</Button>
+          <Button variant="ghost" disabled={!tasksDirty} onClick={() => {
+            setCurrent(project.currentTask ?? "");
+            setNext(project.nextTask ?? "");
+            setBlocker(project.blocker ?? "");
+            setEta(project.estimatedCompletionAt ? new Date(project.estimatedCompletionAt).toISOString().slice(0, 10) : "");
+          }}>Discard</Button>
+        </div>
+        <p className="text-[11px] text-muted-foreground">Feeds the Welcome Back card and the Continue Project handoff.</p>
       </section>
       <section className="glass-panel p-4">
         <h3 className="display text-sm uppercase tracking-widest text-muted-foreground">Milestones &amp; next actions</h3>

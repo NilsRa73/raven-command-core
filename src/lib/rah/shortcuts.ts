@@ -9,6 +9,12 @@ export function useGlobalShortcuts() {
     if (!prefs.shortcutsEnabled) return;
     const handler = (e: KeyboardEvent) => {
       const meta = e.ctrlKey || e.metaKey;
+      // Global Command Palette: Ctrl+Space or Ctrl/Cmd+K
+      if ((meta && e.key.toLowerCase() === "k") || (e.ctrlKey && e.code === "Space")) {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent("rah:command-palette-toggle"));
+        return;
+      }
       if (meta && e.altKey && e.key.toLowerCase() === "r") { e.preventDefault(); focusCommandBar(); return; }
       if (meta && e.shiftKey && e.key.toLowerCase() === "s") { e.preventDefault(); router.navigate({ to: "/vision" }); return; }
       if (meta && e.shiftKey && e.key.toLowerCase() === "a") { e.preventDefault(); router.navigate({ to: "/approvals" }); return; }

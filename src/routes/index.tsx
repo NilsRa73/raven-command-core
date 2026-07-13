@@ -22,6 +22,7 @@ import {
 import { memoryDiagnostics } from "@/lib/rah/projectMemory";
 import { buildChronicleEntries } from "@/lib/rah/chronicle";
 import { bridgeDeviceRecord, loadManualDevices } from "@/lib/rah/devices";
+import { buildWelcomeBack, loadMorningLastSeen, markMorningSeen, formatEta } from "@/lib/rah/morning";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/")({
@@ -170,6 +171,21 @@ function CommandCenter() {
     weekday: "long", year: "numeric", month: "long", day: "numeric",
   });
 
+  const welcome = useMemo(() => buildWelcomeBack({
+    now, lastSeenDay: loadMorningLastSeen(),
+    userName: "Nils",
+    activeProject: rah.activeProject ?? null,
+    projects: rah.projects,
+    projectMemory: rah.projectMemory,
+    commands: rah.commands,
+    approvals: rah.approvals,
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [rah.activeProject?.id, rah.activeProject?.currentTask, rah.activeProject?.nextTask,
+       rah.activeProject?.blocker, rah.activeProject?.estimatedCompletionAt,
+       rah.projects, rah.projectMemory, rah.commands, rah.approvals, now]);
+  useEffect(() => { markMorningSeen(now); }, [welcome.today]); // eslint-disable-line react-hooks/exhaustive-deps
+  const etaLabel = formatEta(welcome.estimatedCompletionAt ?? null, now);
+
   return (
     <div className="space-y-4">
       {!rah.prefs.onboardingComplete && (
@@ -191,19 +207,35 @@ function CommandCenter() {
           <div className="min-w-0">
             <div className="text-[11px] uppercase tracking-widest text-muted-foreground">Raven Home · Alpha 0.1</div>
             <h1 className="display text-2xl md:text-3xl gold-text truncate">
-              Welcome back, Nils. Let’s build something worthwhile today.
+              {welcome.salutation}, {welcome.userName || "there"}.
             </h1>
             <div className="mt-1 text-xs text-muted-foreground">
               {rah.activeProject ? <>Active project: <span className="text-foreground">{rah.activeProject.icon} {rah.activeProject.name}</span> · </> : <>No active project · </>}
               {localDate} · {localTime}
               {rah.activeProject?.goals ? <> · Goal: <span className="text-foreground">{rah.activeProject.goals.slice(0, 90)}</span></> : null}
             </div>
+            {(welcome.currentTask || welcome.nextTask || welcome.blocker || etaLabel) && (
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
+                {welcome.currentTask && <span><span className="text-muted-foreground">Current:</span> <span className="text-foreground">{welcome.currentTask}</span></span>}
+                {welcome.nextTask && <span><span className="text-muted-foreground">Next:</span> <span className="text-foreground">{welcome.nextTask}</span></span>}
+                {welcome.blocker && <span className="text-yellow-400">Blocker: {welcome.blocker}</span>}
+                {etaLabel && <span className="text-muted-foreground">{etaLabel}</span>}
+              </div>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-2 shrink-0">
             <PrivacyBadge label={privacy.label} explanation={privacy.explanation} />
             <span className="rounded-full border border-border/60 px-2 py-0.5 text-[10px] uppercase tracking-widest text-muted-foreground">
               Readiness {readiness.score}%
             </span>
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new CustomEvent("rah:command-palette-open"))}
+              className="inline-flex h-7 items-center gap-2 rounded-md border border-border/60 bg-background/40 px-2 text-[11px] hover:border-primary/60"
+              title="Open command palette (Ctrl+Space)"
+            >
+              Palette <kbd className="text-[10px] rounded border border-border/60 px-1">Ctrl+Space</kbd>
+            </button>
             <label className="inline-flex items-center gap-2 rounded-md border border-border/60 bg-background/40 px-2 py-1 text-[11px]">
               <input
                 type="checkbox" checked={focus} onChange={(e) => setFocus(e.target.checked)}

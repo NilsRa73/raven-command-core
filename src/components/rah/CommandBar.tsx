@@ -95,6 +95,17 @@ export function CommandBar() {
 
   useEffect(() => rah.registerCommandBarFocus(() => ref.current?.focus()), [rah]);
   useEffect(() => {
+    const onPrefill = (e: Event) => {
+      const detail = (e as CustomEvent<{ text?: string }>).detail;
+      const t = detail?.text?.trim();
+      if (!t) return;
+      setText((cur) => (cur ? cur + " " : "") + t);
+      ref.current?.focus();
+    };
+    window.addEventListener("rah:prefill-command", onPrefill as EventListener);
+    return () => window.removeEventListener("rah:prefill-command", onPrefill as EventListener);
+  }, []);
+  useEffect(() => {
     const cancel = () => { stopListening(); abortRef.current?.abort(); };
     window.addEventListener("rah:cancel", cancel);
     return () => window.removeEventListener("rah:cancel", cancel);
