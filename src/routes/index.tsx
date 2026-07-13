@@ -20,6 +20,8 @@ import {
   loadFocusMode, saveFocusMode,
 } from "@/lib/rah/missionControl";
 import { memoryDiagnostics } from "@/lib/rah/projectMemory";
+import { buildChronicleEntries } from "@/lib/rah/chronicle";
+import { bridgeDeviceRecord, loadManualDevices } from "@/lib/rah/devices";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/")({
@@ -141,6 +143,20 @@ function CommandCenter() {
 
   const memDiag = useMemo(() => memoryDiagnostics(rah.projectMemory), [rah.projectMemory]);
   const pendingApprovals = rah.approvals.filter((a) => a.status === "pending").length;
+
+  const chronicle = useMemo(
+    () => buildChronicleEntries({ commands: rah.commands, projectMemory: rah.projectMemory, approvals: rah.approvals }).slice(0, 5),
+    [rah.commands, rah.projectMemory, rah.approvals],
+  );
+  const deviceSummary = useMemo(() => {
+    const manual = loadManualDevices();
+    const live = bridgeDeviceRecord({ snapshot: bridge, sys });
+    const all = live ? [live, ...manual] : manual;
+    const connected = all.filter((d) => d.status === "Connected").length;
+    const offline = all.filter((d) => d.status === "Offline").length;
+    const planned = all.filter((d) => d.status === "Planned").length;
+    return { total: all.length, connected, offline, planned, live };
+  }, [bridge, sys]);
 
   const bridgeKind = bridgeUiKind(bridge, bridgeLoading);
   const bridgeTone: "ok" | "warn" | "bad" | undefined =
@@ -393,6 +409,45 @@ function CommandCenter() {
               <Link to="/files" className="rounded-md border border-border/60 bg-background/40 px-3 py-2 hover:border-primary/60">📁 Files &amp; Knowledge</Link>
               <Link to="/connections" className="rounded-md border border-border/60 bg-background/40 px-3 py-2 hover:border-primary/60 col-span-2">🔗 Connections</Link>
             </div>
+          </Card>
+
+          {/* Device Center summary */}
+          <Card
+            title="Device Center"
+            tone={deviceSummary.live ? "ok" : undefined}
+            action={<Link to="/devices" className="text-[11px] text-primary hover:underline">Open</Link>}
+          >
+            <div className="grid gap-2 grid-cols-2">
+              <KeyVal label="Live device" value={deviceSummary.live ? deviceSummary.live.displayName : "Bridge not paired"} tone={deviceSummary.live ? "ok" : "warn"} />
+              <KeyVal label="Total" value={String(deviceSummary.total)} />
+              <KeyVal label="Connected" value={String(deviceSummary.connected)} tone={deviceSummary.connected ? "ok" : undefined} />
+              <KeyVal label="Offline / Planned" value={deviceSummary.offline + " / " + deviceSummary.planned} />
+            </div>
+            <div className="mt-3 text-[11px] text-muted-foreground">Live device is derived from your paired Desktop Bridge. Manual entries never claim to be online.</div>
+          </Card>
+
+          {/* Chronicle preview */}
+          <Card
+            title="Recent Chronicle"
+            action={<Link to="/chronicle" className="text-[11px] text-primary hover:underline">Open Chronicle</Link>}
+          >
+            {chronicle.length === 0 ? (
+              <p className="text-xs text-muted-foreground">Your Chronicle will fill as you run commands, save memory, or resolve approvals.</p>
+            ) : (
+              <ul className="divide-y divide-border/60">
+                {chronicle.map((e) => (
+                  <li key={e.id} className="py-1.5 flex items-start gap-2 text-sm">
+                    <span className="mt-0.5 text-[10px] text-muted-foreground min-w-[54px]">
+                      {new Date(e.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate">{e.title}</div>
+                      <div className="text-[10px] uppercase tracking-widest text-muted-foreground">{e.kind}{e.type ? " · " + e.type : ""}</div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
           </Card>
 
           {/* Readiness detail */}

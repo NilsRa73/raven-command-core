@@ -136,3 +136,12 @@ test("NO_SILENT_SAVE contract exposes required flags", () => {
   assert.equal(NO_SILENT_SAVE.continueProjectDoesNotSendAutomatically, true);
   assert.throws(() => { NO_SILENT_SAVE.briefRequiresExplicitSave = false; }, /read only|Cannot assign/);
 });
+
+test("PROJECT_DNA_TABS exposes Raven One Alpha 0.1 tab set", async () => {
+  const mod = await import("../../src/lib/rah/projectDna.js");
+  const tabs = mod.PROJECT_DNA_TABS;
+  for (const t of ["overview", "goals", "decisions", "timeline", "roadmap", "assets", "memory", "issues"]) {
+    assert.ok(tabs.includes(t), "missing tab: " + t);
+  }
+  assert.equal(tabs[0], "overview");
+});

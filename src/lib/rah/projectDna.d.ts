@@ -138,7 +138,7 @@ export function buildContinueProjectPreview(inputs: {
   limit?: number;
 }): ContinueProjectPreview | null;
 
-export const PROJECT_DNA_TABS: readonly ["overview","memory","files","timeline","decisions","roadmap"];
+export const PROJECT_DNA_TABS: readonly ["overview","goals","decisions","timeline","roadmap","assets","memory","issues"];
 export const NO_SILENT_SAVE: Readonly<{
   briefRequiresExplicitSave: true;
   aiEnhancementRequiresExplicitClick: true;

@@ -274,7 +274,7 @@ export function buildContinueProjectPreview({ project, memory, commands, files, 
   };
 }
 
-export const PROJECT_DNA_TABS = ["overview", "memory", "files", "timeline", "decisions", "roadmap"];
+export const PROJECT_DNA_TABS = ["overview", "goals", "decisions", "timeline", "roadmap", "assets", "memory", "issues"];
 
 export const NO_SILENT_SAVE = Object.freeze({
   briefRequiresExplicitSave: true,
