@@ -14,6 +14,7 @@ import { reportLovableError } from "../lib/lovable-error-reporting";
 import { RahProvider } from "@/lib/rah/context";
 import { AppShell } from "@/components/rah/AppShell";
 import { GlobalShortcutsMount } from "@/components/rah/GlobalShortcutsMount";
+import { CommandPalette } from "@/components/rah/CommandPalette";
 import { Toaster } from "@/components/ui/sonner";
 
 function NotFoundComponent() {
@@ -133,6 +134,7 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       <RahProvider>
         <GlobalShortcutsMount />
+        <CommandPalette />
         <AppShell>
           {/* Required: nested routes render here. */}
           <Outlet />

@@ -44,6 +44,17 @@ function DevicesPage() {
   const devices = useMemo(() => mergeDevices(bridgeDevice, manual), [bridgeDevice, manual]);
   const openDevice = devices.find((d) => d.id === openId) ?? null;
 
+  // Cluster overview: counts by status and by role — purely derived.
+  const cluster = useMemo(() => {
+    const byStatus = { Connected: 0, Offline: 0, Planned: 0, Unknown: 0 };
+    const byRole = new Map<string, number>();
+    for (const d of devices) {
+      byStatus[d.status] = (byStatus[d.status] ?? 0) + 1;
+      byRole.set(d.role, (byRole.get(d.role) ?? 0) + 1);
+    }
+    return { total: devices.length, byStatus, roles: [...byRole.entries()] };
+  }, [devices]);
+
   function persist(next: DeviceRecord[]) { setManual(next); saveManualDevices(next); }
 
   async function testBridge() {
@@ -69,6 +80,27 @@ function DevicesPage() {
           <button onClick={() => setShowAdd(true)} className="inline-flex h-8 items-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90">＋ Add device</button>
         </div>
       </header>
+
+      {devices.length > 0 && (
+        <section className="glass-panel p-4" aria-label="Cluster overview">
+          <div className="flex items-center gap-2 mb-2">
+            <h2 className="display text-sm uppercase tracking-widest text-muted-foreground">Raven Cluster</h2>
+            <span className="text-[11px] text-muted-foreground">Foundation for multi-device Raven. Only real telemetry is shown as connected.</span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+            <div className="rounded-md border border-primary/40 bg-primary/5 p-2"><div className="text-[10px] uppercase text-muted-foreground">Connected</div><div className="text-primary text-lg font-semibold">{cluster.byStatus.Connected}</div></div>
+            <div className="rounded-md border border-destructive/40 bg-destructive/5 p-2"><div className="text-[10px] uppercase text-muted-foreground">Offline</div><div className="text-destructive text-lg font-semibold">{cluster.byStatus.Offline}</div></div>
+            <div className="rounded-md border border-yellow-500/40 bg-yellow-500/5 p-2"><div className="text-[10px] uppercase text-muted-foreground">Planned</div><div className="text-yellow-400 text-lg font-semibold">{cluster.byStatus.Planned}</div></div>
+            <div className="rounded-md border border-border/60 p-2"><div className="text-[10px] uppercase text-muted-foreground">Total nodes</div><div className="text-foreground text-lg font-semibold">{cluster.total}</div></div>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
+            {cluster.roles.map(([role, count]) => {
+              const label = DEVICE_ROLES.find((r) => r.id === role)?.label ?? role;
+              return <span key={role} className="rounded-full border border-border/60 px-2 py-0.5 text-muted-foreground">{label}: <span className="text-foreground">{count}</span></span>;
+            })}
+          </div>
+        </section>
+      )}
 
       {devices.length === 0 && (
         <section className="glass-panel p-6 text-center">
