@@ -228,6 +228,19 @@ function Connections() {
           {pollErr && <div className="text-destructive md:col-span-2">Poll error: {pollErr}</div>}
         </div>
 
+        {(ui === "version_mismatch" || ui === "feature_missing") && snap?.message && (
+          <div className="rounded-md border border-yellow-500/60 bg-yellow-500/5 px-3 py-2 text-xs text-yellow-500">
+            <div className="font-medium mb-1">Bridge update required</div>
+            <div className="text-yellow-500/90">{snap.message}</div>
+            <ol className="list-decimal pl-5 mt-2 space-y-0.5 text-yellow-500/90">
+              <li>Close the old bridge console window.</li>
+              <li>Click <strong>Advanced: download source package (v{SOURCE_PACKAGE.version})</strong> below.</li>
+              <li>Delete or rename the old <code>desktop-bridge</code> folder, then extract the new ZIP in the same place.</li>
+              <li>Double-click <code>Start RAH Desktop Bridge.cmd</code>. Your pairing is preserved (stored in your user config dir).</li>
+            </ol>
+          </div>
+        )}
+
         {caps?.approvedRoots?.length ? (
           <div className="text-xs text-muted-foreground">
             <div className="font-medium text-foreground mb-1">Approved roots</div>
