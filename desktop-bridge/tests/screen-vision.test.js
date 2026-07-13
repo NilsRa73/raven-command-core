@@ -9,10 +9,17 @@ import {
   PRIVACY_NOTE,
   SCREEN_VISION_PRESETS,
   SCREEN_VISION_PRIVACY,
+  NO_FRAME_RECOVERY_HINT,
   buildScreenVisionRuntimeLine,
   computeCaptureSize,
   presetById,
   sharingStateLabel,
+  isCaptureReady,
+  nextReadiness,
+  computeSamplePoints,
+  analyzeSamples,
+  isLikelyBlankFrame,
+  estimateFps,
 } from "../../src/lib/rah/screenVision.js";
 
 test("computeCaptureSize: passthrough when within max edge", () => {
@@ -135,5 +142,102 @@ test("vision page: renders the privacy note verbatim", () => {
   assert.ok(
     visionSource.includes("PRIVACY_NOTE") || visionSource.includes(PRIVACY_NOTE),
     "Screen Vision page must render the shared PRIVACY_NOTE",
+  );
+});
+
+test("readiness: isCaptureReady only true for 'ready'", () => {
+  assert.equal(isCaptureReady("ready"), true);
+  for (const s of ["idle","requesting","stream-connected","waiting-frame","capturing","analyzing","ended","denied","unsupported","error","active"]) {
+    assert.equal(isCaptureReady(s), false, "must not be ready: " + s);
+  }
+});
+
+test("readiness: canonical happy-path transitions", () => {
+  let s = "idle";
+  s = nextReadiness(s, "request");     assert.equal(s, "requesting");
+  s = nextReadiness(s, "grant");       assert.equal(s, "stream-connected");
+  s = nextReadiness(s, "metadata");    assert.equal(s, "waiting-frame");
+  s = nextReadiness(s, "frame");       assert.equal(s, "ready");
+  s = nextReadiness(s, "capture-start"); assert.equal(s, "capturing");
+  s = nextReadiness(s, "capture-done");  assert.equal(s, "analyzing");
+  s = nextReadiness(s, "analyze-done");  assert.equal(s, "ready");
+});
+
+test("readiness: terminal events", () => {
+  assert.equal(nextReadiness("waiting-frame", "deny"),  "denied");
+  assert.equal(nextReadiness("ready",         "end"),   "ended");
+  assert.equal(nextReadiness("ready",         "error"), "error");
+  assert.equal(nextReadiness("error",         "reset"), "idle");
+  assert.equal(nextReadiness("idle",          "unsupported"), "unsupported");
+});
+
+test("readiness: 'frame' does nothing before stream is connected", () => {
+  assert.equal(nextReadiness("idle", "frame"), "idle");
+  assert.equal(nextReadiness("requesting", "frame"), "requesting");
+});
+
+test("sample points: inside bounds and includes corners + center", () => {
+  const pts = computeSamplePoints(100, 60);
+  for (const p of pts) {
+    assert.ok(p.x >= 0 && p.x < 100, "x in bounds: " + p.x);
+    assert.ok(p.y >= 0 && p.y < 60,  "y in bounds: " + p.y);
+  }
+  const has = (x, y) => pts.some((p) => p.x === x && p.y === y);
+  assert.ok(has(0, 0),   "top-left");
+  assert.ok(has(99, 59), "bottom-right");
+  assert.ok(has(50, 30), "center");
+});
+
+test("analyzeSamples: pure black frame -> zeros", () => {
+  const s = analyzeSamples(Array.from({length: 25}, () => ({r:0,g:0,b:0})));
+  assert.equal(s.count, 25);
+  assert.equal(s.avgLuma, 0);
+  assert.equal(s.maxLuma, 0);
+  assert.equal(s.nonBlackRatio, 0);
+});
+
+test("analyzeSamples: bright frame -> high luma, high non-black ratio", () => {
+  const s = analyzeSamples(Array.from({length: 25}, () => ({r:200,g:200,b:200})));
+  assert.ok(s.avgLuma > 150);
+  assert.ok(s.maxLuma > 150);
+  assert.equal(s.nonBlackRatio, 1);
+});
+
+test("isLikelyBlankFrame: flags black, allows content, treats empty as blank", () => {
+  assert.equal(isLikelyBlankFrame(analyzeSamples([{r:0,g:0,b:0},{r:1,g:1,b:1}])), true);
+  assert.equal(isLikelyBlankFrame(analyzeSamples([{r:0,g:0,b:0},{r:180,g:180,b:180}])), false);
+  assert.equal(isLikelyBlankFrame(analyzeSamples([])), true);
+  assert.equal(isLikelyBlankFrame(null), true);
+});
+
+test("estimateFps: needs 2+ samples, returns per-second rate", () => {
+  assert.equal(estimateFps([]), 0);
+  assert.equal(estimateFps([100]), 0);
+  // 6 samples spanning 500ms => 5 intervals / 0.5s = 10 fps
+  const ts = [0, 100, 200, 300, 400, 500];
+  const fps = estimateFps(ts);
+  assert.ok(fps > 9.5 && fps < 10.5, "fps ~10 got " + fps);
+});
+
+test("recovery hint text is user-actionable and mentions the fix", () => {
+  assert.match(NO_FRAME_RECOVERY_HINT, /Entire Screen/i);
+  assert.match(NO_FRAME_RECOVERY_HINT, /share again/i);
+});
+
+test("vision page: gates Capture & Analyze on isCaptureReady, not raw 'active'", () => {
+  // Capture buttons must be disabled unless the pipeline says 'ready'.
+  assert.ok(visionSource.includes("isCaptureReady"), "must import/use isCaptureReady");
+  assert.ok(visionSource.includes("disabled={!ready"), "capture buttons must use ready gate");
+});
+
+test("vision page: waits for a real first frame before enabling capture", () => {
+  assert.ok(visionSource.includes("waitForVideoFrame"), "must call waitForVideoFrame");
+  assert.ok(visionSource.includes("loadedmetadata"), "must wait for loadedmetadata");
+});
+
+test("vision page: renders the recovery hint text when no frame arrives", () => {
+  assert.ok(
+    visionSource.includes("NO_FRAME_RECOVERY_HINT") || visionSource.includes(NO_FRAME_RECOVERY_HINT),
+    "Screen Vision page must render the shared no-frame recovery hint",
   );
 });
