@@ -23,6 +23,16 @@ function Stat({ label, value, hint }: { label: string; value: string | number; h
   );
 }
 
+function WelcomeCell({ label, value, tone }: { label: string; value: string; tone?: "warn" | "ok" }) {
+  const cls = tone === "warn" ? "text-yellow-400" : tone === "ok" ? "text-primary" : "text-foreground";
+  return (
+    <div className="rounded-md border border-border/60 bg-background/40 p-3">
+      <div className="text-[10px] uppercase tracking-widest text-muted-foreground">{label}</div>
+      <div className={"mt-0.5 text-sm truncate " + cls} title={value}>{value}</div>
+    </div>
+  );
+}
+
 function CommandCenter() {
   const rah = useRah();
   const welcome = useMemo(
