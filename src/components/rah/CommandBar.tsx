@@ -444,14 +444,13 @@ export function CommandBar() {
 
       <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
         <span className="uppercase tracking-widest">Route:</span>
-        <span className="text-foreground">
-          {engineLabel(localAi.engine)}
-          {isLocalEngine(localAi.engine)
-            ? ` · ${localAi.engine === "lmstudio" ? (localAi.lmStudioModel || "no model") : (localAi.ollamaModel || "no model")} · via Bridge`
-            : localAi.engine === "cloud" ? " · Lovable AI Gateway"
-            : ""}
-        </span>
+        <span className="text-foreground">{computeRouteText(localAi, bridgeSnap)}</span>
         <span className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => { void refreshBridge(); void refreshHealth(); }}
+            className="rounded-md border border-border/70 px-2 py-1 hover:bg-accent"
+          >Refresh status</button>
           <button
             type="button"
             onClick={() => { setText(""); setInterim(""); setResponse(null); ref.current?.focus(); }}
