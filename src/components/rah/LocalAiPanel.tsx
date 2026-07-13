@@ -255,7 +255,7 @@ export function LocalAiPanel() {
             <div className="text-sm space-y-2">
               <p className="font-medium text-foreground">Recommended: route through the RAH Desktop Bridge</p>
               <ol className="list-decimal pl-5 space-y-1 text-muted-foreground">
-                <li>Open <em>Connections</em> → download and start the RAH Desktop Bridge (v0.2.0+).</li>
+                <li>Open <em>Connections</em> → download and start the RAH Desktop Bridge (v0.2.1+).</li>
                 <li>Pair the bridge with the 6-digit code.</li>
                 <li>Set Transport to <em>Auto</em> or <em>Bridge only</em>. No CORS setup required.</li>
               </ol>

@@ -48,13 +48,14 @@ function stateLabel(s: BridgeStatusSnapshot["ui"]) {
     case "paired_online": return "Connected — read-only + approved actions";
     case "emergency_stopped": return "Emergency stopped";
     case "version_mismatch": return "Version mismatch";
+    case "feature_missing": return "Update required — missing Local AI proxy";
     case "error": return "Error";
   }
 }
 function stateTone(s: BridgeStatusSnapshot["ui"]) {
   if (s === "paired_online") return "border-primary text-primary";
   if (s === "emergency_stopped" || s === "error") return "border-destructive text-destructive";
-  if (s === "pairing_required") return "border-yellow-500 text-yellow-500";
+  if (s === "pairing_required" || s === "version_mismatch" || s === "feature_missing") return "border-yellow-500 text-yellow-500";
   return "border-border text-muted-foreground";
 }
 
