@@ -2,8 +2,16 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Copy, Volume2, Star, RotateCcw, Square, Trash2, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Markdown } from "./Markdown";
 import type { AiState } from "@/lib/rah/ai";
+import { useRah } from "@/lib/rah/context";
+import {
+  makeMemorySuggestionFromCommand,
+  MEMORY_TYPES, MEMORY_TYPE_LABEL,
+} from "@/lib/rah/projectMemory";
+import type { MemoryType } from "@/lib/rah/projectMemory";
 
 export interface LiveResponse {
   id?: string;
@@ -52,6 +60,30 @@ export function ResponsePanel({
   onClear: () => void;
 }) {
   const [elapsed, setElapsed] = useState(0);
+  const rah = useRah();
+  const [suggestOpen, setSuggestOpen] = useState(true);
+  const [suggestDismissed, setSuggestDismissed] = useState(false);
+  const [draftTitle, setDraftTitle] = useState("");
+  const [draftType, setDraftType] = useState<MemoryType>("note");
+  const [draftProjectId, setDraftProjectId] = useState<string | "__global__">("__global__");
+
+  useEffect(() => {
+    // Rebuild the draft each time a new done response arrives.
+    setSuggestDismissed(false);
+    setSuggestOpen(true);
+    if (response?.state === "done" && response.text) {
+      const s = makeMemorySuggestionFromCommand(
+        { prompt: response.prompt, resultSummary: response.text, status: "done", agents: response.agents },
+        { projectId: rah.activeProject?.id ?? null },
+      );
+      if (s) {
+        setDraftTitle(s.draft.title);
+        setDraftType(s.draft.type as MemoryType);
+        setDraftProjectId(s.draft.projectId ?? "__global__");
+      }
+    }
+  }, [response?.id, response?.state]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (!response || (response.state !== "thinking" && response.state !== "streaming")) return;
     const t = setInterval(() => setElapsed(Date.now() - response.startedAt), 100);
@@ -112,6 +144,50 @@ export function ResponsePanel({
           </div>
         )}
       </div>
+
+      {response.state === "done" && !response.demo && !suggestDismissed && suggestOpen && response.text && (
+        <div className="rounded-md border border-primary/60 bg-primary/5 p-3 text-sm space-y-2" data-testid="save-to-memory-card">
+          <div className="flex items-center gap-2">
+            <Save className="h-4 w-4 text-primary" />
+            <span className="display gold-text">Save to Memory?</span>
+            <span className="text-[11px] text-muted-foreground">Nothing is saved until you press Save.</span>
+            <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setSuggestDismissed(true)}>Not now</Button>
+          </div>
+          <div className="grid gap-2 md:grid-cols-[1fr_160px_200px]">
+            <Input value={draftTitle} onChange={(e) => setDraftTitle(e.target.value)} placeholder="Title" />
+            <Select value={draftType} onValueChange={(v) => setDraftType(v as MemoryType)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {MEMORY_TYPES.map((t) => <SelectItem key={t} value={t}>{MEMORY_TYPE_LABEL[t]}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={draftProjectId} onValueChange={(v) => setDraftProjectId(v as any)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__global__">Global (no project)</SelectItem>
+                {rah.projects.map((p) => <SelectItem key={p.id} value={p.id}>{p.icon} {p.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <Button size="sm" onClick={async () => {
+              if (!draftTitle.trim()) { toast.error("Title required"); return; }
+              await rah.createProjectMemory({
+                title: draftTitle.trim(),
+                content: `${response.prompt}\n\n${response.text}`.slice(0, 4000),
+                type: draftType,
+                projectId: draftProjectId === "__global__" ? null : draftProjectId,
+                tags: response.agents.slice(0, 4),
+                source: "command-suggestion",
+                pinned: false,
+                archived: false,
+              });
+              setSuggestDismissed(true);
+              toast.success("Saved to Project Memory");
+            }}>Save to Memory</Button>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-2">
         {streaming ? (
