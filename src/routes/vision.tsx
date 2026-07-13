@@ -532,7 +532,7 @@ function VisionPage() {
         )}
 
         <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
-          <div className="rounded-md overflow-hidden border border-border/60 bg-black/60 aspect-video grid place-items-center">
+          <div className="relative rounded-md overflow-hidden border border-border/60 bg-black/60 aspect-video grid place-items-center">
             <video
               ref={videoRef}
               autoPlay muted playsInline
