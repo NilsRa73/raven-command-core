@@ -620,3 +620,112 @@ function EmptyState({ hint }: { hint: string }) {
     </div>
   );
 }
+
+/* ─── Goals ─── */
+function GoalsTab({ project, rah }: { project: any; rah: ReturnType<typeof useRah> }) {
+  const [draft, setDraft] = useState(project.goals ?? "");
+  useEffect(() => { setDraft(project.goals ?? ""); }, [project.id, project.goals]);
+  const dirty = draft !== (project.goals ?? "");
+  const goalMemories = useMemo(
+    () => filterMemories(rah.projectMemory, { projectId: project.id, types: ["milestone", "next_action"] }),
+    [rah.projectMemory, project.id],
+  );
+  return (
+    <div className="space-y-4">
+      <section className="glass-panel p-4 space-y-2">
+        <div className="flex items-center gap-2">
+          <h2 className="display text-lg gold-text">Goals</h2>
+          <span className="text-xs text-muted-foreground">What does success look like?</span>
+        </div>
+        <Textarea rows={5} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Describe the goal for this project." />
+        <div className="flex gap-2">
+          <Button disabled={!dirty} onClick={async () => { await rah.updateProject(project.id, { goals: draft }); toast.success("Goals saved."); }}>Save goals</Button>
+          <Button variant="ghost" disabled={!dirty} onClick={() => setDraft(project.goals ?? "")}>Discard</Button>
+        </div>
+        <p className="text-[11px] text-muted-foreground">Saved only when you click Save — no silent writes.</p>
+      </section>
+      <section className="glass-panel p-4">
+        <h3 className="display text-sm uppercase tracking-widest text-muted-foreground">Milestones &amp; next actions</h3>
+        {goalMemories.length === 0 ? (
+          <EmptyState hint="No milestones or next actions yet. Use the header buttons to add one." />
+        ) : (
+          <ul className="mt-2 divide-y divide-border/60">
+            {goalMemories.map((m) => (
+              <li key={m.id} className="py-2 text-sm flex items-start gap-2">
+                <span className="text-[10px] uppercase tracking-widest text-muted-foreground min-w-[90px]">{MEMORY_TYPE_LABEL[m.type as MemoryType] ?? m.type}</span>
+                <span className="min-w-0 flex-1">{m.title}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </div>
+  );
+}
+
+/* ─── Open Issues ─── */
+function IssuesTab({ project, rah }: { project: any; rah: ReturnType<typeof useRah> }) {
+  const blockers = useMemo(
+    () => filterMemories(rah.projectMemory, { projectId: project.id, types: ["blocker"] }).filter((m) => !m.archived),
+    [rah.projectMemory, project.id],
+  );
+  const failed = useMemo(
+    () => rah.commands.filter((c) => c.projectId === project.id && c.status === "error").slice(0, 20),
+    [rah.commands, project.id],
+  );
+  const rejected = useMemo(
+    () => rah.approvals.filter((a) => a.status === "rejected").slice(0, 20),
+    [rah.approvals],
+  );
+  const empty = blockers.length === 0 && failed.length === 0 && rejected.length === 0;
+  return (
+    <div className="space-y-4">
+      <section className="glass-panel p-4">
+        <div className="flex items-center gap-2">
+          <h2 className="display text-lg gold-text">Open Issues</h2>
+          <span className="text-xs text-muted-foreground">Real signals only — blockers, failed commands, rejected approvals.</span>
+          <Button size="sm" className="ml-auto" variant="secondary" onClick={async () => {
+            const t = window.prompt("New blocker:");
+            if (!t?.trim()) return;
+            await rah.createProjectMemory({ projectId: project.id, title: t.trim(), content: "", type: "blocker", tags: [], source: "issues-tab", pinned: false, archived: false });
+            toast.success("Blocker added.");
+          }}><Plus className="h-4 w-4" /> Add blocker</Button>
+        </div>
+        {empty ? <EmptyState hint="No open issues detected." /> : (
+          <div className="grid gap-4 md:grid-cols-3 mt-3">
+            <div>
+              <h3 className="text-[11px] uppercase tracking-widest text-muted-foreground mb-1">Blockers ({blockers.length})</h3>
+              <ul className="space-y-1 text-sm">
+                {blockers.map((b) => (
+                  <li key={b.id} className="rounded border border-yellow-500/40 bg-yellow-500/5 p-2">
+                    <div className="truncate">{b.title}</div>
+                    <button className="text-[10px] text-primary hover:underline mt-1" onClick={() => rah.toggleArchiveProjectMemory(b.id)}>Mark resolved</button>
+                  </li>
+                ))}
+                {blockers.length === 0 && <li className="text-xs text-muted-foreground">None.</li>}
+              </ul>
+            </div>
+            <div>
+              <h3 className="text-[11px] uppercase tracking-widest text-muted-foreground mb-1">Failed commands ({failed.length})</h3>
+              <ul className="space-y-1 text-sm">
+                {failed.map((c) => (
+                  <li key={c.id} className="rounded border border-destructive/40 bg-destructive/5 p-2 truncate">{c.prompt}</li>
+                ))}
+                {failed.length === 0 && <li className="text-xs text-muted-foreground">None.</li>}
+              </ul>
+            </div>
+            <div>
+              <h3 className="text-[11px] uppercase tracking-widest text-muted-foreground mb-1">Rejected approvals ({rejected.length})</h3>
+              <ul className="space-y-1 text-sm">
+                {rejected.map((a) => (
+                  <li key={a.id} className="rounded border border-border/60 p-2 truncate">{a.title}</li>
+                ))}
+                {rejected.length === 0 && <li className="text-xs text-muted-foreground">None.</li>}
+              </ul>
+            </div>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
