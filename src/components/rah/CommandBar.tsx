@@ -19,7 +19,8 @@ import {
   engineLabel, isLocalEngine,
   type LocalAiSettings,
 } from "@/lib/rah/localAi";
-import { bridgeStatusSnapshot, type BridgeStatusSnapshot } from "@/lib/rah/bridge";
+import { useBridgeStatus } from "@/lib/rah/bridgeStatus";
+import { routeText as computeRouteText, shouldShowBridgeOfflineBanner } from "@/lib/rah/bridgeStatusLabels";
 import {
   prepareImage, releasePrepared, validateBatch, metaFromPrepared,
   drainPendingImages, preparedFromPending, ACCEPTED_MIME,
@@ -49,20 +50,8 @@ export function CommandBar() {
   const [localAi, setLocalAi] = useState<LocalAiSettings>(() => getLocalAiSettings());
   useEffect(() => subscribeLocalAi(setLocalAi), []);
   const streaming = response?.state === "thinking" || response?.state === "streaming";
-  const [bridgeSnap, setBridgeSnap] = useState<BridgeStatusSnapshot | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    const tick = async () => {
-      const s = await bridgeStatusSnapshot();
-      if (!cancelled) setBridgeSnap(s);
-    };
-    void tick();
-    const id = window.setInterval(() => void tick(), 5000);
-    return () => { cancelled = true; window.clearInterval(id); };
-  }, []);
-  const localOffline =
-    isLocalEngine(localAi.engine) && localAi.transport !== "direct" &&
-    bridgeSnap !== null && bridgeSnap.ui !== "paired_online";
+  const { snapshot: bridgeSnap, refresh: refreshBridge } = useBridgeStatus();
+  const localOffline = shouldShowBridgeOfflineBanner(localAi, bridgeSnap);
   const localServerOffline =
     isLocalEngine(localAi.engine) && health?.ok === false && bridgeSnap?.ui === "paired_online";
 
@@ -79,11 +68,16 @@ export function CommandBar() {
     const model = eng === "lmstudio"
       ? (localAi.lmStudioModel || "unknown")
       : (localAi.ollamaModel || "unknown");
-    const transport = localAi.transport === "direct" ? "Direct" : "Bridge";
+    // Reflect actual bridge state so the runtime line matches what actually
+    // served the request, not just what the settings request.
+    const wantsBridge = localAi.transport !== "direct";
+    const online = bridgeSnap?.ui === "paired_online";
     const version = bridgeSnap?.version;
-    const tail = transport === "Bridge"
-      ? ` · via Bridge${version ? ` v${version}` : ""}`
-      : " · direct";
+    const tail = !wantsBridge
+      ? " · direct"
+      : online
+        ? ` · via Bridge${version ? ` v${version}` : ""}`
+        : bridgeSnap == null ? " · Checking bridge…" : " · Bridge required";
     return `Runtime: ${label} · ${model}${tail}`;
   }
 
