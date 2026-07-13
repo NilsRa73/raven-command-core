@@ -53,10 +53,10 @@ export function LocalAiPanel() {
     setModels([]);
     try {
       if (settings.engine === "lmstudio") {
-        const ms = await listLmStudioModels(settings.lmStudioUrl);
+        const ms = await listLmStudioModels(settings);
         setModels(ms);
       } else if (settings.engine === "ollama") {
-        const ms = await listOllamaModels(settings.ollamaUrl);
+        const ms = await listOllamaModels(settings);
         setModels(ms);
       }
       const h = await checkHealth();
