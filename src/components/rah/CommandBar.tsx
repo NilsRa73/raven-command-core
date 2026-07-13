@@ -19,6 +19,7 @@ import {
   engineLabel, isLocalEngine,
   type LocalAiSettings,
 } from "@/lib/rah/localAi";
+import { bridgeStatusSnapshot, type BridgeStatusSnapshot } from "@/lib/rah/bridge";
 import {
   prepareImage, releasePrepared, validateBatch, metaFromPrepared,
   drainPendingImages, preparedFromPending, ACCEPTED_MIME,
@@ -48,6 +49,22 @@ export function CommandBar() {
   const [localAi, setLocalAi] = useState<LocalAiSettings>(() => getLocalAiSettings());
   useEffect(() => subscribeLocalAi(setLocalAi), []);
   const streaming = response?.state === "thinking" || response?.state === "streaming";
+  const [bridgeSnap, setBridgeSnap] = useState<BridgeStatusSnapshot | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const tick = async () => {
+      const s = await bridgeStatusSnapshot();
+      if (!cancelled) setBridgeSnap(s);
+    };
+    void tick();
+    const id = window.setInterval(() => void tick(), 5000);
+    return () => { cancelled = true; window.clearInterval(id); };
+  }, []);
+  const localOffline =
+    isLocalEngine(localAi.engine) && localAi.transport !== "direct" &&
+    bridgeSnap !== null && bridgeSnap.ui !== "paired_online";
+  const localServerOffline =
+    isLocalEngine(localAi.engine) && health?.ok === false && bridgeSnap?.ui === "paired_online";
 
   useEffect(() => rah.registerCommandBarFocus(() => ref.current?.focus()), [rah]);
   useEffect(() => {
@@ -430,6 +447,22 @@ export function CommandBar() {
           >Stop generation</button>
         </span>
       </div>
+
+      {(localOffline || localServerOffline) && (
+        <div className="rounded-md border border-destructive/60 bg-destructive/10 px-3 py-2 text-xs text-destructive flex flex-wrap items-center gap-2">
+          <span className="font-medium">
+            {localOffline
+              ? "RAH Desktop Bridge is offline — start the bridge on your PC to reach LM Studio."
+              : `${localAi.engine === "lmstudio" ? "LM Studio" : "Ollama"} server is offline — start it on your PC and load a model.`}
+          </span>
+          <Link to="/connections" className="ml-auto underline">Open Connections</Link>
+          <button
+            type="button"
+            className="rounded border border-destructive/60 px-2 py-0.5 hover:bg-destructive/20"
+            onClick={() => setLocalAi(saveLocalAiSettings({ engine: "cloud", transport: "auto" }))}
+          >Use Lovable Cloud instead</button>
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-1.5">
         {AGENTS.map((a) => {

@@ -216,6 +216,12 @@ export function LocalAiPanel() {
           disabled={status === "connecting" || settings.engine === "cloud" || settings.engine === "demo"}>
           Test connection
         </Button>
+        {settings.engine !== "cloud" && (
+          <Button size="sm" variant="outline"
+            onClick={() => update({ engine: "cloud", transport: "auto" })}>
+            Switch to Lovable Cloud
+          </Button>
+        )}
       </div>
 
       {(health || diag) && (

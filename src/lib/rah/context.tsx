@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { getDB, getPrefs, savePrefs, seedIfEmpty, uid, type Approval, type CommandRecord, type MemoryItem, type Preferences, type Project } from "./db";
 import { streamChat } from "./ai";
 import { toast } from "sonner";
+import { applyBridgeAutoMigration } from "./localAi";
 
 type Ctx = {
   ready: boolean;
@@ -77,6 +78,7 @@ export function RahProvider({ children }: { children: ReactNode }) {
         const p = await getPrefs();
         setPrefs(p);
         await Promise.all([reloadProjects(), reloadCommands(), reloadMemory(), reloadApprovals()]);
+        void applyBridgeAutoMigration();
       } finally {
         setReady(true);
       }
