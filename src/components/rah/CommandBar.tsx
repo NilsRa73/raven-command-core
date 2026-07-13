@@ -343,7 +343,7 @@ export function CommandBar() {
     });
     if (!sug) { toast.error("Nothing to save yet."); return; }
     await rah.addMemory({
-      layer: sug.draft.projectId ? "project" : "global",
+      layer: sug.draft.projectId ? "project" : "personal",
       projectId: sug.draft.projectId ?? undefined,
       text: `[${new Date().toLocaleString()}] ${sug.draft.title}\n---\n${sug.draft.content}`,
       category: "team_run_summary",
