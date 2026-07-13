@@ -21,6 +21,7 @@ import { Route as HistoryRouteImport } from './routes/history'
 import { Route as FilesRouteImport } from './routes/files'
 import { Route as DevicesRouteImport } from './routes/devices'
 import { Route as ConnectionsRouteImport } from './routes/connections'
+import { Route as ChronicleRouteImport } from './routes/chronicle'
 import { Route as AutomationsRouteImport } from './routes/automations'
 import { Route as ApprovalsRouteImport } from './routes/approvals'
 import { Route as AgentsRouteImport } from './routes/agents'
@@ -90,6 +91,11 @@ const ConnectionsRoute = ConnectionsRouteImport.update({
   path: '/connections',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ChronicleRoute = ChronicleRouteImport.update({
+  id: '/chronicle',
+  path: '/chronicle',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AutomationsRoute = AutomationsRouteImport.update({
   id: '/automations',
   path: '/automations',
@@ -136,6 +142,7 @@ export interface FileRoutesByFullPath {
   '/agents': typeof AgentsRoute
   '/approvals': typeof ApprovalsRoute
   '/automations': typeof AutomationsRoute
+  '/chronicle': typeof ChronicleRoute
   '/connections': typeof ConnectionsRoute
   '/devices': typeof DevicesRoute
   '/files': typeof FilesRoute
@@ -158,6 +165,7 @@ export interface FileRoutesByTo {
   '/agents': typeof AgentsRoute
   '/approvals': typeof ApprovalsRoute
   '/automations': typeof AutomationsRoute
+  '/chronicle': typeof ChronicleRoute
   '/connections': typeof ConnectionsRoute
   '/devices': typeof DevicesRoute
   '/files': typeof FilesRoute
@@ -181,6 +189,7 @@ export interface FileRoutesById {
   '/agents': typeof AgentsRoute
   '/approvals': typeof ApprovalsRoute
   '/automations': typeof AutomationsRoute
+  '/chronicle': typeof ChronicleRoute
   '/connections': typeof ConnectionsRoute
   '/devices': typeof DevicesRoute
   '/files': typeof FilesRoute
@@ -205,6 +214,7 @@ export interface FileRouteTypes {
     | '/agents'
     | '/approvals'
     | '/automations'
+    | '/chronicle'
     | '/connections'
     | '/devices'
     | '/files'
@@ -227,6 +237,7 @@ export interface FileRouteTypes {
     | '/agents'
     | '/approvals'
     | '/automations'
+    | '/chronicle'
     | '/connections'
     | '/devices'
     | '/files'
@@ -249,6 +260,7 @@ export interface FileRouteTypes {
     | '/agents'
     | '/approvals'
     | '/automations'
+    | '/chronicle'
     | '/connections'
     | '/devices'
     | '/files'
@@ -272,6 +284,7 @@ export interface RootRouteChildren {
   AgentsRoute: typeof AgentsRoute
   ApprovalsRoute: typeof ApprovalsRoute
   AutomationsRoute: typeof AutomationsRoute
+  ChronicleRoute: typeof ChronicleRoute
   ConnectionsRoute: typeof ConnectionsRoute
   DevicesRoute: typeof DevicesRoute
   FilesRoute: typeof FilesRoute
@@ -375,6 +388,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConnectionsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/chronicle': {
+      id: '/chronicle'
+      path: '/chronicle'
+      fullPath: '/chronicle'
+      preLoaderRoute: typeof ChronicleRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/automations': {
       id: '/automations'
       path: '/automations'
@@ -451,6 +471,7 @@ const rootRouteChildren: RootRouteChildren = {
   AgentsRoute: AgentsRoute,
   ApprovalsRoute: ApprovalsRoute,
   AutomationsRoute: AutomationsRoute,
+  ChronicleRoute: ChronicleRoute,
   ConnectionsRoute: ConnectionsRoute,
   DevicesRoute: DevicesRoute,
   FilesRoute: FilesRoute,
