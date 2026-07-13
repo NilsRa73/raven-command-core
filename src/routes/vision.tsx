@@ -713,13 +713,21 @@ function VisionPage() {
             <strong>Preview connected but no frame arrived.</strong> {NO_FRAME_RECOVERY_HINT}
           </div>
         )}
+        {ready && !previewAvailable && (
+          <div className="rounded-md border border-primary/60 bg-primary/10 p-3 text-sm text-primary">
+            {PREVIEW_UNAVAILABLE_LABEL}. Capture &amp; Analyze still works via the browser's ImageCapture path.
+          </div>
+        )}
 
         <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
           <div className="relative rounded-md overflow-hidden border border-border/60 bg-black/60 aspect-video grid place-items-center">
             <video
               ref={videoRef}
               autoPlay muted playsInline
-              className={"w-full h-full object-contain " + (active ? "" : "hidden")}
+              className={
+                "w-full h-full object-contain " +
+                (active ? (previewAvailable ? "" : "opacity-0 pointer-events-none") : "hidden")
+              }
               aria-label="Live preview of your shared screen"
             />
             {!active && (
@@ -731,6 +739,11 @@ function VisionPage() {
             {active && !ready && (
               <div className="absolute text-xs text-yellow-500 bg-black/50 rounded px-2 py-1">
                 Waiting for first frame…
+              </div>
+            )}
+            {active && ready && !previewAvailable && (
+              <div className="absolute text-xs text-primary bg-black/70 rounded px-2 py-1 text-center max-w-[80%]">
+                Live preview unavailable — capture still works.
               </div>
             )}
           </div>
@@ -868,6 +881,35 @@ function VisionPage() {
               </div>
             </div>
           </div>
+        </section>
+      )}
+
+      {(sharing === "error" || showDiagnostics) && (
+        <section className="glass-panel border border-yellow-500/40 p-4 space-y-2" aria-label="Screen Vision diagnostics">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-sm font-semibold text-yellow-500">Diagnostics</h2>
+            <div className="flex gap-2">
+              <Button
+                type="button" size="sm" variant="secondary"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(formatDiagnostics(diagnostics));
+                    toast.success("Diagnostics copied");
+                  } catch {
+                    toast.error("Could not copy diagnostics");
+                  }
+                }}
+              >
+                <Copy className="h-3.5 w-3.5" /> Copy diagnostics
+              </Button>
+              <Button type="button" size="sm" variant="ghost" onClick={() => setShowDiagnostics(false)}>
+                Hide
+              </Button>
+            </div>
+          </div>
+          <pre className="text-[11px] whitespace-pre-wrap break-words text-muted-foreground bg-background/40 rounded p-2 border border-border/60 max-h-64 overflow-auto">
+{formatDiagnostics(diagnostics)}
+          </pre>
         </section>
       )}
     </div>
