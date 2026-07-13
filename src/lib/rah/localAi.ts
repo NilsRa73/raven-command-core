@@ -266,6 +266,7 @@ export async function checkLocalHealth(settings: LocalAiSettings, signal?: Abort
         : snap.ui === "pairing_required" ? "Bridge unpaired — pair it in Connections."
         : snap.ui === "emergency_stopped" ? "Bridge is in Emergency Stop."
         : snap.ui === "version_mismatch" ? "Bridge version too old — update from Connections."
+        : snap.ui === "feature_missing" ? (snap.message || "Bridge is missing the Local AI proxy — download the latest package from Connections and restart the bridge.")
         : (snap.message || "Bridge unavailable.");
       return {
         ok: false, state: "network_error",
