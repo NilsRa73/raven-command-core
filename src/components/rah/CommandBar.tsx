@@ -448,6 +448,22 @@ export function CommandBar() {
         </span>
       </div>
 
+      {(localOffline || localServerOffline) && (
+        <div className="rounded-md border border-destructive/60 bg-destructive/10 px-3 py-2 text-xs text-destructive flex flex-wrap items-center gap-2">
+          <span className="font-medium">
+            {localOffline
+              ? "RAH Desktop Bridge is offline — start the bridge on your PC to reach LM Studio."
+              : `${localAi.engine === "lmstudio" ? "LM Studio" : "Ollama"} server is offline — start it on your PC and load a model.`}
+          </span>
+          <Link to="/connections" className="ml-auto underline">Open Connections</Link>
+          <button
+            type="button"
+            className="rounded border border-destructive/60 px-2 py-0.5 hover:bg-destructive/20"
+            onClick={() => setLocalAi(saveLocalAiSettings({ engine: "cloud", transport: "auto" }))}
+          >Use Lovable Cloud instead</button>
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-1.5">
         {AGENTS.map((a) => {
           const on = selectedAgents.includes(a.id);
