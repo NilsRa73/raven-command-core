@@ -10,6 +10,7 @@ import {
   SCREEN_VISION_PRESETS,
   SCREEN_VISION_PRIVACY,
   NO_FRAME_RECOVERY_HINT,
+  PREVIEW_UNAVAILABLE_LABEL,
   buildScreenVisionRuntimeLine,
   computeCaptureSize,
   presetById,
@@ -20,6 +21,9 @@ import {
   analyzeSamples,
   isLikelyBlankFrame,
   estimateFps,
+  pickCaptureMethod,
+  readinessFromSignals,
+  formatDiagnostics,
 } from "../../src/lib/rah/screenVision.js";
 
 test("computeCaptureSize: passthrough when within max edge", () => {
@@ -240,4 +244,102 @@ test("vision page: renders the recovery hint text when no frame arrives", () => 
     visionSource.includes("NO_FRAME_RECOVERY_HINT") || visionSource.includes(NO_FRAME_RECOVERY_HINT),
     "Screen Vision page must render the shared no-frame recovery hint",
   );
+});
+
+test("pickCaptureMethod: prefers image-capture when available and ok", () => {
+  assert.equal(
+    pickCaptureMethod({ imageCaptureAvailable: true, imageCaptureLastOk: true, videoHasFrame: true }),
+    "image-capture",
+  );
+});
+
+test("pickCaptureMethod: falls back to video-canvas when ImageCapture has failed", () => {
+  assert.equal(
+    pickCaptureMethod({ imageCaptureAvailable: true, imageCaptureLastOk: false, videoHasFrame: true }),
+    "video-canvas",
+  );
+});
+
+test("pickCaptureMethod: uses image-capture even with no video frame when available", () => {
+  assert.equal(
+    pickCaptureMethod({ imageCaptureAvailable: true, imageCaptureLastOk: true, videoHasFrame: false }),
+    "image-capture",
+  );
+});
+
+test("pickCaptureMethod: returns 'none' when nothing is viable", () => {
+  assert.equal(
+    pickCaptureMethod({ imageCaptureAvailable: false, imageCaptureLastOk: false, videoHasFrame: false }),
+    "none",
+  );
+});
+
+test("readinessFromSignals: ready when ImageCapture works even if video is dead", () => {
+  assert.equal(readinessFromSignals({ videoReady: false, imageCaptureReady: true }), true);
+  assert.equal(readinessFromSignals({ videoReady: true,  imageCaptureReady: false }), true);
+  assert.equal(readinessFromSignals({ videoReady: false, imageCaptureReady: false }), false);
+});
+
+test("formatDiagnostics: includes labeled runtime fields and omits missing ones", () => {
+  const out = formatDiagnostics({
+    userAgent: "Mozilla/5.0",
+    supportsGetDisplayMedia: true,
+    supportsImageCapture: true,
+    videoReadyState: 4,
+    videoWidth: 1920,
+    videoHeight: 1080,
+    trackReadyState: "live",
+    trackMuted: false,
+    displaySurface: "browser",
+    imageCaptureLastOk: true,
+    previewAvailable: false,
+    captureMethod: "image-capture",
+  });
+  assert.match(out, /^RAH Screen Vision diagnostics/);
+  assert.match(out, /browser: Mozilla\/5\.0/);
+  assert.match(out, /supportsImageCapture: true/);
+  assert.match(out, /video\.videoWidth: 1920/);
+  assert.match(out, /track\.readyState: live/);
+  assert.match(out, /displaySurface: browser/);
+  assert.match(out, /captureMethod: image-capture/);
+  assert.doesNotMatch(out, /trackLabel/);
+  assert.doesNotMatch(out, /videoLastError/);
+});
+
+test("PREVIEW_UNAVAILABLE_LABEL is user-actionable", () => {
+  assert.match(PREVIEW_UNAVAILABLE_LABEL, /Capture ready/);
+  assert.match(PREVIEW_UNAVAILABLE_LABEL, /live preview unavailable/i);
+});
+
+test("vision page: uses ImageCapture.grabFrame as a fallback path", () => {
+  assert.ok(visionSource.includes("ImageCapture"), "must reference ImageCapture");
+  assert.ok(visionSource.includes("grabFrame"), "must call grabFrame()");
+});
+
+test("vision page: readiness gate accepts ImageCapture-only path", () => {
+  assert.ok(
+    visionSource.includes("readinessFromSignals"),
+    "must combine ImageCapture + video signals via readinessFromSignals",
+  );
+});
+
+test("vision page: renders a diagnostics section with a Copy button", () => {
+  assert.ok(visionSource.includes("formatDiagnostics"), "diagnostics panel must render formatDiagnostics()");
+  assert.match(visionSource, /Copy diagnostics/, "diagnostics panel must have a Copy diagnostics button");
+});
+
+test("vision page: keeps the video element laid out (no display:none/hidden after stream)", () => {
+  // After stream assignment, hiding uses opacity, never `hidden` / display:none.
+  assert.ok(
+    visionSource.includes("opacity-0"),
+    "must use opacity-based hiding so the video keeps decoding",
+  );
+});
+
+test("vision page: still has no auto-capture on mount (regression guard)", () => {
+  const bad = [
+    /useEffect\([^)]*grabFrame/s,
+    /useEffect\([^)]*getDisplayMedia/s,
+  ];
+  for (const re of bad) assert.doesNotMatch(visionSource, re, "auto-capture pattern: " + re);
 });
