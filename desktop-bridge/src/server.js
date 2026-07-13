@@ -1,6 +1,6 @@
 import http from "node:http";
 import crypto from "node:crypto";
-import { BRIDGE_VERSION, PROTOCOL_VERSION, DEFAULT_PORT, MAX_BODY_BYTES, PAIRING_CODE_TTL_MS, CAPABILITIES, DISABLED_CAPABILITIES } from "./protocol.js";
+import { BRIDGE_VERSION, BRIDGE_FEATURES, PROTOCOL_VERSION, DEFAULT_PORT, MAX_BODY_BYTES, PAIRING_CODE_TTL_MS, CAPABILITIES, DISABLED_CAPABILITIES } from "./protocol.js";
 import { loadConfig, saveConfig, resetConfig, generatePairingCode, generateToken } from "./config.js";
 import { verifyRequest, AuthError } from "./auth.js";
 import { auditLog, readRecent } from "./audit.js";
@@ -154,6 +154,7 @@ async function handleRoute(req, res, url, rawBody, cfg, origin) {
       paired: !!cfg.deviceToken,
       pairingActive: !!pairingSession && pairingSession.expiresAt > Date.now(),
       emergencyStopped: emergency.isStopped(),
+      features: BRIDGE_FEATURES,
     }, corsHeaders(origin));
   }
 

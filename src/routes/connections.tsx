@@ -48,13 +48,14 @@ function stateLabel(s: BridgeStatusSnapshot["ui"]) {
     case "paired_online": return "Connected — read-only + approved actions";
     case "emergency_stopped": return "Emergency stopped";
     case "version_mismatch": return "Version mismatch";
+    case "feature_missing": return "Update required — missing Local AI proxy";
     case "error": return "Error";
   }
 }
 function stateTone(s: BridgeStatusSnapshot["ui"]) {
   if (s === "paired_online") return "border-primary text-primary";
   if (s === "emergency_stopped" || s === "error") return "border-destructive text-destructive";
-  if (s === "pairing_required") return "border-yellow-500 text-yellow-500";
+  if (s === "pairing_required" || s === "version_mismatch" || s === "feature_missing") return "border-yellow-500 text-yellow-500";
   return "border-border text-muted-foreground";
 }
 
@@ -226,6 +227,19 @@ function Connections() {
           )}
           {pollErr && <div className="text-destructive md:col-span-2">Poll error: {pollErr}</div>}
         </div>
+
+        {(ui === "version_mismatch" || ui === "feature_missing") && snap?.message && (
+          <div className="rounded-md border border-yellow-500/60 bg-yellow-500/5 px-3 py-2 text-xs text-yellow-500">
+            <div className="font-medium mb-1">Bridge update required</div>
+            <div className="text-yellow-500/90">{snap.message}</div>
+            <ol className="list-decimal pl-5 mt-2 space-y-0.5 text-yellow-500/90">
+              <li>Close the old bridge console window.</li>
+              <li>Click <strong>Advanced: download source package (v{SOURCE_PACKAGE.version})</strong> below.</li>
+              <li>Delete or rename the old <code>desktop-bridge</code> folder, then extract the new ZIP in the same place.</li>
+              <li>Double-click <code>Start RAH Desktop Bridge.cmd</code>. Your pairing is preserved (stored in your user config dir).</li>
+            </ol>
+          </div>
+        )}
 
         {caps?.approvedRoots?.length ? (
           <div className="text-xs text-muted-foreground">

@@ -1,6 +1,6 @@
 import { openDB } from "idb";
 import {
-  BRIDGE_MIN_VERSION, DEFAULT_BRIDGE_PORT, PROTOCOL_VERSION,
+  BRIDGE_MIN_VERSION, REQUIRED_BRIDGE_FEATURES, DEFAULT_BRIDGE_PORT, PROTOCOL_VERSION,
   type BridgeHealth, type BridgePairResponse, type BridgeCapabilities,
   type BridgeSystemStatus, type BridgeListResult, type BridgeSearchResult,
   type BridgeReadTextResult, type BridgeJob, type BridgePrepareResponse,
@@ -180,7 +180,7 @@ export async function isBridgePaired(): Promise<boolean> {
 
 export type BridgeUiState =
   | "offline" | "pairing_required" | "paired_online" | "emergency_stopped"
-  | "version_mismatch" | "error";
+  | "version_mismatch" | "feature_missing" | "error";
 
 export interface BridgeStatusSnapshot {
   ui: BridgeUiState;
@@ -190,6 +190,8 @@ export interface BridgeStatusSnapshot {
   pairedAt?: number;
   emergencyStopped?: boolean;
   message?: string;
+  features?: string[];
+  missingFeatures?: string[];
 }
 
 export async function bridgeStatusSnapshot(): Promise<BridgeStatusSnapshot> {
@@ -204,13 +206,32 @@ export async function bridgeStatusSnapshot(): Promise<BridgeStatusSnapshot> {
       paired: !!creds,
       version: detected,
       latencyMs: h.latencyMs,
-      message: `Bridge v${detected} is below the required minimum v${BRIDGE_MIN_VERSION}. Download the latest package and restart the bridge.`,
+      message: `Bridge v${detected} is below the required minimum v${BRIDGE_MIN_VERSION}. Download v${BRIDGE_MIN_VERSION} from Connections and restart the bridge.`,
+    };
+  }
+  const features = Array.isArray(h.features) ? h.features : [];
+  const missingFeatures = REQUIRED_BRIDGE_FEATURES.filter((f) => !features.includes(f));
+  // Feature gate: a bridge that answers /health but lacks a required
+  // feature (e.g. an older 0.2.0 build without /v1/localai/*) must NOT be
+  // treated as fully paired-online. This is what stopped local AI from
+  // silently appearing "offline" when the source ZIP was out of date.
+  if (missingFeatures.length > 0) {
+    return {
+      ui: "feature_missing",
+      paired: !!(h.paired && creds),
+      version: detected,
+      latencyMs: h.latencyMs,
+      features,
+      missingFeatures: [...missingFeatures],
+      message:
+        `Bridge v${detected ?? "?"} is missing required feature(s): ${missingFeatures.join(", ")}. ` +
+        `Download v${BRIDGE_MIN_VERSION} from Connections and restart the bridge.`,
     };
   }
   const paired = !!(h.paired && creds);
   if (!paired) return { ui: "pairing_required", paired: false, version: h.bridgeVersion, latencyMs: h.latencyMs };
-  if (h.emergencyStopped) return { ui: "emergency_stopped", paired: true, version: h.bridgeVersion, pairedAt: creds?.pairedAt, latencyMs: h.latencyMs, emergencyStopped: true };
-  return { ui: "paired_online", paired: true, version: h.bridgeVersion, pairedAt: creds?.pairedAt, latencyMs: h.latencyMs };
+  if (h.emergencyStopped) return { ui: "emergency_stopped", paired: true, version: h.bridgeVersion, pairedAt: creds?.pairedAt, latencyMs: h.latencyMs, emergencyStopped: true, features };
+  return { ui: "paired_online", paired: true, version: h.bridgeVersion, pairedAt: creds?.pairedAt, latencyMs: h.latencyMs, features };
 }
 
 function parseVersion(v: string): [number, number, number] | null {

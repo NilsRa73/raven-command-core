@@ -1,5 +1,11 @@
 // MUST match desktop-bridge/src/protocol.js
-export const BRIDGE_MIN_VERSION = "0.2.0";
+export const BRIDGE_MIN_VERSION = "0.2.1";
+
+// Feature flags the web client REQUIRES. If the bridge's /v1/health does
+// not advertise all of these, the UI must show a "download and restart"
+// message instead of silently claiming the local AI is offline.
+export const REQUIRED_BRIDGE_FEATURES = ["localAiProxy"] as const;
+export type RequiredBridgeFeature = (typeof REQUIRED_BRIDGE_FEATURES)[number];
 export const PROTOCOL_VERSION = "v1";
 export const DEFAULT_BRIDGE_PORT = 47824;
 
@@ -17,6 +23,7 @@ export interface BridgeHealth {
   paired?: boolean;
   pairingActive?: boolean;
   emergencyStopped?: boolean;
+  features?: string[];
 }
 
 export interface BridgePairResponse { ok: boolean; deviceToken: string; hmacSecret: string; bridgeVersion: string; }

@@ -1,4 +1,4 @@
-RAH Desktop Bridge v0.2.0
+RAH Desktop Bridge v0.2.1
 =========================
 
 What this is
@@ -32,7 +32,7 @@ Config location
 That folder holds your device token and an audit log of every request.
 Never share the config folder or its contents.
 
-Local AI proxy (v0.2.0)
+Local AI proxy (v0.2.1)
 -----------------------
 The bridge can proxy authenticated calls from Raven Command to LM Studio
 and Ollama running on THIS PC, so the browser does not need to talk to
