@@ -92,7 +92,7 @@ test("Fast Mode includes a bounded number of recent Supporting memories", () => 
     { id: "s2", priority: "supporting", content: "Recent decision B", updatedAt: 79, tags: ["decision"] },
     { id: "s3", priority: "supporting", content: "Old note",          updatedAt: 1 },
   ];
-  const fast = selectContextForMode({ mode: "fast", memory, query: "decision" });
+  const fast = selectContextForMode(memory, { mode: "fast", query: "decision" });
   const ids = fast.map((r) => r.rec.id);
   assert.ok(ids.includes("c1"), "critical present");
   assert.ok(ids.includes("a1"), "active present");
@@ -100,7 +100,7 @@ test("Fast Mode includes a bounded number of recent Supporting memories", () => 
   assert.ok(supportingIds.length >= 1 && supportingIds.length <= 2,
     `expected 1-2 supporting in Fast, got ${supportingIds.length}`);
 
-  const deep = selectContextForMode({ mode: "deep", memory, query: "decision" });
+  const deep = selectContextForMode(memory, { mode: "deep", query: "decision" });
   const deepSupporting = deep.map((r) => r.rec.id).filter((id) => id.startsWith("s")).length;
   assert.ok(deepSupporting >= supportingIds.length, "deep >= fast supporting");
 });
@@ -110,7 +110,7 @@ test("buildContextPacket header describes fast composition honestly", () => {
     { id: "c1", priority: "critical", content: "x", updatedAt: 1 },
     { id: "s1", priority: "supporting", content: "y", updatedAt: 2 },
   ];
-  const pkt = buildContextPacket({ mode: "fast", memory });
+  const pkt = buildContextPacket(memory, { mode: "fast" });
   const blob = typeof pkt === "string" ? pkt : JSON.stringify(pkt);
   assert.match(blob, /critical \+ active \+ up to \d+ recent supporting/i);
 });
