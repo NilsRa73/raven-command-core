@@ -1,6 +1,6 @@
 # Raven One — Master Plan
 
-Version: Raven One · Alpha 0.2 — Workflow Engine + Fast/Deep hardening + Raven Home v0.2
+Version: Raven One · Alpha 0.2 — Workflow Engine + Fast/Deep hardening + Raven Home v0.2 + Voice v0.2
 Owner: Nils (RAH AI Studios)
 Status: Living document — single source of truth for the Raven One product line.
 
@@ -16,10 +16,11 @@ progress, or telemetry.
 - Local AI: LM Studio / Ollama on the user's PC, proxied through the
   authenticated RAH Desktop Bridge (v0.2.1) at `127.0.0.1:47824`.
 - Cloud AI: Lovable AI Gateway as a manual fallback.
-- Storage: IndexedDB v6 with stores for commands, memory, files, approvals,
+- Storage: IndexedDB v7 with stores for commands, memory, files, approvals,
   workflows, workflowRuns, deviceHistory, roadmapMilestones, decisions,
-  decisionVersions, and focusSessions; plus localStorage for lightweight
-  settings (devices, focus mode, engine).
+  decisionVersions, focusSessions, voiceProfiles, voiceSessions, and
+  voiceTranscripts; plus localStorage for lightweight settings (devices,
+  focus mode, engine).
 - Native companion: `desktop-bridge-native/` (Tauri 2 + Node SEA sidecar).
 - Bridge protocol: HTTPS/loopback, HMAC-signed, one-time approval tokens,
   Private Network Access, path containment, feature manifest.
@@ -32,7 +33,7 @@ progress, or telemetry.
 | Project DNA         | `src/routes/projects.$id.tsx`, `src/lib/rah/projectDna.js` |
 | Device Center       | `src/routes/devices.tsx`, `src/lib/rah/devices.js`, `src/lib/rah/deviceRolesV2.js`, `src/lib/rah/deviceHistory.js`, `src/lib/rah/deviceHistoryDb.ts` |
 | Raven Chronicle     | `src/routes/chronicle.tsx`, `src/lib/rah/chronicle.js` |
-| Voice Assistant     | `src/routes/voice.tsx`, `src/lib/rah/voiceAssistant.js` |
+| Voice Assistant     | `src/routes/voice.tsx`, `src/routes/voice-profiles.tsx`, `src/lib/rah/voiceAssistant.js`, `src/lib/rah/voiceProfiles.js` |
 | Screen Vision       | `src/routes/vision.tsx`, `src/lib/rah/screenVision.js` |
 | Project Memory      | `src/routes/memory.tsx`, `src/lib/rah/projectMemory.js` |
 | AI Council / Agents | `src/routes/agents.tsx`, `src/lib/rah/orchestrator.js` |
