@@ -1,14 +1,14 @@
-// Pure helpers for the Raven Chronicle.
-//
-// Merges existing real data (commands, project memory, approvals, workflow
-// runs) into a deterministic, chronological timeline. Never fabricates
-// events, never silently persists. All AI-generated summaries are drafts
-// returned to the UI for explicit user confirmation.
+// Pure helpers for the Raven Chronicle. Truth-only: never fabricates, never
+// silently persists. Merges real records (commands, project memory,
+// approvals, workflow runs) into a chronological, filterable timeline.
 
 function safeStr(s, max = 200) {
   if (typeof s !== "string") return "";
   return s.length > max ? s.slice(0, max - 1) + "…" : s;
 }
+
+/** Draft/queued workflow runs are excluded — they represent no real work yet. */
+const WF_INCLUDE = new Set(["completed", "failed", "cancelled", "running", "paused", "awaiting_approval"]);
 
 export function buildChronicleEntries(sources) {
   const out = [];
@@ -27,6 +27,7 @@ export function buildChronicleEntries(sources) {
 
   function projectIdOfRun(run) {
     if (!run) return null;
+    if (typeof run.projectId === "string") return run.projectId;
     const wf = wfById.get(run.workflowId);
     return wf && typeof wf.projectId === "string" ? wf.projectId : null;
   }
@@ -47,12 +48,12 @@ export function buildChronicleEntries(sources) {
     else if (c.status === "error") tone = "bad";
     else if (c.status === "rejected") tone = "warn";
     out.push({
-      id: "cmd:" + c.id, kind: "command", ts: c.createdAt,
+      id: "cmd:" + c.id, kind: "command", source: "command",
+      ts: c.createdAt,
       title: safeStr(c.prompt) || "(empty prompt)",
       detail: c.resultSummary ? safeStr(c.resultSummary, 240) : undefined,
       tone, sourceId: c.id, type: c.status,
       projectId: typeof c.projectId === "string" ? c.projectId : null,
-      source: "commands",
     });
   }
   for (const m of projectMemory) {
@@ -61,16 +62,15 @@ export function buildChronicleEntries(sources) {
     let tone = "info";
     if (m.type === "milestone") tone = "ok";
     else if (m.type === "blocker") tone = "warn";
-    else if (m.type === "decision") tone = "info";
     out.push({
       id: "mem:" + m.id,
       kind: m.type === "daily_log" || m.type === "weekly_log" ? "summary" : "memory",
+      source: "memory",
       ts: m.updatedAt,
       title: safeStr(m.title) || "(untitled memory)",
       detail: safeStr(m.content, 240),
       tone, sourceId: m.id, type: m.type,
       projectId: typeof m.projectId === "string" ? m.projectId : null,
-      source: "projectMemory",
     });
   }
   for (const a of approvals) {
@@ -78,30 +78,31 @@ export function buildChronicleEntries(sources) {
     if (a.status === "pending") continue;
     const tone = a.status === "approved" ? "ok" : a.status === "rejected" ? "warn" : "info";
     out.push({
-      id: "app:" + a.id, kind: "approval", ts: a.createdAt,
+      id: "app:" + a.id, kind: "approval", source: "approval",
+      ts: a.createdAt,
       title: safeStr(a.title) || "(approval)",
       detail: `${a.status} · ${safeStr(a.reason, 160)}`,
       tone, sourceId: a.id, type: a.status,
       projectId: projectIdOfApproval(a),
-      source: "approvals",
     });
   }
   for (const r of workflowRuns) {
     if (!r || typeof r.createdAt !== "number") continue;
     const status = r.status || "unknown";
+    if (!WF_INCLUDE.has(status)) continue;
     const tone = status === "completed" ? "ok"
       : status === "failed" ? "bad"
       : status === "cancelled" ? "warn" : "info";
     const wf = wfById.get(r.workflowId);
-    const name = wf && wf.name ? wf.name : "Workflow";
+    const name = (r.workflowName || (wf && wf.name)) || "Workflow";
+    const detail = r.errorMessage || r.failureReason || undefined;
     out.push({
-      id: "wfr:" + r.runId, kind: "workflow",
+      id: "run:" + r.runId, kind: "workflow", source: "workflow",
       ts: r.finishedAt || r.startedAt || r.createdAt,
       title: `${name} · ${status}`,
-      detail: r.failureReason ? safeStr(r.failureReason, 200) : undefined,
+      detail: detail ? safeStr(detail, 200) : undefined,
       tone, sourceId: r.runId, type: status,
       projectId: projectIdOfRun(r),
-      source: "workflowRuns",
     });
   }
   out.sort((a, b) => b.ts - a.ts);
@@ -159,8 +160,7 @@ export function buildDailySummaryDraft(entries, opts = {}) {
   const decisions = memory.filter((e) => e.type === "decision");
   const nextActions = memory.filter((e) => e.type === "next_action");
   const lines = [];
-  lines.push(`# Chronicle — ${key}`);
-  lines.push("");
+  lines.push(`# Chronicle — ${key}`, "");
   lines.push(`- Commands run: ${commands.length}`);
   lines.push(`- Approvals resolved: ${approvals.length}`);
   lines.push(`- Memory changes: ${memory.length} (milestones ${milestones.length}, blockers ${blockers.length}, decisions ${decisions.length}, next actions ${nextActions.length})`);
@@ -183,10 +183,7 @@ export function buildDailySummaryDraft(entries, opts = {}) {
 }
 
 export function exportChronicleJson(entries) {
-  return JSON.stringify({
-    exportedAt: new Date().toISOString(),
-    count: entries.length, entries,
-  }, null, 2);
+  return JSON.stringify({ exportedAt: new Date().toISOString(), count: entries.length, entries }, null, 2);
 }
 
 export function exportChronicleMarkdown(entries) {
