@@ -1,6 +1,6 @@
 export type MemoryType =
   | "note" | "decision" | "milestone" | "blocker"
-  | "next_action" | "daily_log" | "fact";
+  | "next_action" | "daily_log" | "weekly_log" | "fact";
 
 export interface ProjectMemoryRecord {
   id: string;
