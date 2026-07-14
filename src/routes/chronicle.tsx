@@ -313,7 +313,7 @@ function ChroniclePage() {
             <button onClick={() => exportWeekly("md")} className="h-8 rounded-md border border-border/70 px-3 text-xs">Export MD</button>
             <button onClick={() => exportWeekly("json")} className="h-8 rounded-md border border-border/70 px-3 text-xs">Export JSON</button>
             <button onClick={() => void saveWeekly()} className="h-8 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground">Save weekly summary</button>
-            {findExistingWeeklySummary(projectMemory, weeklyDraft.meta.projectScope ?? null, weeklyDraft.meta.weekLabel) && (
+            {Boolean(findExistingWeeklySummary(projectMemory, (typeof weeklyDraft.meta.projectScope === "string" ? weeklyDraft.meta.projectScope : null), weeklyDraft.meta.weekLabel)) && (
               <button onClick={() => void saveWeekly({ forceNewVersion: true })} className="h-8 rounded-md border border-yellow-500/60 px-3 text-xs text-yellow-400">Save another version</button>
             )}
           </div>
