@@ -195,6 +195,7 @@ export async function runWorkflow(runId, deps) {
             model: output?.route?.model ?? null,
             transport: output?.route?.transport ?? null,
             latencyMs: output?.route?.latencyMs ?? null,
+            packet: output?.route?.packet ?? null,
           },
         });
         run.currentStepIndex += 1;
