@@ -1,0 +1,3 @@
+export function sha256Hex(input: Uint8Array | ArrayBuffer | ArrayBufferView | string | null | undefined): Promise<string | null>;
+export function hashFrameBytes(input: Uint8Array | ArrayBuffer | ArrayBufferView | string | null | undefined): Promise<{ hash: string | null; algorithm: "sha256" | null; hashedAt: number | null }>;
+export function hashesEqual(a: string | null | undefined, b: string | null | undefined): boolean;
