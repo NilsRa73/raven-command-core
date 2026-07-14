@@ -301,24 +301,62 @@ function AddDeviceModal({ onClose, onCreate }: { onClose: () => void; onCreate: 
   );
 }
 
-function DeviceDrawer({ device, onClose, onSave, onRemove }: {
+function DeviceDrawer({ device, onClose, onSave, onRemove, history, captureDisabled, onCapture, onImport, onDeleteSnapshot }: {
   device: DeviceRecord;
   onClose: () => void;
   onSave: (patch: Partial<DeviceRecord>) => void;
   onRemove: () => void;
+  history: DeviceSnapshot[];
+  captureDisabled: string | null;
+  onCapture: () => void;
+  onImport: (list: DeviceSnapshot[], mode: "skip" | "replace") => Promise<void>;
+  onDeleteSnapshot: (id: string) => Promise<void>;
 }) {
   const [name, setName] = useState(device.displayName);
   const [role, setRole] = useState(device.role);
   const [notes, setNotes] = useState(device.notes ?? "");
   const [enabled, setEnabled] = useState(device.enabled);
   const isBridge = device.kind === "bridge";
+  const [range, setRange] = useState<HistoryRangeId>("24h");
+  const filtered = useMemo(() => filterByRange(history, range), [history, range]);
+  const latest = useMemo(() => latestSummary(history), [history]);
+  const spark = useMemo(() => sparklinePoints(filtered, "cpuLoad1m", 200, 40), [filtered]);
+  const ramSpark = useMemo(() => sparklinePoints(filtered, "ramUsedBytes", 200, 40), [filtered]);
+  const sourceLabel = isBridge ? "Bridge (live)" : device.status === "Planned" ? "Planned" : "Manual";
+
+  function doExport() {
+    const payload = exportPayload(history);
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `raven-device-history-${device.id}.json`; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  async function doImport(file: File) {
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const report = validateImport(parsed);
+      if (!report.ok && report.snapshots.length === 0) { toast.error(report.error ?? "Invalid file."); return; }
+      const scoped = report.snapshots.filter((s) => s.deviceId === device.id);
+      if (scoped.length === 0) { toast.error("No snapshots for this device in file."); return; }
+      const mode = window.confirm(`Import ${scoped.length} snapshot(s). Replace existing entries with the same id? OK = replace, Cancel = skip duplicates.`) ? "replace" : "skip";
+      await onImport(scoped, mode);
+      if (report.errors.length > 0) toast.warning(`${report.errors.length} row(s) skipped as invalid.`);
+    } catch (e) {
+      toast.error("Could not read file: " + (e instanceof Error ? e.message : String(e)));
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 bg-background/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
       <div className="glass-panel gold-border p-4 max-w-lg w-full max-h-[85dvh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start gap-2">
           <div className="flex-1 min-w-0">
-            <div className="text-[10px] uppercase tracking-widest text-muted-foreground">{isBridge ? "Live · read-only" : "Manual entry"}</div>
+            <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Source: {sourceLabel}</div>
             <h2 className="display gold-text text-lg truncate">{device.displayName}</h2>
+            <div className="text-[10px] uppercase tracking-widest text-muted-foreground mt-0.5">Role · {DEVICE_ROLES_V2.find((r) => r.id === effectiveRoleV2(device))?.label}</div>
           </div>
           <StatusPill status={device.status} />
         </div>
@@ -359,6 +397,63 @@ function DeviceDrawer({ device, onClose, onSave, onRemove }: {
           )}
         </section>
 
+        <section className="mt-4">
+          <div className="flex items-center gap-2 mb-2">
+            <h3 className="text-[11px] uppercase tracking-widest text-muted-foreground">Hardware history</h3>
+            <select value={range} onChange={(e) => setRange(e.target.value as HistoryRangeId)} className="ml-auto h-7 rounded-md border border-border/70 bg-background/40 px-2 text-xs" aria-label="History range">
+              {HISTORY_RANGES.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
+            </select>
+          </div>
+          {latest ? (
+            <dl className="grid grid-cols-2 gap-1 text-[11px] mb-2">
+              <dt className="text-muted-foreground">Latest snapshot</dt><dd>{new Date(latest.capturedAt).toLocaleString()}</dd>
+              <dt className="text-muted-foreground">Source</dt><dd>{latest.source ?? "—"}</dd>
+              <dt className="text-muted-foreground">CPU load (1m)</dt><dd>{latest.cpuLoad1m != null ? latest.cpuLoad1m.toFixed(2) : "—"}</dd>
+              <dt className="text-muted-foreground">RAM used</dt><dd>{latest.ramUsedBytes != null && latest.ramTotalBytes != null ? `${(latest.ramUsedBytes/1e9).toFixed(1)}/${(latest.ramTotalBytes/1e9).toFixed(1)} GB` : "—"}</dd>
+            </dl>
+          ) : (
+            <p className="text-[11px] text-muted-foreground mb-2">No snapshots yet. Capture a live snapshot to start a history.</p>
+          )}
+          {filtered.length > 1 && (
+            <div className="space-y-2">
+              <SparkChart label="CPU load 1m" data={spark} />
+              <SparkChart label="RAM used (bytes)" data={ramSpark} />
+            </div>
+          )}
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button
+              onClick={onCapture}
+              disabled={!!captureDisabled}
+              title={captureDisabled ?? "Capture a live snapshot from the Bridge"}
+              className="h-7 rounded-md bg-primary px-3 text-[11px] font-medium text-primary-foreground disabled:opacity-50"
+            >Capture live snapshot</button>
+            <button onClick={doExport} disabled={history.length === 0} className="h-7 rounded-md border border-border/70 px-3 text-[11px] disabled:opacity-50">Export JSON</button>
+            <label className="h-7 rounded-md border border-border/70 px-3 text-[11px] inline-flex items-center cursor-pointer">
+              Import JSON
+              <input type="file" accept="application/json" className="hidden" onChange={(e) => {
+                const f = e.target.files?.[0]; if (f) void doImport(f); e.target.value = "";
+              }} />
+            </label>
+          </div>
+          {captureDisabled && (
+            <p className="mt-1 text-[10px] text-yellow-400">{captureDisabled}</p>
+          )}
+          {filtered.length > 0 && (
+            <details className="mt-2">
+              <summary className="cursor-pointer text-[11px] text-muted-foreground">{filtered.length} snapshot(s) in range</summary>
+              <ul className="mt-1 space-y-0.5 text-[10px] max-h-32 overflow-y-auto">
+                {filtered.slice().reverse().map((s) => (
+                  <li key={s.id} className="flex items-center gap-2">
+                    <span className="text-muted-foreground">{new Date(s.capturedAt).toLocaleString()}</span>
+                    <span>· {s.source}</span>
+                    <button onClick={() => void onDeleteSnapshot(s.id)} className="ml-auto text-destructive hover:underline">delete</button>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </section>
+
         <section className="mt-4 rounded-md border border-border/60 bg-background/40 p-3 text-[11px] text-muted-foreground">
           Security scope: Raven never issues remote execution, keyboard/mouse control, shell or registry access from this screen. All bridge actions still require approval.
         </section>
@@ -375,6 +470,22 @@ function DeviceDrawer({ device, onClose, onSave, onRemove }: {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function SparkChart({ label, data }: { label: string; data: { points: { x: number; y: number }[]; min: number | null; max: number | null } }) {
+  if (data.points.length === 0) return null;
+  const path = data.points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" ");
+  return (
+    <div>
+      <div className="flex items-baseline gap-2 text-[10px] text-muted-foreground">
+        <span>{label}</span>
+        <span>min {data.min?.toFixed?.(2) ?? "—"} · max {data.max?.toFixed?.(2) ?? "—"}</span>
+      </div>
+      <svg viewBox="0 0 200 40" className="w-full h-10" role="img" aria-label={label}>
+        <path d={path} fill="none" stroke="currentColor" strokeWidth="1.2" className="text-primary" />
+      </svg>
     </div>
   );
 }
