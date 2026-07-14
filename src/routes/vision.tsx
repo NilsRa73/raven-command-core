@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   MonitorPlay, Square, Camera, Send, Copy, Trash2,
-  RotateCcw, ShieldCheck, MessageSquare,
+  RotateCcw, ShieldCheck, MessageSquare, ShieldAlert, Save, Eye, EyeOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Markdown } from "@/components/rah/Markdown";
@@ -17,6 +17,13 @@ import {
   type SharingState,
   type ScreenVisionDiagnostics,
 } from "@/lib/rah/screenVision";
+import {
+  classifyPrivacy, classIsSensitive, selectFrameVariant,
+  validateRedactionRegions, nextReviewState, shapeEvidenceRecord,
+  PRIVACY_HEURISTIC_DISCLAIMER, PRIVACY_CLASS_LABEL,
+  type RedactionRegion,
+} from "@/lib/rah/visionSessions";
+import { getDB, uid } from "@/lib/rah/db";
 
 export const Route = createFileRoute("/vision")({
   head: () => ({
