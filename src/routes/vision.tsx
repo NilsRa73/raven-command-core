@@ -498,7 +498,161 @@ function VisionPage() {
     abortRef.current?.abort();
     abortRef.current = null;
     setAnalysis(null);
+    setPendingFrame(null);
+    setRegions([]);
+    setUserMarkedSensitive(false);
+    setPrivacyNote("");
+    setRedactedDataUrl("");
+    setSavedEvidenceId(null);
+    setReviewStage("idle");
   }, []);
+
+  // Capture ONLY — no AI. This is Step 1 of the mandatory Capture Review.
+  const captureNow = useCallback(async () => {
+    if (!isCaptureReady(sharing) || !videoRef.current) {
+      toast.error("Start screen sharing first.");
+      return;
+    }
+    setSharing("capturing");
+    try {
+      const method = pickCaptureMethod({
+        imageCaptureAvailable: browserSupportsImageCapture() && !!trackRef.current,
+        imageCaptureLastOk,
+        videoHasFrame: videoReady,
+      });
+      let captured: CapturedFrame | null = null;
+      if (method === "image-capture" && trackRef.current) {
+        try { captured = await captureViaImageCapture(trackRef.current); } catch { /* fall through */ }
+      }
+      if (!captured) captured = await captureCurrentFrame(videoRef.current);
+      setPendingFrame(captured);
+      setRegions([]);
+      setUserMarkedSensitive(false);
+      setPrivacyNote("");
+      setRedactedDataUrl("");
+      setSavedEvidenceId(null);
+      setAnalysis(null);
+      advanceReview("capture");
+      setSharing("ready");
+    } catch (err) {
+      toast.error("Capture failed: " + (err instanceof Error ? err.message : String(err)));
+      setSharing("ready");
+    }
+  }, [sharing, imageCaptureLastOk, videoReady, advanceReview]);
+
+  // Send the reviewed frame to AI. Enforces the sensitive-confirmation gate.
+  const analyzeReviewed = useCallback(async (opts: { forceOriginal?: boolean } = {}) => {
+    if (!pendingFrame) { toast.error("Capture a frame first."); return; }
+    const trimmed = (question || "").trim() || "Describe what's on this screen and tell me what to do next.";
+    // Pick variant honoring current toggle + sensitivity gate.
+    const chosen = selectFrameVariant({
+      regions,
+      privacyClass: privacy.class,
+      userChoice: opts.forceOriginal ? "original" : (regions.length > 0 && previewRedacted ? "redacted" : "original"),
+    });
+    if (chosen.requiresSecondConfirmation && !opts.forceOriginal) {
+      advanceReview("mark-sensitive");
+      return; // UI shows confirmation modal / block
+    }
+    const useDataUrl = chosen.variant === "redacted" && redactedDataUrl ? redactedDataUrl : pendingFrame.dataUrl;
+    advanceReview("analyze");
+    setSharing("analyzing");
+    setAnalysis({
+      question: trimmed, frame: pendingFrame, state: "streaming", text: "",
+      runtimeLine: buildScreenVisionRuntimeLine({ sourceLabel: sourceLabel || undefined, capturedAt: pendingFrame.capturedAt }),
+      startedAt: Date.now(),
+    });
+    abortRef.current?.abort();
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    try {
+      const res = await fetch("/api/rah-chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: ctrl.signal,
+        body: JSON.stringify({
+          prompt: trimmed,
+          agents: ["brain"],
+          mode: "fast",
+          images: [{ name: `screen-${chosen.variant}.jpg`, mime: "image/jpeg", dataUrl: useDataUrl }],
+          context: { screenVision: true, sourceLabel, variant: chosen.variant, privacyClass: privacy.class,
+            capturedAt: pendingFrame.capturedAt, frame: { width: pendingFrame.width, height: pendingFrame.height, sizeBytes: pendingFrame.sizeBytes } },
+        }),
+      });
+      if (!res.ok || !res.body) throw new Error(res.statusText || "Vision request failed.");
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "", full = "";
+      let provider: string | undefined, model: string | undefined, latencyMs: number | undefined;
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n"); buf = lines.pop() ?? "";
+        for (const line of lines) {
+          const t = line.trim(); if (!t) continue;
+          try {
+            const ev = JSON.parse(t) as { type: string; text?: string; provider?: string; model?: string; latencyMs?: number; message?: string };
+            if (ev.type === "start") { provider = ev.provider; model = ev.model; }
+            else if (ev.type === "delta" && ev.text) { full += ev.text; const snap = full; setAnalysis((a) => a ? { ...a, text: snap } : a); }
+            else if (ev.type === "done") { provider = ev.provider ?? provider; model = ev.model ?? model; latencyMs = ev.latencyMs; if (ev.text) full = ev.text; }
+            else if (ev.type === "error") throw new Error(ev.message || "Vision failed");
+          } catch (parseErr) { if (parseErr instanceof Error && parseErr.message) throw parseErr; }
+        }
+      }
+      setAnalysis((a) => a ? {
+        ...a, state: "done", text: full, provider, model, latencyMs,
+        runtimeLine: buildScreenVisionRuntimeLine({ provider, model, latencyMs, sourceLabel: sourceLabel || undefined, capturedAt: pendingFrame.capturedAt }),
+      } : a);
+      advanceReview("analyze-done");
+    } catch (err) {
+      if ((err as { name?: string })?.name === "AbortError") return;
+      const msg = err instanceof Error ? err.message : String(err);
+      setAnalysis((a) => a ? { ...a, state: "error", error: msg } : a);
+      toast.error("Vision analysis failed: " + msg);
+      advanceReview("analyze-error");
+    } finally {
+      setSharing((s) => (s === "analyzing" || s === "capturing") ? "ready" : s);
+    }
+  }, [pendingFrame, question, regions, privacy.class, previewRedacted, redactedDataUrl, sourceLabel, advanceReview]);
+
+  // Save current pending frame + AI result as an append-only evidence record.
+  const saveEvidence = useCallback(async () => {
+    if (!pendingFrame) { toast.error("No captured frame to save."); return; }
+    try {
+      const rec = shapeEvidenceRecord({
+        id: uid(),
+        sessionId: null,
+        projectId: null,
+        createdAt: Date.now(),
+        frame: { width: pendingFrame.width, height: pendingFrame.height, sizeBytes: pendingFrame.sizeBytes, capturedAt: pendingFrame.capturedAt, mime: "image/jpeg", captureMethod: "video-canvas" },
+        redactedFrame: regions.length > 0 && redactedDataUrl ? { width: pendingFrame.width, height: pendingFrame.height, sizeBytes: Math.round(redactedDataUrl.length * 0.75), capturedAt: pendingFrame.capturedAt, mime: "image/jpeg", captureMethod: "video-canvas" } : null,
+        redactionRegions: regions,
+        privacy: { class: privacy.class, reasons: privacy.reasons },
+        notes: privacyNote,
+        sourceLabel,
+        linkedResultId: null,
+      });
+      const db = await getDB();
+      await db.put("visionEvidence", rec);
+      setSavedEvidenceId(rec.id);
+      toast.success("Evidence saved locally (append-only)");
+    } catch (err) {
+      toast.error("Failed to save evidence: " + (err instanceof Error ? err.message : String(err)));
+    }
+  }, [pendingFrame, regions, redactedDataUrl, privacy, privacyNote, sourceLabel]);
+
+  const addRegionFromDraft = useCallback(() => {
+    if (!pendingFrame) return;
+    const raw = { x: Number(regionDraft.x), y: Number(regionDraft.y), w: Number(regionDraft.w), h: Number(regionDraft.h), label: regionDraft.label || null };
+    const res = validateRedactionRegions([raw], { width: pendingFrame.width, height: pendingFrame.height });
+    if (res.rejected.length > 0) {
+      toast.error("Region rejected: " + res.rejected[0].reason);
+      return;
+    }
+    setRegions((r) => [...r, ...res.accepted]);
+    setRegionDraft({ x: "", y: "", w: "", h: "", label: "" });
+  }, [pendingFrame, regionDraft]);
 
   const analyzeNow = useCallback(async (userQuestion: string) => {
     if (!isCaptureReady(sharing) || !videoRef.current) {
