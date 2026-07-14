@@ -85,14 +85,16 @@ test("executor refuses Copy File with identical source and destination", async (
 });
 
 test("Fast Mode includes a bounded number of recent Supporting memories", () => {
+  const now = Date.now();
+  const day = 86_400_000;
   const memory = [
-    { id: "c1", priority: "critical", pinned: true, content: "Critical rule", updatedAt: 100 },
-    { id: "a1", priority: "active",   content: "Active task",    updatedAt: 90 },
-    { id: "s1", priority: "supporting", content: "Recent decision A", updatedAt: 80, tags: ["decision"] },
-    { id: "s2", priority: "supporting", content: "Recent decision B", updatedAt: 79, tags: ["decision"] },
-    { id: "s3", priority: "supporting", content: "Old note",          updatedAt: 1 },
+    { id: "c1", pinned: true,          type: "note",        content: "Critical rule",       updatedAt: now, archived: false, projectId: null },
+    { id: "a1", pinned: false,         type: "blocker",     content: "Active task",         updatedAt: now, archived: false, projectId: null },
+    { id: "s1", pinned: false,         type: "note",        content: "Recent decision A",   updatedAt: now, tags: ["decision"], archived: false, projectId: null },
+    { id: "s2", pinned: false,         type: "note",        content: "Recent decision B",   updatedAt: now - day, tags: ["decision"], archived: false, projectId: null },
+    { id: "s3", pinned: false,         type: "note",        content: "Old note",            updatedAt: now - 400 * day, archived: false, projectId: null },
   ];
-  const fast = selectContextForMode(memory, { mode: "fast", query: "decision" });
+  const fast = selectContextForMode(memory, { mode: "fast", now, query: "decision" });
   const ids = fast.map((r) => r.rec.id);
   assert.ok(ids.includes("c1"), "critical present");
   assert.ok(ids.includes("a1"), "active present");
@@ -100,18 +102,17 @@ test("Fast Mode includes a bounded number of recent Supporting memories", () => 
   assert.ok(supportingIds.length >= 1 && supportingIds.length <= 2,
     `expected 1-2 supporting in Fast, got ${supportingIds.length}`);
 
-  const deep = selectContextForMode(memory, { mode: "deep", query: "decision" });
+  const deep = selectContextForMode(memory, { mode: "deep", now, query: "decision" });
   const deepSupporting = deep.map((r) => r.rec.id).filter((id) => id.startsWith("s")).length;
   assert.ok(deepSupporting >= supportingIds.length, "deep >= fast supporting");
 });
 
 test("buildContextPacket header describes fast composition honestly", () => {
   const memory = [
-    { id: "c1", priority: "critical", content: "x", updatedAt: 1 },
-    { id: "s1", priority: "supporting", content: "y", updatedAt: 2 },
+    { id: "c1", pinned: true, type: "note", content: "x", updatedAt: Date.now(), archived: false, projectId: null },
   ];
   const pkt = buildContextPacket(memory, { mode: "fast" });
-  const blob = typeof pkt === "string" ? pkt : JSON.stringify(pkt);
+  const blob = typeof pkt === "string" ? pkt : (pkt?.text ?? JSON.stringify(pkt));
   assert.match(blob, /critical \+ active \+ up to \d+ recent supporting/i);
 });
 
