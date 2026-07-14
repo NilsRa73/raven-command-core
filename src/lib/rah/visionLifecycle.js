@@ -253,24 +253,22 @@ export function filterVisionArtifacts({ sessions = [], evidence = [], results = 
     return true;
   });
 
-  const sessionIdSet = new Set(filteredSessions.map((s) => s.id));
-
+  // Evidence and results filter INDEPENDENTLY on the same criteria — a text
+  // search in a result must not be masked by a session that doesn't share
+  // the text. Session-scoped filters (projectId/status/source) still apply
+  // to each artifact class where the field is meaningful.
   const filteredEvidence = evidence.filter((e) => {
     if (!e) return false;
-    if (e.sessionId && !sessionIdSet.has(e.sessionId)) return false;
     if (projectId != null && (e.projectId ?? null) !== projectId) return false;
     if (privacyClass && (e.privacy?.class || "unknown") !== privacyClass) return false;
     if (!inRange(Number(e.createdAt) || 0)) return false;
+    if (source && !tokenMatches(e.sourceLabel, source)) return false;
     if (q && !(tokenMatches(e.notes, q) || tokenMatches(e.sourceLabel, q))) return false;
     return true;
   });
 
-  const evidenceIdSet = new Set(filteredEvidence.map((e) => e.id));
-
   const filteredResults = results.filter((r) => {
     if (!r) return false;
-    if (r.sessionId && !sessionIdSet.has(r.sessionId)) return false;
-    if (r.evidenceId && !evidenceIdSet.has(r.evidenceId)) return false;
     if (projectId != null && (r.projectId ?? null) !== projectId) return false;
     if (!inRange(Number(r.createdAt) || 0)) return false;
     if (q && !(tokenMatches(r.question, q) || tokenMatches(r.rawText, q) || tokenMatches(r.editedText, q))) return false;
