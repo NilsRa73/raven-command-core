@@ -371,7 +371,7 @@ export function RahProvider({ children }: { children: ReactNode }) {
     for (const r of runs) {
       if (r.status === "draft" || r.status === "queued" || r.status === "running"
           || r.status === "awaiting_approval" || r.status === "paused") {
-        await executorCancelRun(r.runId, deps, { reason: "emergency_stop" });
+        await executorCancelRun(r.runId, deps, { reason: "emergency" });
       }
     }
     // Reload runs to reflect terminal state in UI immediately.
