@@ -179,7 +179,7 @@ function AutomationsPage() {
     a.href = URL.createObjectURL(blob);
     a.download = `${draft.name.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.raven-workflow.json`;
     a.click();
-    URL.revokeObjectURL(a.href);
+    setTimeout(() => URL.revokeObjectURL(a.href), 0);
   }
   async function handleImport(file: File) {
     if (
