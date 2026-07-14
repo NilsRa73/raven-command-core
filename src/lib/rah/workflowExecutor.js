@@ -15,7 +15,8 @@
 //   chronicle.log({title, detail, projectId})      -> void        // only called after approval
 //   bridge.status()                                -> {status, capabilities}
 //   bridge.readFile(path)                          -> {text, size}
-//   bridge.writeFile(path, source?)                -> {ok}        // uses files.copy capability
+//   bridge.copyFile(source, dest)                  -> {ok}        // uses files.copy capability
+//   bridge.writeFile(destPath, sourcePath)         -> {ok}        // legacy alias for copyFile
 //   bridge.launchUrl(url)                          -> {ok}
 //   bridge.launchApp(program)                      -> {ok}
 //   now()                                          -> number
