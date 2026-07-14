@@ -249,7 +249,12 @@ function AutomationsPage() {
           {workflows.map((w) => {
             const runCount = runs.filter((r) => r.workflowId === w.id).length;
             return (
-              <button key={w.id} onClick={() => setSelectedId(w.id)}
+              <button key={w.id} onClick={() => {
+                if ((dirty || isDraftUnsaved) && !confirm("Discard unsaved changes to the current workflow?")) return;
+                setIsDraftUnsaved(false);
+                setDirty(false);
+                setSelectedId(w.id);
+              }}
                 className={`w-full text-left rounded-md px-2 py-2 text-sm hover:bg-accent ${selectedId === w.id ? "bg-accent" : ""}`}>
                 <div className="flex items-center justify-between gap-2">
                   <span className="truncate font-medium">{w.name}</span>
