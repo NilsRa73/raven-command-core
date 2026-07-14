@@ -25,6 +25,13 @@ import {
 } from "@/lib/rah/visionSessions";
 import { hashFrameBytes } from "@/lib/rah/visionHash";
 import { getDB, uid } from "@/lib/rah/db";
+import {
+  createPointerState, reducePointer, canUndo as canUndoState, canRedo as canRedoState,
+  draftDrawRect, shortcutsAreSuppressed,
+} from "@/lib/rah/visionPointer";
+import {
+  computeDisplayTransform, imageToDisplay, type Region,
+} from "@/lib/rah/visionGeometry";
 
 export const Route = createFileRoute("/vision")({
   head: () => ({
@@ -298,6 +305,91 @@ function VisionPage() {
   const [savedEvidenceId, setSavedEvidenceId] = useState<string | null>(null);
   const [regionDraft, setRegionDraft] = useState<{ x: string; y: string; w: string; h: string; label: string }>({ x: "", y: "", w: "", h: "", label: "" });
 
+  // Pointer/keyboard reducer state for drag-to-redact overlay.
+  const [pointer, setPointer] = useState(() => createPointerState([]));
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+  const previewImgRef = useRef<HTMLImageElement | null>(null);
+  const [displaySize, setDisplaySize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
+
+  const transform = useMemo(() => {
+    if (!pendingFrame || displaySize.w === 0 || displaySize.h === 0) return null;
+    return computeDisplayTransform({
+      displayWidth: displaySize.w,
+      displayHeight: displaySize.h,
+      sourceWidth: pendingFrame.width,
+      sourceHeight: pendingFrame.height,
+    });
+  }, [pendingFrame, displaySize]);
+
+  const pointerFrame = useMemo(
+    () => (pendingFrame ? { width: pendingFrame.width, height: pendingFrame.height } : null),
+    [pendingFrame],
+  );
+
+  // Sync reducer regions -> committed `regions` (source of truth for save).
+  useEffect(() => {
+    setRegions(pointer.regions as unknown as RedactionRegion[]);
+  }, [pointer.regions]);
+
+  // Reset overlay when the frame changes.
+  useEffect(() => {
+    setPointer(createPointerState([]));
+  }, [pendingFrame?.capturedAt]);
+
+  // Track display size for accurate coordinate math on resize.
+  useEffect(() => {
+    if (!showRedactionPanel) return;
+    const el = overlayRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const obs = new ResizeObserver(() => {
+      const rect = el.getBoundingClientRect();
+      setDisplaySize({ w: rect.width, h: rect.height });
+    });
+    obs.observe(el);
+    const rect = el.getBoundingClientRect();
+    setDisplaySize({ w: rect.width, h: rect.height });
+    return () => obs.disconnect();
+  }, [showRedactionPanel, pendingFrame?.capturedAt]);
+
+  // Global keyboard shortcuts for the overlay (arrow nudge, delete,
+  // undo/redo). Suppressed while typing in inputs/textareas.
+  useEffect(() => {
+    if (!showRedactionPanel || !pointerFrame) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (shortcutsAreSuppressed(e.target)) return;
+      if ((e.metaKey || e.ctrlKey) && (e.key === "z" || e.key === "Z")) {
+        e.preventDefault();
+        setPointer((s) => reducePointer(s, e.shiftKey ? { type: "redo" } : { type: "undo" }));
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && (e.key === "y" || e.key === "Y")) {
+        e.preventDefault();
+        setPointer((s) => reducePointer(s, { type: "redo" }));
+        return;
+      }
+      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Delete", "Backspace"].includes(e.key)) {
+        if (!pointer.selectedId) return;
+        e.preventDefault();
+        setPointer((s) => reducePointer(s, { type: "key", key: e.key, shift: e.shiftKey, frame: pointerFrame }));
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [showRedactionPanel, pointerFrame, pointer.selectedId]);
+
+  // Warn on tab close / navigation while a review draft or dirty
+  // redaction stack is unsaved.
+  useEffect(() => {
+    const hasUnsaved = !!pendingFrame && (pointer.dirty || (privacyNote && !savedEvidenceId));
+    if (!hasUnsaved) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [pendingFrame, pointer.dirty, privacyNote, savedEvidenceId]);
+
   const privacy = useMemo(() =>
     classifyPrivacy({
       userMarkedSensitive,
@@ -528,6 +620,7 @@ function VisionPage() {
     setAnalysis(null);
     setPendingFrame(null);
     setRegions([]);
+    setPointer(createPointerState([]));
     setUserMarkedSensitive(false);
     setPrivacyNote("");
     setRedactedDataUrl("");
@@ -688,7 +781,7 @@ function VisionPage() {
       toast.error("Region rejected: " + res.rejected[0].reason);
       return;
     }
-    setRegions((r) => [...r, ...res.accepted]);
+    setPointer((s) => reducePointer(s, { type: "set-regions", regions: [...s.regions, ...(res.accepted as unknown as Region[])], frame: { width: pendingFrame.width, height: pendingFrame.height } }));
     setRegionDraft({ x: "", y: "", w: "", h: "", label: "" });
   }, [pendingFrame, regionDraft]);
 
@@ -1128,7 +1221,91 @@ function VisionPage() {
 
               {showRedactionPanel && (
                 <div className="space-y-2 rounded-md border border-border/60 p-3">
-                  <div className="text-xs text-muted-foreground">Add rectangular redaction regions (pixel coords, 0,0 = top-left). Preview draws opaque black over each region.</div>
+                  <div className="text-xs text-muted-foreground">
+                    Drag on the preview to draw a redaction rectangle. Click a
+                    region to select it, then use arrow keys to nudge
+                    (Shift+arrow to resize) or <kbd className="rounded border border-border/60 px-1 text-[10px]">Delete</kbd> to remove.
+                    Ctrl/Cmd+Z undoes, Ctrl/Cmd+Shift+Z redoes. Numeric entry below is a keyboard-only fallback.
+                  </div>
+                  <div
+                    ref={overlayRef}
+                    tabIndex={0}
+                    role="application"
+                    aria-label="Drag to draw redaction regions on the captured frame"
+                    className="relative overflow-hidden rounded border border-border/70 bg-black/40 focus:outline-none focus:ring-2 focus:ring-primary/60"
+                    style={{ aspectRatio: `${pendingFrame.width} / ${pendingFrame.height}` }}
+                    onPointerDown={(e) => {
+                      if (!transform || !pointerFrame) return;
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      (e.target as Element).setPointerCapture?.(e.pointerId);
+                      setPointer((s) => reducePointer(s, {
+                        type: "pointer-down",
+                        point: { x: e.clientX - rect.left, y: e.clientY - rect.top },
+                        transform, frame: pointerFrame,
+                      }));
+                    }}
+                    onPointerMove={(e) => {
+                      if (!transform || !pointerFrame) return;
+                      if (pointer.mode === "idle") return;
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      setPointer((s) => reducePointer(s, {
+                        type: "pointer-move",
+                        point: { x: e.clientX - rect.left, y: e.clientY - rect.top },
+                        transform, frame: pointerFrame,
+                      }));
+                    }}
+                    onPointerUp={(e) => {
+                      if (!transform || !pointerFrame) return;
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      setPointer((s) => reducePointer(s, {
+                        type: "pointer-up",
+                        point: { x: e.clientX - rect.left, y: e.clientY - rect.top },
+                        transform, frame: pointerFrame,
+                      }));
+                    }}
+                    onPointerCancel={() => setPointer((s) => reducePointer(s, { type: "pointer-cancel" }))}
+                  >
+                    <img
+                      ref={previewImgRef}
+                      src={pendingFrame.dataUrl}
+                      alt="Captured frame for redaction editing"
+                      className="pointer-events-none absolute inset-0 h-full w-full object-contain select-none"
+                      draggable={false}
+                    />
+                    {transform && pointer.regions.map((r: Region) => {
+                      const tl = imageToDisplay(transform, { x: r.x, y: r.y });
+                      const br = imageToDisplay(transform, { x: r.x + r.w, y: r.y + r.h });
+                      if (!tl || !br) return null;
+                      const selected = pointer.selectedId === r.id;
+                      return (
+                        <button
+                          key={r.id}
+                          type="button"
+                          onPointerDown={(e) => { e.stopPropagation(); setPointer((s) => reducePointer(s, { type: "select", id: r.id })); }}
+                          className={"absolute border-2 " + (selected ? "border-primary bg-primary/25" : "border-white/70 bg-black/50 hover:border-primary/70")}
+                          style={{ left: tl.x, top: tl.y, width: br.x - tl.x, height: br.y - tl.y }}
+                          aria-label={`Redaction region ${r.label || r.id} at ${r.x},${r.y} size ${r.w}×${r.h}${selected ? " (selected)" : ""}`}
+                        />
+                      );
+                    })}
+                    {transform && (() => {
+                      const draft = draftDrawRect(pointer, pointerFrame!);
+                      if (!draft) return null;
+                      const tl = imageToDisplay(transform, { x: draft.x, y: draft.y });
+                      const br = imageToDisplay(transform, { x: draft.x + draft.w, y: draft.y + draft.h });
+                      if (!tl || !br) return null;
+                      return (
+                        <div className="pointer-events-none absolute border-2 border-dashed border-primary bg-primary/10" style={{ left: tl.x, top: tl.y, width: br.x - tl.x, height: br.y - tl.y }} />
+                      );
+                    })()}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px]">
+                    <Button size="sm" type="button" variant="ghost" disabled={!canUndoState(pointer)} onClick={() => setPointer((s) => reducePointer(s, { type: "undo" }))}>Undo</Button>
+                    <Button size="sm" type="button" variant="ghost" disabled={!canRedoState(pointer)} onClick={() => setPointer((s) => reducePointer(s, { type: "redo" }))}>Redo</Button>
+                    <Button size="sm" type="button" variant="ghost" disabled={pointer.regions.length === 0} onClick={() => setPointer((s) => reducePointer(s, { type: "clear-all" }))}>Clear all</Button>
+                    <span className="text-muted-foreground ml-auto">{pointer.regions.length} region{pointer.regions.length === 1 ? "" : "s"} · {pointer.dirty ? "unsaved edits" : "saved"}</span>
+                  </div>
+                  <div className="text-[11px] text-muted-foreground">Numeric fallback (keyboard-only entry):</div>
                   <div className="flex flex-wrap gap-2 items-end">
                     {(["x","y","w","h"] as const).map((k) => (
                       <label key={k} className="text-[11px]">
@@ -1159,7 +1336,8 @@ function VisionPage() {
                       {regions.map((r, i) => (
                         <li key={r.id} className="flex items-center gap-2">
                           <span>#{i + 1} · {r.label || "region"} · {r.x},{r.y} {r.w}×{r.h}</span>
-                          <button type="button" className="text-destructive underline" onClick={() => setRegions((rs) => rs.filter((x) => x.id !== r.id))}>remove</button>
+                          <button type="button" className="text-primary underline" onClick={() => setPointer((s) => reducePointer(s, { type: "select", id: r.id }))}>select</button>
+                          <button type="button" className="text-destructive underline" onClick={() => setPointer((s) => reducePointer(s, { type: "remove", id: r.id }))}>remove</button>
                         </li>
                       ))}
                     </ul>

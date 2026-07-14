@@ -1,6 +1,6 @@
 # Raven One — Master Plan
 
-Version: Raven One · Alpha 0.2 — Workflow Engine + Fast/Deep hardening + Raven Home v0.2 + Voice v0.2 + Native companion v0.3 + Screen Vision v0.3 (hashing + lifecycle)
+Version: Raven One · Alpha 0.2 — Workflow Engine + Fast/Deep hardening + Raven Home v0.2 + Voice v0.2 + Native companion v0.3 + Screen Vision v0.3 (drag overlay + export)
 Owner: Nils (RAH AI Studios)
 Status: Living document — single source of truth for the Raven One product line.
 
@@ -844,6 +844,85 @@ and approvals infrastructure.
 - Full suite: **525/525 passing** (was 511).
 - `bunx tsgo --noEmit`: clean.
 - `bun run build`: succeeds.
+- Not deployed, not published.
+
+## Screen Vision v0.3 — Drag overlay + export batch (this batch)
+
+**Shipped in this batch (verified by tests + build):**
+- New deterministic helper `src/lib/rah/visionPointer.js` (+ `.d.ts`)
+  — pure pointer + keyboard reducer over the existing `visionGeometry`
+  primitives. State transitions (idle → drawing / moving / resizing →
+  idle), history push/undo/redo integration, source-image-pixel drag
+  normalization, hit testing against the selected region's handles,
+  keyboard nudge (arrow) / resize (Shift+arrow via `e`/`s` handles) /
+  delete, and a `shortcutsAreSuppressed` helper for muting shortcuts
+  inside inputs/textareas/contenteditable. No DOM, no React.
+- Real accessible drag-to-draw overlay wired into
+  `src/routes/vision.tsx` under the existing "Redact regions" toggle:
+  focusable `role="application"` layer, pointer down/move/up/cancel
+  dispatched through the reducer, live dashed preview via
+  `draftDrawRect`, click-to-select regions rendered from
+  `imageToDisplay(transform, …)`, and Undo / Redo / Clear-all buttons
+  with real disabled states. Global keydown listener handles arrow
+  nudge / Shift+arrow resize / Delete / Ctrl(⌘)+Z / Ctrl(⌘)+Shift+Z
+  and Ctrl(⌘)+Y — all suppressed while typing.
+- Numeric x/y/w/h entry retained as a labelled keyboard-only fallback
+  and now routes through `reducePointer({ type: "set-regions" })` so
+  numeric additions land in the same undo history as pointer drags.
+  Per-row Select + Remove actions dispatch through the reducer.
+- `beforeunload` guard installed while a captured frame has dirty
+  redactions or an unsaved privacy note, so tab-close prompts before
+  losing draft edits.
+- New pure helper `src/lib/rah/visionExport.js` (+ `.d.ts`) —
+  metadata-only export contract:
+  - `buildJsonExport` strips inline `dataUrl` from every evidence row
+    by default and tags each row `_imagesIncluded: false`. Only when
+    the caller explicitly passes `{ includeImages: true }` AND the
+    row actually has bytes are they retained; the tag then flips true
+    so downstream imports can honestly qualify the payload.
+  - `buildMarkdownExport` never embeds `data:image` / base64
+    regardless of input; it renders integrity hashes, sizes, and
+    truncated raw model output only.
+  - `validateImportPayload` enforces the `raven-vision/1` schema and
+    array shapes; conflict planning still delegates to
+    `planImportApply` in `visionLifecycle.js`.
+
+**Known limitations (still honest — deliberately not claimed as shipped):**
+- Explicit "Start Vision Session" → `visionSessions` IndexedDB
+  persistence remains **not wired** in `vision.tsx`. Sessions are
+  still implicit at capture time; `startSession` / `endSession` /
+  `cancelSession` remain shipped and tested helpers only.
+- Immutable result versioning (`createResult`, `createResultVersion`,
+  `buildResultChain`) is **not** yet persisted through explicit
+  "Save Result" and "Save Edit as New Version" buttons; result rows
+  still originate only from the existing evidence path.
+- The "Confirm Vision Action" modal (dispatching via
+  `canDispatchProposal`) and the JSON import Preview/Apply UI (built
+  on `validateImportPayload` + `planImportApply`) are **not** yet
+  mounted in `vision.tsx`. Workflow proposals are documented as
+  handoff-inert but the handoff button is not present.
+- `/vision-history` was not expanded in this batch beyond the
+  filters shipped in the previous batch; per-artifact evidence version
+  chains and action-receipt columns remain follow-up work.
+- No OCR, no automatic sensitive-data detection, no automatic
+  redaction, and no automatic side-effect execution are claimed
+  anywhere in the shipped UI.
+
+**Verification:**
+- Two new deterministic test files: `desktop-bridge/tests/vision-pointer.test.js`
+  (11 cases covering initial state, drag → normalized region + selection,
+  min-edge rejection, arrow nudge, Shift+arrow resize, Delete removes +
+  clears selection, undo/redo history, clear-all no-op guard, relabel
+  preserves geometry, `shortcutsAreSuppressed` matrix, pointer-cancel
+  discard) and `desktop-bridge/tests/vision-export.test.js` (6 cases
+  covering metadata-only JSON default, opt-in image retention, Markdown
+  never embeds base64, wrong-schema rejection, well-shaped acceptance,
+  and non-array rejection).
+- Full suite: **542/542 passing** (was 525).
+- `bunx tsgo --noEmit`: clean.
+- `bun run build`: succeeds (`✓ built in 899ms`).
+- IndexedDB version unchanged (still v8) — this batch adds only pure
+  helpers and UI wiring; no schema migration.
 - Not deployed, not published.
 
 **Verification:**
