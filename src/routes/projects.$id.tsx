@@ -1011,7 +1011,7 @@ function MilestoneEditor({
   function save() {
     if (!title.trim()) { toast.error("Title required"); return; }
     const now = Date.now();
-    const m: RoadmapMilestone = normalizeMilestone({
+    const m = normalizeMilestone({
       id: initial?.id ?? uid(),
       title: title.trim(),
       description: description.trim(),
@@ -1025,6 +1025,7 @@ function MilestoneEditor({
       createdAt: initial?.createdAt ?? now,
       updatedAt: now,
     });
+    if (!m) { toast.error("Invalid milestone"); return; }
     onSave(m);
   }
 
@@ -1048,7 +1049,7 @@ function MilestoneEditor({
         </label>
         <label className="text-xs">
           <span className="text-muted-foreground">Priority</span>
-          <Select value={priority} onValueChange={(v) => setPriority(v)}>
+          <Select value={priority} onValueChange={(v) => setPriority(v as typeof priority)}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
               {ROADMAP_PRIORITIES.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
