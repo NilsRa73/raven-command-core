@@ -3,7 +3,7 @@ import { useState, type ReactNode } from "react";
 import {
   LayoutDashboard, Mic, MonitorPlay, Users, FolderKanban, Workflow, FileText,
   History as HistoryIcon, Brain, Cable, ShieldCheck, Settings as SettingsIcon,
-  Menu, X, StopCircle, ClipboardCheck, MonitorSmartphone, BookMarked,
+  Menu, X, StopCircle, ClipboardCheck, MonitorSmartphone, BookMarked, RefreshCw,
 } from "lucide-react";
 import { RavenMark } from "./RavenMark";
 import { useRah } from "@/lib/rah/context";
@@ -17,6 +17,7 @@ const nav = [
   { to: "/agents", label: "Agent Team", icon: Users },
   { to: "/projects", label: "Projects", icon: FolderKanban },
   { to: "/devices", label: "Device Center", icon: MonitorSmartphone },
+  { to: "/native", label: "Native Companion", icon: RefreshCw },
   { to: "/automations", label: "Automations", icon: Workflow },
   { to: "/files", label: "Files & Knowledge", icon: FileText },
   { to: "/history", label: "Command History", icon: HistoryIcon },
