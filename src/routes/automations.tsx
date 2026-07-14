@@ -600,7 +600,10 @@ function RunsPanel({ workflow, runs, onReload }: { workflow: Workflow; runs: Wor
                     a.href = URL.createObjectURL(blob);
                     a.download = `run-${r.runId}.json`;
                     a.click();
-                    URL.revokeObjectURL(a.href);
+                    // Revoke after the browser has had a tick to start
+                    // the download — revoking synchronously can cancel it
+                    // in some Chromium builds.
+                    setTimeout(() => URL.revokeObjectURL(a.href), 0);
                   }}><Download className="h-4 w-4" /></Button>
                 </div>
               </div>
