@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   MonitorPlay, Square, Camera, Send, Copy, Trash2,
-  RotateCcw, ShieldCheck, MessageSquare,
+  RotateCcw, ShieldCheck, MessageSquare, ShieldAlert, Save, Eye, EyeOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Markdown } from "@/components/rah/Markdown";
@@ -17,6 +17,13 @@ import {
   type SharingState,
   type ScreenVisionDiagnostics,
 } from "@/lib/rah/screenVision";
+import {
+  classifyPrivacy, classIsSensitive, selectFrameVariant,
+  validateRedactionRegions, nextReviewState, shapeEvidenceRecord,
+  PRIVACY_HEURISTIC_DISCLAIMER, PRIVACY_CLASS_LABEL,
+  type RedactionRegion,
+} from "@/lib/rah/visionSessions";
+import { getDB, uid } from "@/lib/rah/db";
 
 export const Route = createFileRoute("/vision")({
   head: () => ({
@@ -37,6 +44,8 @@ interface CapturedFrame {
   sizeBytes: number;
   capturedAt: number;
 }
+
+type ReviewStage = "idle" | "captured" | "confirming_sensitive" | "analyzing" | "reviewing_result";
 
 interface AnalysisResult {
   question: string;
@@ -249,6 +258,60 @@ function VisionPage() {
   const [videoLastError, setVideoLastError] = useState<string>("");
   const [showDiagnostics, setShowDiagnostics] = useState<boolean>(false);
 
+  // Screen Vision v0.2 additions ----------------------------------------
+  const [reviewStage, setReviewStage] = useState<ReviewStage>("idle");
+  const [pendingFrame, setPendingFrame] = useState<CapturedFrame | null>(null);
+  const [userMarkedSensitive, setUserMarkedSensitive] = useState(false);
+  const [privacyNote, setPrivacyNote] = useState("");
+  const [regions, setRegions] = useState<RedactionRegion[]>([]);
+  const [showRedactionPanel, setShowRedactionPanel] = useState(false);
+  const [previewRedacted, setPreviewRedacted] = useState(true);
+  const [redactedDataUrl, setRedactedDataUrl] = useState<string>("");
+  const [savedEvidenceId, setSavedEvidenceId] = useState<string | null>(null);
+  const [regionDraft, setRegionDraft] = useState<{ x: string; y: string; w: string; h: string; label: string }>({ x: "", y: "", w: "", h: "", label: "" });
+
+  const privacy = useMemo(() =>
+    classifyPrivacy({
+      userMarkedSensitive,
+      note: privacyNote,
+      question,
+      sourceLabel,
+    }), [userMarkedSensitive, privacyNote, question, sourceLabel]);
+
+  const variantChoice = useMemo(() => selectFrameVariant({
+    regions,
+    privacyClass: privacy.class,
+    userChoice: previewRedacted && regions.length > 0 ? "redacted" : "original",
+  }), [regions, privacy.class, previewRedacted]);
+
+  const advanceReview = useCallback((event: Parameters<typeof nextReviewState>[1]) => {
+    setReviewStage((s) => nextReviewState(s, event) as ReviewStage);
+  }, []);
+
+  // Build a redacted preview by drawing black rectangles over accepted regions.
+  useEffect(() => {
+    if (!pendingFrame || regions.length === 0) { setRedactedDataUrl(""); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const img = new Image();
+        img.src = pendingFrame.dataUrl;
+        await new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = () => rej(new Error("preview_load_failed")); });
+        const canvas = document.createElement("canvas");
+        canvas.width = pendingFrame.width;
+        canvas.height = pendingFrame.height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#000";
+        for (const r of regions) ctx.fillRect(r.x, r.y, r.w, r.h);
+        const url = canvas.toDataURL("image/jpeg", 0.85);
+        if (!cancelled) setRedactedDataUrl(url);
+      } catch { /* ignore preview failures */ }
+    })();
+    return () => { cancelled = true; };
+  }, [pendingFrame, regions]);
+
   // Cleanup on unmount: stop any active tracks + abort any in-flight request.
   useEffect(() => {
     return () => {
@@ -435,7 +498,161 @@ function VisionPage() {
     abortRef.current?.abort();
     abortRef.current = null;
     setAnalysis(null);
+    setPendingFrame(null);
+    setRegions([]);
+    setUserMarkedSensitive(false);
+    setPrivacyNote("");
+    setRedactedDataUrl("");
+    setSavedEvidenceId(null);
+    setReviewStage("idle");
   }, []);
+
+  // Capture ONLY — no AI. This is Step 1 of the mandatory Capture Review.
+  const captureNow = useCallback(async () => {
+    if (!isCaptureReady(sharing) || !videoRef.current) {
+      toast.error("Start screen sharing first.");
+      return;
+    }
+    setSharing("capturing");
+    try {
+      const method = pickCaptureMethod({
+        imageCaptureAvailable: browserSupportsImageCapture() && !!trackRef.current,
+        imageCaptureLastOk,
+        videoHasFrame: videoReady,
+      });
+      let captured: CapturedFrame | null = null;
+      if (method === "image-capture" && trackRef.current) {
+        try { captured = await captureViaImageCapture(trackRef.current); } catch { /* fall through */ }
+      }
+      if (!captured) captured = await captureCurrentFrame(videoRef.current);
+      setPendingFrame(captured);
+      setRegions([]);
+      setUserMarkedSensitive(false);
+      setPrivacyNote("");
+      setRedactedDataUrl("");
+      setSavedEvidenceId(null);
+      setAnalysis(null);
+      advanceReview("capture");
+      setSharing("ready");
+    } catch (err) {
+      toast.error("Capture failed: " + (err instanceof Error ? err.message : String(err)));
+      setSharing("ready");
+    }
+  }, [sharing, imageCaptureLastOk, videoReady, advanceReview]);
+
+  // Send the reviewed frame to AI. Enforces the sensitive-confirmation gate.
+  const analyzeReviewed = useCallback(async (opts: { forceOriginal?: boolean } = {}) => {
+    if (!pendingFrame) { toast.error("Capture a frame first."); return; }
+    const trimmed = (question || "").trim() || "Describe what's on this screen and tell me what to do next.";
+    // Pick variant honoring current toggle + sensitivity gate.
+    const chosen = selectFrameVariant({
+      regions,
+      privacyClass: privacy.class,
+      userChoice: opts.forceOriginal ? "original" : (regions.length > 0 && previewRedacted ? "redacted" : "original"),
+    });
+    if (chosen.requiresSecondConfirmation && !opts.forceOriginal) {
+      advanceReview("mark-sensitive");
+      return; // UI shows confirmation modal / block
+    }
+    const useDataUrl = chosen.variant === "redacted" && redactedDataUrl ? redactedDataUrl : pendingFrame.dataUrl;
+    advanceReview("analyze");
+    setSharing("analyzing");
+    setAnalysis({
+      question: trimmed, frame: pendingFrame, state: "streaming", text: "",
+      runtimeLine: buildScreenVisionRuntimeLine({ sourceLabel: sourceLabel || undefined, capturedAt: pendingFrame.capturedAt }),
+      startedAt: Date.now(),
+    });
+    abortRef.current?.abort();
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    try {
+      const res = await fetch("/api/rah-chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: ctrl.signal,
+        body: JSON.stringify({
+          prompt: trimmed,
+          agents: ["brain"],
+          mode: "fast",
+          images: [{ name: `screen-${chosen.variant}.jpg`, mime: "image/jpeg", dataUrl: useDataUrl }],
+          context: { screenVision: true, sourceLabel, variant: chosen.variant, privacyClass: privacy.class,
+            capturedAt: pendingFrame.capturedAt, frame: { width: pendingFrame.width, height: pendingFrame.height, sizeBytes: pendingFrame.sizeBytes } },
+        }),
+      });
+      if (!res.ok || !res.body) throw new Error(res.statusText || "Vision request failed.");
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "", full = "";
+      let provider: string | undefined, model: string | undefined, latencyMs: number | undefined;
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n"); buf = lines.pop() ?? "";
+        for (const line of lines) {
+          const t = line.trim(); if (!t) continue;
+          try {
+            const ev = JSON.parse(t) as { type: string; text?: string; provider?: string; model?: string; latencyMs?: number; message?: string };
+            if (ev.type === "start") { provider = ev.provider; model = ev.model; }
+            else if (ev.type === "delta" && ev.text) { full += ev.text; const snap = full; setAnalysis((a) => a ? { ...a, text: snap } : a); }
+            else if (ev.type === "done") { provider = ev.provider ?? provider; model = ev.model ?? model; latencyMs = ev.latencyMs; if (ev.text) full = ev.text; }
+            else if (ev.type === "error") throw new Error(ev.message || "Vision failed");
+          } catch (parseErr) { if (parseErr instanceof Error && parseErr.message) throw parseErr; }
+        }
+      }
+      setAnalysis((a) => a ? {
+        ...a, state: "done", text: full, provider, model, latencyMs,
+        runtimeLine: buildScreenVisionRuntimeLine({ provider, model, latencyMs, sourceLabel: sourceLabel || undefined, capturedAt: pendingFrame.capturedAt }),
+      } : a);
+      advanceReview("analyze-done");
+    } catch (err) {
+      if ((err as { name?: string })?.name === "AbortError") return;
+      const msg = err instanceof Error ? err.message : String(err);
+      setAnalysis((a) => a ? { ...a, state: "error", error: msg } : a);
+      toast.error("Vision analysis failed: " + msg);
+      advanceReview("analyze-error");
+    } finally {
+      setSharing((s) => (s === "analyzing" || s === "capturing") ? "ready" : s);
+    }
+  }, [pendingFrame, question, regions, privacy.class, previewRedacted, redactedDataUrl, sourceLabel, advanceReview]);
+
+  // Save current pending frame + AI result as an append-only evidence record.
+  const saveEvidence = useCallback(async () => {
+    if (!pendingFrame) { toast.error("No captured frame to save."); return; }
+    try {
+      const rec = shapeEvidenceRecord({
+        id: uid(),
+        sessionId: null,
+        projectId: null,
+        createdAt: Date.now(),
+        frame: { width: pendingFrame.width, height: pendingFrame.height, sizeBytes: pendingFrame.sizeBytes, capturedAt: pendingFrame.capturedAt, mime: "image/jpeg", captureMethod: "video-canvas", hash: null },
+        redactedFrame: regions.length > 0 && redactedDataUrl ? { width: pendingFrame.width, height: pendingFrame.height, sizeBytes: Math.round(redactedDataUrl.length * 0.75), capturedAt: pendingFrame.capturedAt, mime: "image/jpeg", captureMethod: "video-canvas", hash: null } : null,
+        redactionRegions: regions,
+        privacy: { class: privacy.class, reasons: privacy.reasons },
+        notes: privacyNote,
+        sourceLabel,
+        linkedResultId: null,
+      });
+      const db = await getDB();
+      await db.put("visionEvidence", rec);
+      setSavedEvidenceId(rec.id);
+      toast.success("Evidence saved locally (append-only)");
+    } catch (err) {
+      toast.error("Failed to save evidence: " + (err instanceof Error ? err.message : String(err)));
+    }
+  }, [pendingFrame, regions, redactedDataUrl, privacy, privacyNote, sourceLabel]);
+
+  const addRegionFromDraft = useCallback(() => {
+    if (!pendingFrame) return;
+    const raw = { x: Number(regionDraft.x), y: Number(regionDraft.y), w: Number(regionDraft.w), h: Number(regionDraft.h), label: regionDraft.label || null };
+    const res = validateRedactionRegions([raw], { width: pendingFrame.width, height: pendingFrame.height });
+    if (res.rejected.length > 0) {
+      toast.error("Region rejected: " + res.rejected[0].reason);
+      return;
+    }
+    setRegions((r) => [...r, ...res.accepted]);
+    setRegionDraft({ x: "", y: "", w: "", h: "", label: "" });
+  }, [pendingFrame, regionDraft]);
 
   const analyzeNow = useCallback(async (userQuestion: string) => {
     if (!isCaptureReady(sharing) || !videoRef.current) {
@@ -775,25 +992,17 @@ function VisionPage() {
             <div className="flex flex-wrap gap-2 pt-1">
               <Button
                 type="button"
-                onClick={() => void analyzeNow(question)}
+                onClick={() => void captureNow()}
                 disabled={!ready || streaming}
                 className="min-w-40"
               >
-                <Camera className="h-4 w-4" /> Capture & Analyze
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => void analyzeNow(question)}
-                disabled={!ready || streaming || !question.trim()}
-              >
-                <MessageSquare className="h-4 w-4" /> Ask about current screen
+                <Camera className="h-4 w-4" /> Capture frame
               </Button>
               {analysis && (
                 <>
                   <Button
                     type="button" variant="ghost"
-                    onClick={() => void analyzeNow(analysis.question)}
+                    onClick={() => void captureNow()}
                     disabled={!ready || streaming}
                   >
                     <RotateCcw className="h-4 w-4" /> Retake
@@ -806,11 +1015,144 @@ function VisionPage() {
             </div>
             <div className="flex items-start gap-2 rounded-md border border-primary/40 bg-primary/5 p-3 text-xs text-primary">
               <ShieldCheck className="h-4 w-4 mt-0.5 shrink-0" />
-              <span>{PRIVACY_NOTE}</span>
+              <span>
+                {PRIVACY_NOTE}
+                <br />
+                <em className="opacity-80">{PRIVACY_HEURISTIC_DISCLAIMER}</em>
+              </span>
             </div>
           </div>
         </div>
       </section>
+
+      {pendingFrame && reviewStage !== "idle" && (
+        <section className="glass-panel gold-border p-4 md:p-5 space-y-4" aria-labelledby="rah-vision-review">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <h2 id="rah-vision-review" className="display text-xl gold-text">Capture Review</h2>
+            <span className={"text-xs rounded-full border px-3 py-1 " + (classIsSensitive(privacy.class) ? "border-destructive text-destructive" : "border-primary/60 text-primary")}>
+              Privacy: {PRIVACY_CLASS_LABEL[privacy.class] || privacy.class}
+            </span>
+          </div>
+          <div className="grid gap-4 md:grid-cols-[280px_1fr]">
+            <div className="space-y-2">
+              <img
+                src={regions.length > 0 && previewRedacted && redactedDataUrl ? redactedDataUrl : pendingFrame.dataUrl}
+                alt="Captured frame under review"
+                className="w-full rounded-md border border-border/60"
+              />
+              <div className="text-[11px] text-muted-foreground">
+                {pendingFrame.width}×{pendingFrame.height} · {Math.round(pendingFrame.sizeBytes / 1024)} KB · JPEG
+                {" · captured "}
+                {new Date(pendingFrame.capturedAt).toLocaleTimeString()}
+              </div>
+              <div className="text-[11px] text-muted-foreground">
+                Source: <span className="text-foreground">{sourceLabel || "—"}</span>
+              </div>
+            </div>
+            <div className="space-y-3 text-sm">
+              <div className="text-xs text-muted-foreground uppercase tracking-widest">Question</div>
+              <div className="text-foreground">{(question || "").trim() || "Describe what's on this screen and tell me what to do next."}</div>
+
+              <div className="flex flex-wrap gap-2 pt-2">
+                <Button size="sm" type="button" onClick={() => void analyzeReviewed()} disabled={reviewStage !== "captured"}>
+                  <MessageSquare className="h-4 w-4" /> Analyze
+                </Button>
+                <Button size="sm" type="button" variant="secondary" onClick={() => setShowRedactionPanel((v) => !v)} disabled={reviewStage !== "captured"}>
+                  {previewRedacted ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                  {showRedactionPanel ? "Hide redaction" : "Redact regions"}
+                </Button>
+                <Button size="sm" type="button" variant="secondary" onClick={() => void saveEvidence()} disabled={reviewStage !== "captured"}>
+                  <Save className="h-4 w-4" /> Save evidence
+                </Button>
+                <Button size="sm" type="button" variant="ghost" onClick={() => void captureNow()}>
+                  <RotateCcw className="h-4 w-4" /> Retake
+                </Button>
+                <Button size="sm" type="button" variant="ghost" onClick={clearAnalysis}>
+                  <Trash2 className="h-4 w-4" /> Discard
+                </Button>
+              </div>
+
+              <label className="flex items-center gap-2 text-xs pt-2">
+                <input type="checkbox" checked={userMarkedSensitive} onChange={(e) => setUserMarkedSensitive(e.target.checked)} />
+                <ShieldAlert className="h-3.5 w-3.5 text-destructive" />
+                Mark this frame as sensitive
+              </label>
+              <textarea
+                value={privacyNote}
+                onChange={(e) => setPrivacyNote(e.target.value)}
+                rows={2}
+                placeholder="Optional privacy note (e.g. 'contains email addresses')"
+                className="w-full rounded-md border border-border/70 bg-background/40 p-2 text-xs"
+              />
+              {savedEvidenceId && (
+                <div className="text-[11px] text-primary">Saved as evidence <code>{savedEvidenceId}</code></div>
+              )}
+
+              {showRedactionPanel && (
+                <div className="space-y-2 rounded-md border border-border/60 p-3">
+                  <div className="text-xs text-muted-foreground">Add rectangular redaction regions (pixel coords, 0,0 = top-left). Preview draws opaque black over each region.</div>
+                  <div className="flex flex-wrap gap-2 items-end">
+                    {(["x","y","w","h"] as const).map((k) => (
+                      <label key={k} className="text-[11px]">
+                        {k}
+                        <input
+                          className="block w-16 rounded border border-border/70 bg-background/40 p-1 text-xs"
+                          value={regionDraft[k]}
+                          onChange={(e) => setRegionDraft({ ...regionDraft, [k]: e.target.value })}
+                        />
+                      </label>
+                    ))}
+                    <label className="text-[11px]">
+                      label
+                      <input
+                        className="block w-32 rounded border border-border/70 bg-background/40 p-1 text-xs"
+                        value={regionDraft.label}
+                        onChange={(e) => setRegionDraft({ ...regionDraft, label: e.target.value })}
+                      />
+                    </label>
+                    <Button size="sm" type="button" variant="secondary" onClick={addRegionFromDraft}>Add region</Button>
+                    <label className="text-[11px] flex items-center gap-1 ml-auto">
+                      <input type="checkbox" checked={previewRedacted} onChange={(e) => setPreviewRedacted(e.target.checked)} />
+                      Send redacted variant to AI
+                    </label>
+                  </div>
+                  {regions.length > 0 && (
+                    <ul className="text-[11px] space-y-1">
+                      {regions.map((r, i) => (
+                        <li key={r.id} className="flex items-center gap-2">
+                          <span>#{i + 1} · {r.label || "region"} · {r.x},{r.y} {r.w}×{r.h}</span>
+                          <button type="button" className="text-destructive underline" onClick={() => setRegions((rs) => rs.filter((x) => x.id !== r.id))}>remove</button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <div className="text-[11px] text-muted-foreground">Variant that will be sent: <strong>{variantChoice.variant}</strong>{variantChoice.requiresSecondConfirmation && " (requires second confirmation)"}</div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {reviewStage === "confirming_sensitive" && (
+            <div className="rounded-md border border-destructive/70 bg-destructive/10 p-3 text-sm space-y-2" role="alertdialog">
+              <div className="flex items-start gap-2">
+                <ShieldAlert className="h-4 w-4 mt-0.5 text-destructive shrink-0" />
+                <div>
+                  <strong>Confirm sending original (unredacted) frame</strong>
+                  <div className="text-xs opacity-90">This frame is marked sensitive. Sending the ORIGINAL image will transmit the full unredacted screenshot to the AI provider. Redact regions or send the redacted variant instead if possible.</div>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button size="sm" variant="destructive" type="button" onClick={() => void analyzeReviewed({ forceOriginal: true })}>
+                  Send original anyway
+                </Button>
+                <Button size="sm" variant="ghost" type="button" onClick={() => advanceReview("cancel-send")}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+        </section>
+      )}
 
       {analysis && (
         <section className="glass-panel gold-border p-4 md:p-5 space-y-3" aria-live="polite">

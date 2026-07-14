@@ -1,6 +1,6 @@
 # Raven One — Master Plan
 
-Version: Raven One · Alpha 0.2 — Workflow Engine + Fast/Deep hardening + Raven Home v0.2 + Voice v0.2 + Native companion v0.3
+Version: Raven One · Alpha 0.2 — Workflow Engine + Fast/Deep hardening + Raven Home v0.2 + Voice v0.2 + Native companion v0.3 + Screen Vision v0.2
 Owner: Nils (RAH AI Studios)
 Status: Living document — single source of truth for the Raven One product line.
 
@@ -16,11 +16,13 @@ progress, or telemetry.
 - Local AI: LM Studio / Ollama on the user's PC, proxied through the
   authenticated RAH Desktop Bridge (v0.2.1) at `127.0.0.1:47824`.
 - Cloud AI: Lovable AI Gateway as a manual fallback.
-- Storage: IndexedDB v7 with stores for commands, memory, files, approvals,
+- Storage: IndexedDB v8 with stores for commands, memory, files, approvals,
   workflows, workflowRuns, deviceHistory, roadmapMilestones, decisions,
-  decisionVersions, focusSessions, voiceProfiles, voiceSessions, and
-  voiceTranscripts; plus localStorage for lightweight settings (devices,
-  focus mode, engine).
+  decisionVersions, focusSessions, voiceProfiles, voiceSessions,
+  voiceTranscripts, visionSessions, visionEvidence, visionEvidenceVersions,
+  and visionResults; plus localStorage for lightweight settings (devices,
+  focus mode, engine). v8 is an additive migration — no prior stores or
+  data are altered.
 - Native companion: `desktop-bridge-native/` (Tauri 2 + Node SEA sidecar).
 - Bridge protocol: HTTPS/loopback, HMAC-signed, one-time approval tokens,
   Private Network Access, path containment, feature manifest.
@@ -587,3 +589,106 @@ and approvals infrastructure.
 4. Push a `desktop-bridge-v<semver>` tag to trigger
    `release-desktop-bridge-prod.yml`, then review + publish the draft
    GitHub Release manually.
+
+## Screen Vision v0.2 — Project-bound sessions, privacy review, evidence, safe action proposals
+
+**Operational (verified by tests):**
+- New deterministic helper module `src/lib/rah/visionSessions.js` (+ `.d.ts`)
+  owns every policy decision. React renders results, never invents them.
+- **Capture Review is mandatory.** The Vision route now exposes two
+  distinct actions: `Capture frame` (captures + enters review) and
+  `Analyze` (only enabled from the review stage). One-click
+  Capture-and-Analyze has been removed; the state machine in
+  `nextReviewState` refuses to advance from `idle` to `analyzing` directly.
+- **Privacy classification** is heuristic-only, driven by explicit user
+  markers and the question/note text — the module **does not scan image
+  contents**. Categories: `unknown`, `low`, `possible_personal_data`,
+  `possible_financial`, `possible_health`, `possible_credentials`,
+  `user_marked_sensitive`. `PRIVACY_HEURISTIC_DISCLAIMER` is asserted by
+  tests to prevent silent wording drift.
+- **Redaction regions.** Rectangular regions with pixel coordinates,
+  validated and clamped via `validateRedactionRegion` /
+  `validateRedactionRegions` — rejects zero-area, non-numeric,
+  fully-out-of-bounds regions with explicit `reason` codes. When any
+  region exists the default frame variant sent to AI is `redacted`; the
+  original is never silently overwritten.
+- **Mark sensitive + second confirmation.** `selectFrameVariant` sets
+  `requiresSecondConfirmation = true` whenever the chosen variant is
+  `original` and the privacy class is sensitive. The UI blocks Analyze
+  with an explicit "Send original anyway" / "Cancel" gate.
+- **Evidence is append-only / versioned.** `shapeEvidenceRecord` creates
+  v1 records with `previousVersionId = null`. `versionEvidence(prev, patch)`
+  returns a NEW record with `version = prev.version + 1` and preserves
+  the prior record untouched (test-asserted).
+- **Action allowlist.** `VISION_ACTION_CATALOG` contains only
+  side-effect-class `ui_only` intents (navigation, focus block controls,
+  command-bar focus, open project/module, show guidance). Anything else
+  is classified `denied`. `proposeSafeAction` fails closed on
+  not-in-catalog, ambiguous, or low-confidence (< 0.6) proposals.
+- **Workflow handoff for side effects.** `proposeWorkflowHandoff`
+  returns an inert proposal that MUST be routed through the existing
+  Workflow Engine + Approvals — dispatch flag defaults to `false`.
+- **Confirm Vision Action.** `buildConfirmationPayload` shapes the
+  required payload (proposalId, kind, sideEffectClass, frame timestamp
+  and hash, question, target project/module/workflow, confidence,
+  approvalStatus, and the exact `dispatch` object). No dispatch happens
+  without an explicit confirmation from the user.
+- **IndexedDB v8** (additive migration): `visionSessions`,
+  `visionEvidence`, `visionEvidenceVersions`, `visionResults`. All four
+  stores are included in `exportAll` and `wipeAll`. No prior stores are
+  altered.
+- **Import / export.** `validateImportPayload` fails closed on wrong
+  shape / unsupported schema version. `mergeVisionImport` supports
+  `skip` and `replace` strategies and reports skipped/replaced ids —
+  never overwrites silently.
+- **History / stats / export.** `filterVisionHistory` supports project,
+  status, source, query, and date-range filters.
+  `exportVisionHistoryMarkdown` never embeds raw image data
+  (test-asserted); `exportVisionHistoryJson` round-trips schema.
+- **Draft guard.** `shouldConfirmVisionDiscard` mirrors
+  `draftGuard.shouldConfirmDiscard` and gates route navigation when the
+  Capture Review, redaction, result draft, evidence notes, or proposal
+  draft are dirty, or when the review state is `confirming_sensitive` /
+  `analyzing`.
+- **No-fabrication contracts.** `VISION_NO_FABRICATION` is a frozen
+  object asserted by tests: the module does not scan images, does not
+  claim OCR / sensitive-data detection, does not auto-redact, does not
+  invent provider/model, does not auto-dispatch actions, and does not
+  allow side effects without approval. `shapeRuntimeMetadata` returns
+  explicit `null` for unknown provider/model/transport/engine/latency.
+- **Existing screen-sharing reliability preserved.** The dual
+  ImageCapture + video pipeline, blank-frame detection, diagnostics
+  panel, and honest unsupported/denied/error states are unchanged. The
+  Capture Review layer is additive.
+
+**Known limitations (honest):**
+- No mouse-drag redaction UI in this batch — regions are entered as
+  pixel coordinates in the redaction panel. Coordinates are validated,
+  previewed on-canvas, and any accepted region flips the default sent
+  variant to `redacted`. Drag-to-draw is a future enhancement.
+- Frame hashing is not computed automatically; the schema carries a
+  `hash` field so future work can populate it without a migration.
+- Full visual-session history route (dedicated `/vision/history`) is
+  not shipped in this batch; helpers (`filterVisionHistory`,
+  `exportVisionHistory*`, `mergeVisionImport`, `validateImportPayload`)
+  are complete and unit-tested for a follow-up UI.
+- Vision result "polish with AI" and inline result edits render the
+  raw model output verbatim; edited-draft persistence in the
+  `visionResults` store is scaffolded (`VisionResultRecord.edited /
+  editedText`) but wired in a follow-up UI batch.
+
+**Verification:**
+- `desktop-bridge` tests: **489 / 489 passing** (36 new
+  `vision-sessions.test.js` cases covering session normalization,
+  project resolution, frame metadata, privacy classification and
+  explicit override, redaction validation / clamping / rejection,
+  original-vs-redacted variant selection with second-confirmation
+  gating, duplicate-frame detection, review state transitions,
+  evidence immutable versioning, action allowlist, ambiguity and
+  low-confidence rejection, side-effect classification, confirmation
+  payload requirement, draft dirty detection, import validation /
+  merge, history filtering / Markdown-without-image export,
+  capability fail-closed behavior, and locked no-fabrication contracts).
+- TypeScript `tsgo --noEmit`: clean.
+- `bun run build`: succeeds.
+- Not deployed, not published.
