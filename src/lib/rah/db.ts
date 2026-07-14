@@ -13,6 +13,30 @@ import type { FocusSession } from "./focusSession";
 export type { FocusSession } from "./focusSession";
 import type { VoiceProfile, VoiceSessionRecord, VoiceTranscriptReview } from "./voiceProfiles";
 export type { VoiceProfile, VoiceSessionRecord, VoiceTranscriptReview } from "./voiceProfiles";
+import type { VisionSession, EvidenceRecord } from "./visionSessions";
+export type { VisionSession, EvidenceRecord } from "./visionSessions";
+
+/** Screen Vision v0.2 — persisted AI result linked to a session/evidence. */
+export interface VisionResultRecord {
+  id: string;
+  sessionId: string | null;
+  evidenceId: string | null;
+  projectId: string | null;
+  createdAt: number;
+  question: string;
+  variantSent: "original" | "redacted";
+  text: string;
+  provider: string | null;
+  model: string | null;
+  transport: string | null;
+  engine: string | null;
+  latencyMs: number | null;
+  frameHash: string | null;
+  frameCapturedAt: number | null;
+  mode: "fast" | "deep";
+  edited?: boolean;
+  editedText?: string;
+}
 
 export type ApprovalMode = "advisory" | "ask_every" | "trusted_low_risk";
 export type Theme = "raven" | "forest" | "arctic" | "hc";
@@ -162,13 +186,17 @@ interface Schema extends DBSchema {
   voiceProfiles: { key: string; value: VoiceProfile; indexes: { projectId: string; updatedAt: number } };
   voiceSessions: { key: string; value: VoiceSessionRecord; indexes: { projectId: string; createdAt: number; status: string } };
   voiceTranscripts: { key: string; value: VoiceTranscriptReview; indexes: { projectId: string; profileId: string; createdAt: number; status: string } };
+  visionSessions: { key: string; value: VisionSession; indexes: { projectId: string; createdAt: number; status: string } };
+  visionEvidence: { key: string; value: EvidenceRecord; indexes: { projectId: string; sessionId: string; createdAt: number } };
+  visionEvidenceVersions: { key: string; value: EvidenceRecord; indexes: { previousVersionId: string; createdAt: number } };
+  visionResults: { key: string; value: VisionResultRecord; indexes: { projectId: string; sessionId: string; createdAt: number } };
 }
 
 let dbp: Promise<IDBPDatabase<Schema>> | null = null;
 export function getDB() {
   if (typeof indexedDB === "undefined") throw new Error("IndexedDB unavailable");
   if (!dbp) {
-    dbp = openDB<Schema>("rah-listen-key", 7, {
+    dbp = openDB<Schema>("rah-listen-key", 8, {
       upgrade(db, oldVersion) {
         if (oldVersion < 1) {
           const p = db.createObjectStore("projects", { keyPath: "id" });
@@ -236,6 +264,23 @@ export function getDB() {
           vt.createIndex("createdAt", "createdAt");
           vt.createIndex("status", "status");
         }
+        if (oldVersion < 8) {
+          const vSess = db.createObjectStore("visionSessions", { keyPath: "id" });
+          vSess.createIndex("projectId", "projectId");
+          vSess.createIndex("createdAt", "createdAt");
+          vSess.createIndex("status", "status");
+          const vEv = db.createObjectStore("visionEvidence", { keyPath: "id" });
+          vEv.createIndex("projectId", "projectId");
+          vEv.createIndex("sessionId", "sessionId");
+          vEv.createIndex("createdAt", "createdAt");
+          const vEvV = db.createObjectStore("visionEvidenceVersions", { keyPath: "id" });
+          vEvV.createIndex("previousVersionId", "previousVersionId");
+          vEvV.createIndex("createdAt", "createdAt");
+          const vRes = db.createObjectStore("visionResults", { keyPath: "id" });
+          vRes.createIndex("projectId", "projectId");
+          vRes.createIndex("sessionId", "sessionId");
+          vRes.createIndex("createdAt", "createdAt");
+        }
       },
     });
   }
@@ -299,7 +344,7 @@ export async function savePrefs(p: Preferences) {
 
 export async function exportAll(): Promise<Blob> {
   const db = await getDB();
-  const [projects, commands, memory, approvals, prefs, files, projectMemory, workflows, workflowRuns, deviceHistory, roadmapMilestones, decisions, decisionVersions, focusSessions, voiceProfiles, voiceSessions, voiceTranscripts] = await Promise.all([
+  const [projects, commands, memory, approvals, prefs, files, projectMemory, workflows, workflowRuns, deviceHistory, roadmapMilestones, decisions, decisionVersions, focusSessions, voiceProfiles, voiceSessions, voiceTranscripts, visionSessions, visionEvidence, visionEvidenceVersions, visionResults] = await Promise.all([
     db.getAll("projects"),
     db.getAll("commands"),
     db.getAll("memory"),
@@ -317,6 +362,10 @@ export async function exportAll(): Promise<Blob> {
     db.getAll("voiceProfiles"),
     db.getAll("voiceSessions"),
     db.getAll("voiceTranscripts"),
+    db.getAll("visionSessions"),
+    db.getAll("visionEvidence"),
+    db.getAll("visionEvidenceVersions"),
+    db.getAll("visionResults"),
   ]);
   const payload = {
     exportedAt: new Date().toISOString(),
@@ -337,13 +386,17 @@ export async function exportAll(): Promise<Blob> {
     voiceProfiles,
     voiceSessions,
     voiceTranscripts,
+    visionSessions,
+    visionEvidence,
+    visionEvidenceVersions,
+    visionResults,
   };
   return new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
 }
 
 export async function wipeAll() {
   const db = await getDB();
-  for (const store of ["projects", "commands", "memory", "files", "approvals", "prefs", "projectMemory", "workflows", "workflowRuns", "deviceHistory", "roadmapMilestones", "decisions", "decisionVersions", "focusSessions", "voiceProfiles", "voiceSessions", "voiceTranscripts"] as const) {
+  for (const store of ["projects", "commands", "memory", "files", "approvals", "prefs", "projectMemory", "workflows", "workflowRuns", "deviceHistory", "roadmapMilestones", "decisions", "decisionVersions", "focusSessions", "voiceProfiles", "voiceSessions", "voiceTranscripts", "visionSessions", "visionEvidence", "visionEvidenceVersions", "visionResults"] as const) {
     await db.clear(store);
   }
 }
