@@ -10,6 +10,7 @@ import { Play, Save, Trash2, Plus, Download, Upload, ShieldAlert, Pause, RotateC
 import { getDB } from "@/lib/rah/db";
 import { useRah } from "@/lib/rah/context";
 import { useBridgeStatus } from "@/lib/rah/bridgeStatus";
+import { bridgeCapabilities } from "@/lib/rah/bridge";
 import {
   STEP_CATALOG, EXECUTION_PROFILES,
   createWorkflow, createStep, createRun,
@@ -37,7 +38,9 @@ function AutomationsPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Workflow | null>(null);
   const [dirty, setDirty] = useState(false);
+  const [isDraftUnsaved, setIsDraftUnsaved] = useState(false);
   const [dryRunPlan, setDryRunPlan] = useState<ReturnType<typeof planDryRun> | null>(null);
+  const [caps, setCaps] = useState<string[]>([]);
 
   const reloadAll = useCallback(async () => {
     const db = await getDB();
@@ -48,21 +51,47 @@ function AutomationsPage() {
 
   useEffect(() => { void reloadAll(); }, [reloadAll]);
   useEffect(() => {
+    if (isDraftUnsaved) return; // don't clobber an in-memory new-workflow draft
     if (selectedId) {
+      // If switching from an unsaved new draft to an existing workflow,
+      // this effect runs; guard against clobbering handled in click handler.
       const wf = workflows.find((w) => w.id === selectedId) ?? null;
-      setDraft(wf ? structuredClone(wf) : null);
-      setDirty(false);
-      setDryRunPlan(null);
+      if (wf) {
+        setDraft(structuredClone(wf));
+        setDirty(false);
+        setIsDraftUnsaved(false);
+        setDryRunPlan(null);
+      }
     } else {
       setDraft(null);
+      setIsDraftUnsaved(false);
     }
-  }, [selectedId, workflows]);
+  }, [selectedId, workflows, isDraftUnsaved]);
+
+  // Fetch real capabilities from bridge for honest dry-run gating.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (bridge.snapshot?.ui !== "paired_online") { if (alive) setCaps([]); return; }
+      try {
+        const c = await bridgeCapabilities();
+        const disabled = new Set(c?.disabled ?? []);
+        const list = Object.entries(c?.capabilities ?? {})
+          .filter(([id, spec]) => !disabled.has(id as never) && !(spec as { disabled?: boolean }).disabled)
+          .map(([id]) => id);
+        if (alive) setCaps(list);
+      } catch {
+        if (alive) setCaps([]);
+      }
+    })();
+    return () => { alive = false; };
+  }, [bridge.snapshot?.ui]);
 
   const bridgeCtx = useMemo(() => ({
     status: bridge.snapshot?.ui ?? "unknown",
     features: bridge.snapshot?.features ?? [],
-    capabilities: [] as string[],
-  }), [bridge.snapshot]);
+    capabilities: caps,
+  }), [bridge.snapshot, caps]);
 
   const validation = useMemo(() => (draft ? validateWorkflow(draft) : null), [draft]);
 
@@ -97,13 +126,17 @@ function AutomationsPage() {
     setDirty(true);
   };
 
-  async function handleCreate() {
+  function handleCreate() {
+    if (dirty && !confirm("Discard unsaved changes to the current workflow?")) return;
+    // In-memory draft only. Nothing is written to IndexedDB until the user
+    // clicks Save. Enforces no-silent-save.
     const wf = createWorkflow({ name: "New workflow", steps: [createStep("ai_prompt", { prompt: "" })] });
-    const db = await getDB();
-    await db.put("workflows", wf);
-    await reloadAll();
-    setSelectedId(wf.id);
-    toast.success("Workflow created (draft, not yet saved edits).");
+    setSelectedId(null);
+    setDraft(wf);
+    setDirty(true);
+    setIsDraftUnsaved(true);
+    setDryRunPlan(null);
+    toast.message("New workflow draft — click Save to persist.");
   }
   async function handleSave() {
     if (!draft) return;
@@ -113,11 +146,19 @@ function AutomationsPage() {
     const db = await getDB();
     await db.put("workflows", next);
     setDirty(false);
+    setIsDraftUnsaved(false);
     await reloadAll();
+    setSelectedId(next.id);
     toast.success("Workflow saved.");
   }
   async function handleDelete() {
     if (!draft) return;
+    if (isDraftUnsaved) {
+      // Unsaved draft — just discard from memory, no db call.
+      setDraft(null); setSelectedId(null); setDirty(false); setIsDraftUnsaved(false);
+      toast.message("Draft discarded.");
+      return;
+    }
     if (!confirm(`Delete workflow "${draft.name}"? This does not delete existing run history.`)) return;
     const db = await getDB();
     await db.delete("workflows", draft.id);
@@ -157,6 +198,7 @@ function AutomationsPage() {
 
   async function handleStartRun() {
     if (!draft) return;
+    if (isDraftUnsaved) { toast.error("Save the workflow before running."); return; }
     const v = validateWorkflow(draft);
     if (!v.ok) { toast.error(v.errors[0]); return; }
     if (dirty) { toast.error("Save the workflow before running."); return; }
@@ -207,7 +249,12 @@ function AutomationsPage() {
           {workflows.map((w) => {
             const runCount = runs.filter((r) => r.workflowId === w.id).length;
             return (
-              <button key={w.id} onClick={() => setSelectedId(w.id)}
+              <button key={w.id} onClick={() => {
+                if ((dirty || isDraftUnsaved) && !confirm("Discard unsaved changes to the current workflow?")) return;
+                setIsDraftUnsaved(false);
+                setDirty(false);
+                setSelectedId(w.id);
+              }}
                 className={`w-full text-left rounded-md px-2 py-2 text-sm hover:bg-accent ${selectedId === w.id ? "bg-accent" : ""}`}>
                 <div className="flex items-center justify-between gap-2">
                   <span className="truncate font-medium">{w.name}</span>
@@ -457,6 +504,14 @@ function RunsPanel({ workflow, runs, onReload }: { workflow: Workflow; runs: Wor
                   <Button size="sm" variant="ghost" onClick={() => setSelectedRun(selectedRun === r.runId ? null : r.runId)}>
                     {selectedRun === r.runId ? "Hide details" : "Inspect"}
                   </Button>
+                  <Button size="sm" variant="ghost" title="Export run as JSON" onClick={() => {
+                    const blob = new Blob([JSON.stringify(r, null, 2)], { type: "application/json" });
+                    const a = document.createElement("a");
+                    a.href = URL.createObjectURL(blob);
+                    a.download = `run-${r.runId}.json`;
+                    a.click();
+                    URL.revokeObjectURL(a.href);
+                  }}><Download className="h-4 w-4" /></Button>
                 </div>
               </div>
               {(r.failureReason || r.provider) && (

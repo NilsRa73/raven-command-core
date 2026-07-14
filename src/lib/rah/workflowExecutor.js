@@ -195,6 +195,7 @@ export async function runWorkflow(runId, deps) {
             model: output?.route?.model ?? null,
             transport: output?.route?.transport ?? null,
             latencyMs: output?.route?.latencyMs ?? null,
+            packet: output?.route?.packet ?? null,
           },
         });
         run.currentStepIndex += 1;
@@ -260,15 +261,19 @@ async function executeStep(step, wf, run, deps, signal) {
     case "ai_prompt":
     case "final_summary": {
       if (!deps.ai) throw new Error("no AI executor available");
+      const ctx = buildContextExtra(wf, run, deps);
+      const systemExtra = typeof ctx === "string" ? ctx : (ctx?.text ?? "");
+      const packetMeta = typeof ctx === "string" ? null : (ctx?.meta ?? null);
       const res = await deps.ai({
         prompt: cfg.prompt ?? "",
-        systemExtra: buildContextExtra(wf, run, deps),
+        systemExtra,
         signal, mode: wf.executionProfile === "deep" ? "deep_project" : "fast",
       });
       return { text: res.text, route: {
         provider: res.provider ?? null, model: res.model ?? null,
         transport: res.transport ?? null, engine: res.engine ?? null,
         latencyMs: res.latencyMs ?? null,
+        packet: packetMeta,
       } };
     }
     case "save_memory": {
@@ -433,11 +438,20 @@ export async function retryRun(runId, deps) {
   const run = await deps.loadRun(runId);
   if (!run) return;
   if (run.status !== "failed") return;
+  // Reset the specific failed step's stepResult so it can re-run cleanly
+  // instead of staying stuck as "failed" while the run status flips back.
+  const failed = run.stepResults.find((r) => r.status === "failed");
+  if (failed) {
+    failed.status = "pending";
+    failed.error = null;
+    failed.finishedAt = null;
+  }
+  run.failureReason = null;
   const moved = transitionRun(run, "queued", { now: nowFn(deps) });
   moved.events = run.events;
   await logEvent(moved, deps, {
     type: "run.retried", prevState: "failed", nextState: "queued",
-    metadata: { reason: "user" },
+    metadata: { reason: "user", stepId: failed?.stepId ?? null },
   });
   await deps.saveRun(moved);
   await runWorkflow(runId, deps);

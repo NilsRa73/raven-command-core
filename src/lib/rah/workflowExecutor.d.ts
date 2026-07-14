@@ -22,7 +22,15 @@ export interface WorkflowExecutorDeps {
   };
   now?: () => number;
   rng?: () => string;
-  buildContextExtra?: (workflow: Workflow) => string;
+  buildContextExtra?: (workflow: Workflow) => string | {
+    text: string;
+    meta?: {
+      mode: string;
+      selectedCount: number;
+      selectedIds: string[];
+      approxTokens: number | null;
+    } | null;
+  };
 }
 
 export function runWorkflow(runId: string, deps: WorkflowExecutorDeps): Promise<void>;
