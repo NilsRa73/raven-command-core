@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useBlocker } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { buildContextPacket } from "@/lib/rah/ravenMode";
 import { getRavenModeState } from "@/lib/rah/ravenModeStore";
@@ -210,6 +210,17 @@ function AutomationsPage() {
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
   }, [dirty, isDraftUnsaved]);
+
+  // Block in-app route navigation while a draft has unsaved changes.
+  // beforeunload above only fires for hard reloads / tab close; this handles
+  // clicking a sidebar link or programmatic navigation.
+  useBlocker({
+    shouldBlockFn: () => {
+      if (!(dirty || isDraftUnsaved)) return false;
+      return !confirm("You have unsaved workflow changes. Leave and discard them?");
+    },
+    enableBeforeUnload: false,
+  });
 
   // Fast/Deep packet preview — same builder the executor uses at run-time,
   // so what you see here is what the AI will actually receive.
