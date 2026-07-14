@@ -179,7 +179,7 @@ function AutomationsPage() {
     a.href = URL.createObjectURL(blob);
     a.download = `${draft.name.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.raven-workflow.json`;
     a.click();
-    URL.revokeObjectURL(a.href);
+    setTimeout(() => URL.revokeObjectURL(a.href), 0);
   }
   async function handleImport(file: File) {
     if (
@@ -233,14 +233,20 @@ function AutomationsPage() {
     if (!draft) return null;
     try {
       const rs = getRavenModeState();
+      const project = draft.projectId
+        ? rah.projects.find((p) => p.id === draft.projectId) ?? null
+        : null;
       return buildContextPacket(rah.projectMemory, {
         mode: draft.executionProfile === "deep" ? "deep" : "fast",
         projectId: draft.projectId ?? null,
         pinnedIds: rs.pinnedIds,
         excludedIds: rs.excludedIds,
+        project: project
+          ? { name: project.name, description: project.description, goals: project.goals }
+          : null,
       });
     } catch { return null; }
-  }, [draft, rah.projectMemory]);
+  }, [draft, rah.projectMemory, rah.projects]);
 
   async function handleStartRun() {
     if (!draft) return;
@@ -594,7 +600,10 @@ function RunsPanel({ workflow, runs, onReload }: { workflow: Workflow; runs: Wor
                     a.href = URL.createObjectURL(blob);
                     a.download = `run-${r.runId}.json`;
                     a.click();
-                    URL.revokeObjectURL(a.href);
+                    // Revoke after the browser has had a tick to start
+                    // the download — revoking synchronously can cancel it
+                    // in some Chromium builds.
+                    setTimeout(() => URL.revokeObjectURL(a.href), 0);
                   }}><Download className="h-4 w-4" /></Button>
                 </div>
               </div>
@@ -632,6 +641,20 @@ function RunDetails({ run, workflow }: { run: WorkflowRun; workflow: Workflow })
   const pct = totalSteps ? Math.round((done / totalSteps) * 100) : 0;
   const currentStep = workflow.steps[run.currentStepIndex] ?? null;
   const elapsed = fmtDuration(run.startedAt, run.finishedAt ?? Date.now());
+  const rah = useRah();
+  // Approval status lookup — surface referenced approvals so the operator
+  // can see whether a run is truly gated by an outstanding approval.
+  const approvalsById = useMemo(() => {
+    const map = new Map<string, { status: string; title?: string }>();
+    for (const a of rah.approvals) map.set(a.id, { status: a.status, title: a.title });
+    return map;
+  }, [rah.approvals]);
+  // Latest packet metadata (from a step.completed event) — the executor
+  // logs this on every AI step so the inspector can prove which context
+  // packet the AI actually saw without duplicating the raw text.
+  const packetEvents = run.events.filter(
+    (e) => e.type === "step.completed" && e.metadata && (e.metadata as { packet?: unknown }).packet,
+  );
   return (
     <div className="space-y-3">
       <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3 text-xs">
@@ -661,6 +684,7 @@ function RunDetails({ run, workflow }: { run: WorkflowRun; workflow: Workflow })
             const dur = sr.finishedAt && sr.startedAt ? sr.finishedAt - sr.startedAt : null;
             const stepDef = workflow.steps.find((s) => s.id === sr.stepId);
             const label = stepDef ? STEP_CATALOG[stepDef.type]?.label ?? stepDef.type : sr.stepId;
+            const appr = sr.approvalId ? approvalsById.get(sr.approvalId) : null;
             return (
               <li key={sr.stepId} className="rounded border border-border/60 p-2 space-y-1">
                 <div className="flex flex-wrap items-baseline gap-x-2">
@@ -668,13 +692,26 @@ function RunDetails({ run, workflow }: { run: WorkflowRun; workflow: Workflow })
                   <span className="font-medium">{label}</span>
                   <span className="font-mono text-muted-foreground">{sr.stepId}</span>
                   {dur != null && <span className="text-[10px] text-muted-foreground">{dur}ms</span>}
-                  {sr.approvalId && <span className="text-[10px]">approval: <span className="font-mono">{sr.approvalId}</span></span>}
+                  {sr.approvalId && (
+                    <span className="text-[10px]">
+                      approval: <span className="font-mono">{sr.approvalId}</span>
+                      {appr && <> · <Badge variant="outline" className="text-[9px]">{appr.status}</Badge></>}
+                    </span>
+                  )}
                 </div>
                 {sr.error && (
-                  <pre className="text-destructive whitespace-pre-wrap bg-black/30 rounded p-1 text-[11px]">{sr.error}</pre>
+                  <details className="text-destructive">
+                    <summary className="cursor-pointer text-[11px]">Error details</summary>
+                    <pre className="whitespace-pre-wrap bg-black/30 rounded p-1 text-[11px]">{sr.error}</pre>
+                  </details>
                 )}
                 {sr.output && (
-                  <pre className="whitespace-pre-wrap bg-black/20 rounded p-1 text-[11px] max-h-48 overflow-auto">{String(sr.output)}</pre>
+                  <details open={String(sr.output).length < 800}>
+                    <summary className="cursor-pointer text-[11px] text-muted-foreground">
+                      Output ({String(sr.output).length} chars)
+                    </summary>
+                    <pre className="whitespace-pre-wrap bg-black/20 rounded p-1 text-[11px] overflow-auto">{String(sr.output)}</pre>
+                  </details>
                 )}
               </li>
             );
@@ -682,17 +719,37 @@ function RunDetails({ run, workflow }: { run: WorkflowRun; workflow: Workflow })
         </ol>
       </div>
 
+      {packetEvents.length > 0 && (
+        <div>
+          <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Packet metadata (AI steps)</div>
+          <ol className="space-y-1 text-[11px] bg-black/30 rounded p-2 max-h-40 overflow-auto">
+            {packetEvents.map((e) => {
+              const p = (e.metadata as { packet?: Record<string, unknown> }).packet ?? {};
+              return (
+                <li key={e.id} className="font-mono">
+                  step={e.stepId} mode={String(p.mode ?? "?")} sel={Number(p.selectedCount ?? 0)}
+                  {" "}tok={Number(p.approxTokens ?? 0)} parity={String(p.parityId ?? "?")}
+                  {p.projectName ? ` project="${String(p.projectName)}"` : ""}
+                </li>
+              );
+            })}
+          </ol>
+        </div>
+      )}
+
       <div>
         <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Event log ({run.events.length})</div>
         <ol className="space-y-1 text-[11px] font-mono bg-black/40 rounded p-2 max-h-72 overflow-auto">
           {run.events.map((e) => (
             <li key={e.id}>
-              <div>
-                #{e.seq} {new Date(e.ts).toISOString().slice(11, 19)} {e.type} {e.prevState ?? ""}→{e.nextState ?? ""} <span className="text-muted-foreground">{e.hash.slice(0, 12)}…</span>
-              </div>
-              {e.metadata != null && (
-                <pre className="pl-4 whitespace-pre-wrap text-muted-foreground">{JSON.stringify(e.metadata, null, 0)}</pre>
-              )}
+              <details>
+                <summary className="cursor-pointer">
+                  #{e.seq} {new Date(e.ts).toISOString().slice(11, 19)} {e.type} {e.prevState ?? ""}→{e.nextState ?? ""} <span className="text-muted-foreground">{e.hash.slice(0, 12)}…</span>
+                </summary>
+                {e.metadata != null && (
+                  <pre className="pl-4 whitespace-pre-wrap text-muted-foreground">{JSON.stringify(e.metadata, null, 2)}</pre>
+                )}
+              </details>
             </li>
           ))}
         </ol>

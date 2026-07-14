@@ -371,7 +371,7 @@ export function RahProvider({ children }: { children: ReactNode }) {
     for (const r of runs) {
       if (r.status === "draft" || r.status === "queued" || r.status === "running"
           || r.status === "awaiting_approval" || r.status === "paused") {
-        await executorCancelRun(r.runId, deps, { reason: "emergency_stop" });
+        await executorCancelRun(r.runId, deps, { reason: "emergency" });
       }
     }
     // Reload runs to reflect terminal state in UI immediately.
@@ -463,29 +463,23 @@ function buildExecutorDeps(hooks: {
       // Build the SAME packet the CommandBar uses so Fast/Deep behavior in
       // workflows is observable and matches the Context Manager preview.
       const mode = wf.executionProfile === "deep" ? "deep" : "fast";
+      const project = wf.projectId
+        ? hooks.projects.find((p) => p.id === wf.projectId) ?? null
+        : null;
+      // The packet builder itself embeds the project header when supplied,
+      // so preview (Automations) and executor produce byte-identical text
+      // and therefore identical packetHash / parityId.
       const packet = buildContextPacket(hooks.projectMemory, {
         mode,
         projectId: wf.projectId ?? null,
         pinnedIds: hooks.ravenState.pinnedIds,
         excludedIds: hooks.ravenState.excludedIds,
+        project: project
+          ? { name: project.name, description: project.description, goals: project.goals }
+          : null,
       });
-      // Prepend real project name / description / goals so the AI actually
-      // receives the project's stated identity, not just related memory.
-      const project = wf.projectId
-        ? hooks.projects.find((p) => p.id === wf.projectId) ?? null
-        : null;
-      const projectHeader = project
-        ? [
-            `=== RAH PROJECT ===`,
-            `Name: ${project.name}`,
-            project.description ? `Description: ${project.description}` : null,
-            project.goals ? `Goals: ${project.goals}` : null,
-            `=== END RAH PROJECT ===`,
-          ].filter(Boolean).join("\n")
-        : "";
-      const text = projectHeader ? `${projectHeader}\n${packet.text}` : packet.text;
       return {
-        text,
+        text: packet.text,
         meta: {
           mode,
           selectedCount: packet.items?.length ?? 0,

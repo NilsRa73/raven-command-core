@@ -49,6 +49,8 @@ export interface ContextPacket {
   selectedIds: string[];
   packetHash: string;
   parityId: string;
+  projectId: string | null;
+  projectName: string | null;
 }
 
 export function deterministicHash(str: string): string;
@@ -56,6 +58,7 @@ export function deterministicHash(str: string): string;
 export function buildContextPacket(list: ProjectMemoryRecord[], opts?: {
   mode?: RavenMode; projectId?: string | null; pinnedIds?: Iterable<string>;
   excludedIds?: Iterable<string>; query?: string; now?: number;
+  project?: { name?: string | null; description?: string | null; goals?: string | null } | null;
 }): ContextPacket;
 
 export interface RouteDecision {
