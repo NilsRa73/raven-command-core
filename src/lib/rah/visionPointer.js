@@ -123,8 +123,12 @@ export function reducePointer(state, action) {
       return { ...state, drag: { ...state.drag, currentImage: nowImage } };
     }
     case "pointer-up": {
-      const { transform, frame } = action;
+      const { point, transform, frame } = action;
       if (!state.drag || !frame) return { ...state, mode: "idle", drag: null };
+      // Roll the up-point into currentImage so callers that omit the
+      // intermediate move still get a normalized drag rectangle.
+      const endImage = point && transform ? displayToImage(transform, point) : state.drag.currentImage;
+      state = { ...state, drag: { ...state.drag, currentImage: endImage } };
       if (state.mode === "drawing") {
         const res = normalizeDrag({
           start: state.drag.originImage,
