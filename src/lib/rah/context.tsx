@@ -364,8 +364,14 @@ export function RahProvider({ children }: { children: ReactNode }) {
     await executorPauseRun(runId, buildExecutorDeps({ requestApproval, reloadApprovals }));
   }, [requestApproval, reloadApprovals]);
   const workflowCancel = useCallback<Ctx["workflowCancel"]>(async (runId) => {
-    await executorCancelRun(runId, buildExecutorDeps({ requestApproval, reloadApprovals }));
-  }, [requestApproval, reloadApprovals]);
+    await executorCancelRun(runId, buildExecutorDeps({ requestApproval, reloadApprovals, projectMemory, ravenState: getRavenModeState() }));
+  }, [requestApproval, reloadApprovals, projectMemory]);
+  const workflowResume = useCallback<Ctx["workflowResume"]>(async (runId) => {
+    await executorResumePaused(runId, buildExecutorDeps({ requestApproval, reloadApprovals, projectMemory, ravenState: getRavenModeState() }));
+  }, [requestApproval, reloadApprovals, projectMemory]);
+  const workflowRetry = useCallback<Ctx["workflowRetry"]>(async (runId) => {
+    await executorRetry(runId, buildExecutorDeps({ requestApproval, reloadApprovals, projectMemory, ravenState: getRavenModeState() }));
+  }, [requestApproval, reloadApprovals, projectMemory]);
 
   // Reconcile stale workflow runs on startup.
   useEffect(() => {
