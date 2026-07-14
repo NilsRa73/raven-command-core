@@ -10,6 +10,7 @@ import {
 } from "../../src/lib/rah/workflow.js";
 import {
   runWorkflow, resumeAfterApproval, cancelRun, pauseRun,
+  resumePausedRun,
   _internals,
 } from "../../src/lib/rah/workflowExecutor.js";
 
@@ -183,4 +184,95 @@ test("pause during running is honored; AI abort transitions to cancelled on canc
   await cancelRun(run.runId, deps);
   await p;
   assert.equal(runs.get(run.runId).status, "cancelled");
+});
+
+test("empty bridge capability list denies by default", () => {
+  assert.throws(
+    () => _internals.assertBridgeCapability({ status: "paired_online", capabilities: [] }, "files.readText"),
+    /denied by default/,
+  );
+  assert.throws(
+    () => _internals.assertBridgeCapability({ status: "paired_online" }, "files.readText"),
+    /denied by default/,
+  );
+});
+
+test("pause during running lands in paused, not cancelled", async () => {
+  const wf = createWorkflow({ name: "p", steps: [createStep("ai_prompt", { prompt: "long" }), createStep("ai_prompt", { prompt: "next" })] });
+  const aiSeen = [];
+  const { deps, runs, workflows } = makeDeps({
+    ai: async ({ prompt, signal }) => {
+      aiSeen.push(prompt);
+      if (prompt === "long") {
+        await new Promise((_res, rej) => signal.addEventListener("abort", () => rej(new Error("aborted"))));
+      }
+      return { text: "ok", provider: "T", model: "m", transport: "t", latencyMs: 1 };
+    },
+  });
+  workflows.set(wf.id, wf);
+  const run = createRun(wf); run.status = "queued";
+  runs.set(run.runId, run);
+  const p = runWorkflow(run.runId, deps);
+  await new Promise((r) => setTimeout(r, 5));
+  await pauseRun(run.runId, deps);
+  await p;
+  assert.equal(runs.get(run.runId).status, "paused");
+  assert.equal(aiSeen.length, 1);
+});
+
+test("manual checkpoint resume advances past the checkpoint", async () => {
+  const wf = createWorkflow({
+    name: "resume",
+    steps: [createStep("wait_manual", { note: "hi" }), createStep("ai_prompt", { prompt: "after" })],
+  });
+  const { deps, runs, workflows, aiCalls } = makeDeps();
+  workflows.set(wf.id, wf);
+  const run = createRun(wf); run.status = "queued";
+  runs.set(run.runId, run);
+  await runWorkflow(run.runId, deps);
+  assert.equal(runs.get(run.runId).status, "paused");
+  assert.equal(runs.get(run.runId).currentStepIndex, 1);
+  await resumePausedRun(run.runId, deps);
+  assert.equal(runs.get(run.runId).status, "completed");
+  assert.equal(aiCalls.length, 1);
+});
+
+test("cancel while awaiting_approval prevents remaining steps", async () => {
+  const wf = createWorkflow({
+    name: "cancel-await",
+    steps: [createStep("save_memory", { title: "x" }), createStep("ai_prompt", { prompt: "y" })],
+  });
+  const { deps, runs, workflows, memoryStore, aiCalls, approvals } = makeDeps();
+  workflows.set(wf.id, wf);
+  const run = createRun(wf); run.status = "queued";
+  runs.set(run.runId, run);
+  await runWorkflow(run.runId, deps);
+  const cur = runs.get(run.runId);
+  assert.equal(cur.status, "awaiting_approval");
+  await cancelRun(run.runId, deps);
+  // If the approval is then approved out-of-band, resume must be a no-op.
+  const approvalId = Object.values(cur.stepApprovals)[0];
+  approvals.get(approvalId).status = "approved";
+  await resumeAfterApproval(run.runId, approvalId, deps);
+  assert.equal(runs.get(run.runId).status, "cancelled");
+  assert.equal(memoryStore.length, 0);
+  assert.equal(aiCalls.length, 0);
+});
+
+test("buildContextExtra output is passed as systemExtra to ai()", async () => {
+  const wf = createWorkflow({ name: "ctx", steps: [createStep("ai_prompt", { prompt: "go" })] });
+  const seen = [];
+  const { deps, runs, workflows } = makeDeps({
+    ai: async ({ systemExtra, prompt }) => {
+      seen.push({ systemExtra, prompt });
+      return { text: "ok", provider: "T", model: "m", transport: "t", latencyMs: 1 };
+    },
+    buildContextExtra: (w) => `CTX(${w.id}:${w.executionProfile})`,
+  });
+  workflows.set(wf.id, wf);
+  const run = createRun(wf); run.status = "queued";
+  runs.set(run.runId, run);
+  await runWorkflow(run.runId, deps);
+  assert.equal(seen.length, 1);
+  assert.match(seen[0].systemExtra, /^CTX\(/);
 });
