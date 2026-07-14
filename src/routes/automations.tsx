@@ -233,14 +233,20 @@ function AutomationsPage() {
     if (!draft) return null;
     try {
       const rs = getRavenModeState();
+      const project = draft.projectId
+        ? rah.projects.find((p) => p.id === draft.projectId) ?? null
+        : null;
       return buildContextPacket(rah.projectMemory, {
         mode: draft.executionProfile === "deep" ? "deep" : "fast",
         projectId: draft.projectId ?? null,
         pinnedIds: rs.pinnedIds,
         excludedIds: rs.excludedIds,
+        project: project
+          ? { name: project.name, description: project.description, goals: project.goals }
+          : null,
       });
     } catch { return null; }
-  }, [draft, rah.projectMemory]);
+  }, [draft, rah.projectMemory, rah.projects]);
 
   async function handleStartRun() {
     if (!draft) return;
