@@ -433,11 +433,20 @@ export async function retryRun(runId, deps) {
   const run = await deps.loadRun(runId);
   if (!run) return;
   if (run.status !== "failed") return;
+  // Reset the specific failed step's stepResult so it can re-run cleanly
+  // instead of staying stuck as "failed" while the run status flips back.
+  const failed = run.stepResults.find((r) => r.status === "failed");
+  if (failed) {
+    failed.status = "pending";
+    failed.error = null;
+    failed.finishedAt = null;
+  }
+  run.failureReason = null;
   const moved = transitionRun(run, "queued", { now: nowFn(deps) });
   moved.events = run.events;
   await logEvent(moved, deps, {
     type: "run.retried", prevState: "failed", nextState: "queued",
-    metadata: { reason: "user" },
+    metadata: { reason: "user", stepId: failed?.stepId ?? null },
   });
   await deps.saveRun(moved);
   await runWorkflow(runId, deps);
