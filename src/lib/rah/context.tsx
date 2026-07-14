@@ -342,12 +342,28 @@ export function RahProvider({ children }: { children: ReactNode }) {
 
   const emergencyStop = useCallback(async () => {
     const db = await getDB();
+    // 1. Cancel every pending approval (including workflow step approvals).
     const pending = await db.getAll("approvals");
     for (const a of pending) if (a.status === "pending") await db.put("approvals", { ...a, status: "cancelled" });
     await reloadApprovals();
-    // Abort any running workflow executors.
+    // 2. Abort in-flight executors AND persist cancellation for every
+    // active/awaiting_approval/paused workflow run so no later step can run.
     const runs = await db.getAll("workflowRuns");
-    for (const r of runs) if (r.status === "running" || r.status === "awaiting_approval") executorAbort(r.runId);
+    const now = Date.now();
+    for (const r of runs) {
+      if (r.status === "running" || r.status === "awaiting_approval" || r.status === "paused") {
+        executorAbort(r.runId);
+        const moved = transitionRun(r, "cancelled", { now });
+        moved.events = await appendEvent(r.events, {
+          runId: r.runId, workflowId: r.workflowId, type: "run.cancelled",
+          actor: "user", prevState: r.status, nextState: "cancelled",
+          ts: now,
+          metadata: { reason: "emergency_stop" },
+        });
+        moved.failureReason = "emergency_stop";
+        await db.put("workflowRuns", moved);
+      }
+    }
     if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("rah:emergency-stop"));
   }, [reloadApprovals]);
 
