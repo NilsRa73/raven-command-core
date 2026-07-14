@@ -456,7 +456,7 @@ and approvals infrastructure.
   `summarizeCompanionStatus` (single source of UI truth — unknown
   values render as “—”), `normalizeCheckResult` (no fabrication:
   missing version => `failed`, not newer => `up_to_date`).
-- `desktop-bridge/tests/updater.test.js` — 54 cases covering state
+- `desktop-bridge/tests/updater.test.js` — 53 cases covering state
   machine, SemVer edge cases (prerelease ordering, build ignored,
   invalid returns null), channel selection, target normalization,
   manifest fail-closed behaviour (http, bad sha, filename mismatch,
@@ -538,8 +538,8 @@ and approvals infrastructure.
 - Existing 400/400 bridge tests continue to pass.
 
 **Verification (final):**
-- `desktop-bridge/tests/*.test.js`: **454 / 454 pass** (400 existing
-  + 54 new updater cases).
+- `desktop-bridge/tests/*.test.js`: **453 / 453 pass** (400 existing
+  + 53 new updater cases).
 - `bunx tsgo --noEmit`: clean.
 - `bun run build`: production web build succeeds.
 - `node scripts/release-preflight.mjs`: runs end-to-end; blockers list
