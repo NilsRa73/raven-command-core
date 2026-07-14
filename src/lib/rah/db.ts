@@ -1,6 +1,8 @@
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
 import type { ProjectMemoryRecord } from "./projectMemory";
 export type { ProjectMemoryRecord } from "./projectMemory";
+import type { Workflow, WorkflowRun } from "./workflow";
+export type { Workflow, WorkflowRun } from "./workflow";
 
 export type ApprovalMode = "advisory" | "ask_every" | "trusted_low_risk";
 export type Theme = "raven" | "forest" | "arctic" | "hc";
@@ -134,13 +136,15 @@ interface Schema extends DBSchema {
   approvals: { key: string; value: Approval; indexes: { status: string } };
   prefs: { key: string; value: Preferences };
   projectMemory: { key: string; value: ProjectMemoryRecord; indexes: { updatedAt: number; projectId: string } };
+  workflows: { key: string; value: Workflow; indexes: { updatedAt: number; projectId: string } };
+  workflowRuns: { key: string; value: WorkflowRun; indexes: { createdAt: number; workflowId: string; status: string } };
 }
 
 let dbp: Promise<IDBPDatabase<Schema>> | null = null;
 export function getDB() {
   if (typeof indexedDB === "undefined") throw new Error("IndexedDB unavailable");
   if (!dbp) {
-    dbp = openDB<Schema>("rah-listen-key", 2, {
+    dbp = openDB<Schema>("rah-listen-key", 3, {
       upgrade(db, oldVersion) {
         if (oldVersion < 1) {
           const p = db.createObjectStore("projects", { keyPath: "id" });
@@ -162,6 +166,15 @@ export function getDB() {
           const pm = db.createObjectStore("projectMemory", { keyPath: "id" });
           pm.createIndex("updatedAt", "updatedAt");
           pm.createIndex("projectId", "projectId");
+        }
+        if (oldVersion < 3) {
+          const wf = db.createObjectStore("workflows", { keyPath: "id" });
+          wf.createIndex("updatedAt", "updatedAt");
+          wf.createIndex("projectId", "projectId");
+          const wr = db.createObjectStore("workflowRuns", { keyPath: "runId" });
+          wr.createIndex("createdAt", "createdAt");
+          wr.createIndex("workflowId", "workflowId");
+          wr.createIndex("status", "status");
         }
       },
     });
@@ -248,7 +261,7 @@ export async function exportAll(): Promise<Blob> {
 
 export async function wipeAll() {
   const db = await getDB();
-  for (const store of ["projects", "commands", "memory", "files", "approvals", "prefs", "projectMemory"] as const) {
+  for (const store of ["projects", "commands", "memory", "files", "approvals", "prefs", "projectMemory", "workflows", "workflowRuns"] as const) {
     await db.clear(store);
   }
 }
