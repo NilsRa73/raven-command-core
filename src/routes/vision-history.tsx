@@ -12,6 +12,7 @@ import {
   PRIVACY_CLASS_LABEL,
 } from "@/lib/rah/visionSessions";
 import { buildResultChain, filterVisionArtifacts } from "@/lib/rah/visionLifecycle";
+import { findStrongestMatch, matchStrengthLabel } from "@/lib/rah/visionMatch";
 
 export const Route = createFileRoute("/vision-history")({
   head: () => ({
@@ -135,6 +136,19 @@ function VisionHistoryPage() {
     }
     return map;
   }, [results]);
+
+  // Precompute the strongest historical match for each evidence row —
+  // used by the receipt badge below. A row's match ignores itself so
+  // we only surface genuine duplicates.
+  const matchByEvidence = useMemo(() => {
+    const map = new Map<string, { strength: string; targetId: string | null }>();
+    for (const e of evidence) {
+      const others = evidence.filter((x) => x && x.id !== e.id);
+      const r = findStrongestMatch(e as unknown, others as unknown[]);
+      map.set(e.id, { strength: r.strength, targetId: r.targetId });
+    }
+    return map;
+  }, [evidence]);
 
   const doExport = (kind: "json" | "md") => {
     const payload = { sessions: filtered, evidence, results };
@@ -294,6 +308,21 @@ function VisionHistoryPage() {
                                 <ShieldAlert className="h-3 w-3" /> no integrity hash
                               </span>
                             )}
+                            {(() => {
+                              const m = matchByEvidence.get(e.id);
+                              if (!m || m.strength === "none") return null;
+                              const cls = m.strength === "hash"
+                                ? "border-emerald-500/40 text-emerald-500/90"
+                                : "border-amber-500/40 text-amber-500/90";
+                              return (
+                                <span
+                                  className={`rounded-full border px-2 py-0.5 ${cls}`}
+                                  title={m.targetId ? `Duplicate of ${m.targetId}` : matchStrengthLabel(m.strength)}
+                                >
+                                  {matchStrengthLabel(m.strength)}
+                                </span>
+                              );
+                            })()}
                             <span className="ml-auto">v{e.version || 1}</span>
                           </div>
                           {isSensitive && !isRevealed ? (

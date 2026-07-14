@@ -925,6 +925,59 @@ and approvals infrastructure.
   helpers and UI wiring; no schema migration.
 - Not deployed, not published.
 
+## Screen Vision v0.3 — Match-strength badge + duplicate honesty batch
+
+**Shipped in this batch (verified by tests + build):**
+- New deterministic helper `src/lib/rah/visionMatch.js` (+ `.d.ts`) —
+  `classifyMatchStrength(a, b)`, `matchStrengthLabel(strength)`, and
+  `findStrongestMatch(candidate, existingList)`. Match strength is
+  strictly one of `"hash" | "metadata" | "none"`:
+  - `"hash"` requires an actual SHA-256 present on BOTH sides and
+    equal after prefix-strip + lowercase.
+  - `"metadata"` requires `sizeBytes`, `width`, `height`, AND
+    `capturedAt` to all match, and is only used when a hash is
+    absent on either side. Missing hash is never fabricated into a
+    hash match.
+  - `"none"` covers differing hashes, missing frames, and any
+    metadata field mismatch. The helper never throws on user input.
+- `src/routes/vision-history.tsx` renders a color-coded badge on
+  each evidence row when a strongest historical duplicate exists:
+  emerald `hash match` for cryptographic equality, amber
+  `metadata match` for the weaker metadata quad match. The badge's
+  tooltip surfaces the target evidence id, giving the user a real
+  receipt for cross-referencing existing captures. Rows without any
+  match render nothing new — no false positives.
+
+**Known limitations (still honest — deliberately not claimed as shipped):**
+- Explicit "Start Vision Session" → `visionSessions` persistence, the
+  "Confirm Vision Action" modal built on `buildConfirmationPayload`,
+  the immutable "Save Result as New Version" flow, and the
+  history-side JSON import Preview/Apply UI (built on
+  `validateImportPayload` + `planImportApply` + `findStrongestMatch`)
+  remain unchanged from the previous batch's honest gap list —
+  helpers are shipped and tested, UI mounts are still follow-up.
+- Match strength is used for **display only** in this batch; it is
+  not yet wired into the import planner's per-conflict Replace/Skip
+  UI, and evidence-save receipts inside `vision.tsx` still show the
+  existing hash-vs-none disclosure without the new tri-state badge.
+- No OCR, no automatic sensitive-data detection, no automatic
+  redaction, and no automatic action execution are claimed.
+
+**Verification:**
+- One new deterministic test file `desktop-bridge/tests/vision-match.test.js`
+  (11 cases covering: sha256 case/prefix-insensitive equality, differing
+  hashes returning `none` rather than falling through to metadata,
+  metadata quad-match acceptance, per-field metadata rejection, missing
+  frames returning `none` without throwing, no-fabrication contract,
+  label mapping including the unknown fallback, `findStrongestMatch`
+  preferring hash over metadata, deterministic first-occurrence
+  tie-break on metadata, and the empty-list null-target case).
+- Full suite: **553/553 passing** (was 542).
+- `bunx tsgo --noEmit`: clean.
+- `bun run build`: succeeds.
+- IndexedDB version unchanged (still v8); no schema migration.
+- Not deployed, not published.
+
 **Verification:**
 - Two new deterministic test files added: `vision-geometry.test.js`
   (15 cases covering transforms, drag normalization edge cases,
