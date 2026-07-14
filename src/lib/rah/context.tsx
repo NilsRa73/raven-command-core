@@ -10,11 +10,10 @@ import {
   pauseRun as executorPauseRun,
   cancelRun as executorCancelRun,
   reconcileOnReload as executorReconcile,
-  abortRun as executorAbort,
   resumePausedRun as executorResumePaused,
   retryRun as executorRetry,
 } from "./workflowExecutor";
-import { STEP_CATALOG, appendEvent, transitionRun } from "./workflow";
+import { STEP_CATALOG, appendEvent } from "./workflow";
 import {
   bridgeStatusSnapshot,
   bridgeReadText, bridgePrepare, bridgeExecute, bridgeCapabilities,
@@ -283,9 +282,24 @@ export function RahProvider({ children }: { children: ReactNode }) {
     }
     // Workflow approvals: dispatch to executor.
     if (cur.workflowRunId) {
-      void executorResumeAfterApproval(cur.workflowRunId, id, buildExecutorDeps({ requestApproval, reloadApprovals, projectMemory, ravenState: getRavenModeState() }));
+      // Append an honest approval.{granted|rejected|cancelled} event to
+      // the run's chain regardless of whether the executor also transitions
+      // the run itself. Cancelled/rejected approvals never resume.
+      const run = await db.get("workflowRuns", cur.workflowRunId);
+      if (run) {
+        const evtType = status === "approved" ? "approval.granted"
+                      : status === "rejected" ? "approval.rejected"
+                      : "approval.cancelled";
+        run.events = await appendEvent(run.events, {
+          runId: run.runId, workflowId: run.workflowId, type: evtType,
+          actor: "user", stepId: cur.workflowStepId ?? null,
+          metadata: { approvalId: id, status },
+        });
+        await db.put("workflowRuns", run);
+      }
+      void executorResumeAfterApproval(cur.workflowRunId, id, buildExecutorDeps({ requestApproval, reloadApprovals, projectMemory, projects, ravenState: getRavenModeState() }));
     }
-  }, [reloadApprovals, requestApproval, projectMemory]);
+  }, [reloadApprovals, reloadCommands, requestApproval, projectMemory, projects]);
 
   const runApprovedCommand = useCallback<Ctx["runApprovedCommand"]>(async (commandId) => {
     const db = await getDB();
@@ -346,26 +360,20 @@ export function RahProvider({ children }: { children: ReactNode }) {
     const pending = await db.getAll("approvals");
     for (const a of pending) if (a.status === "pending") await db.put("approvals", { ...a, status: "cancelled" });
     await reloadApprovals();
-    // 2. Abort in-flight executors AND persist cancellation for every
-    // active/awaiting_approval/paused workflow run so no later step can run.
+    // 2. Cancel every non-terminal workflow run — QUEUED, running,
+    // awaiting_approval, and paused — through the executor path so we get
+    // exactly one terminal `run.cancelled` event per run, with the emergency
+    // reason recorded. cancelRun persists BEFORE aborting in-flight AI.
     const runs = await db.getAll("workflowRuns");
-    const now = Date.now();
+    const deps = buildExecutorDeps({ requestApproval, reloadApprovals, projectMemory, projects, ravenState: getRavenModeState() });
     for (const r of runs) {
-      if (r.status === "running" || r.status === "awaiting_approval" || r.status === "paused") {
-        executorAbort(r.runId);
-        const moved = transitionRun(r, "cancelled", { now });
-        moved.events = await appendEvent(r.events, {
-          runId: r.runId, workflowId: r.workflowId, type: "run.cancelled",
-          actor: "user", prevState: r.status, nextState: "cancelled",
-          ts: now,
-          metadata: { reason: "emergency_stop" },
-        });
-        moved.failureReason = "emergency_stop";
-        await db.put("workflowRuns", moved);
+      if (r.status === "queued" || r.status === "running" || r.status === "awaiting_approval" || r.status === "paused") {
+        await executorCancelRun(r.runId, deps, { reason: "emergency_stop" });
       }
     }
+    // Reload runs to reflect terminal state in UI immediately.
     if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("rah:emergency-stop"));
-  }, [reloadApprovals]);
+  }, [reloadApprovals, requestApproval, projectMemory, projects]);
 
   const focusCommandBar = useCallback(() => focusRef.current(), []);
   const registerCommandBarFocus = useCallback((fn: () => void) => {
@@ -374,20 +382,20 @@ export function RahProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const workflowRun = useCallback<Ctx["workflowRun"]>(async (runId) => {
-    await executorRunWorkflow(runId, buildExecutorDeps({ requestApproval, reloadApprovals, projectMemory, ravenState: getRavenModeState() }));
-  }, [requestApproval, reloadApprovals, projectMemory]);
+    await executorRunWorkflow(runId, buildExecutorDeps({ requestApproval, reloadApprovals, projectMemory, projects, ravenState: getRavenModeState() }));
+  }, [requestApproval, reloadApprovals, projectMemory, projects]);
   const workflowPause = useCallback<Ctx["workflowPause"]>(async (runId) => {
-    await executorPauseRun(runId, buildExecutorDeps({ requestApproval, reloadApprovals, projectMemory, ravenState: getRavenModeState() }));
-  }, [requestApproval, reloadApprovals, projectMemory]);
+    await executorPauseRun(runId, buildExecutorDeps({ requestApproval, reloadApprovals, projectMemory, projects, ravenState: getRavenModeState() }));
+  }, [requestApproval, reloadApprovals, projectMemory, projects]);
   const workflowCancel = useCallback<Ctx["workflowCancel"]>(async (runId) => {
-    await executorCancelRun(runId, buildExecutorDeps({ requestApproval, reloadApprovals, projectMemory, ravenState: getRavenModeState() }));
-  }, [requestApproval, reloadApprovals, projectMemory]);
+    await executorCancelRun(runId, buildExecutorDeps({ requestApproval, reloadApprovals, projectMemory, projects, ravenState: getRavenModeState() }));
+  }, [requestApproval, reloadApprovals, projectMemory, projects]);
   const workflowResume = useCallback<Ctx["workflowResume"]>(async (runId) => {
-    await executorResumePaused(runId, buildExecutorDeps({ requestApproval, reloadApprovals, projectMemory, ravenState: getRavenModeState() }));
-  }, [requestApproval, reloadApprovals, projectMemory]);
+    await executorResumePaused(runId, buildExecutorDeps({ requestApproval, reloadApprovals, projectMemory, projects, ravenState: getRavenModeState() }));
+  }, [requestApproval, reloadApprovals, projectMemory, projects]);
   const workflowRetry = useCallback<Ctx["workflowRetry"]>(async (runId) => {
-    await executorRetry(runId, buildExecutorDeps({ requestApproval, reloadApprovals, projectMemory, ravenState: getRavenModeState() }));
-  }, [requestApproval, reloadApprovals, projectMemory]);
+    await executorRetry(runId, buildExecutorDeps({ requestApproval, reloadApprovals, projectMemory, projects, ravenState: getRavenModeState() }));
+  }, [requestApproval, reloadApprovals, projectMemory, projects]);
 
   // Reconcile stale workflow runs on startup.
   useEffect(() => {
@@ -397,11 +405,11 @@ export function RahProvider({ children }: { children: ReactNode }) {
       const runs = await db.getAll("workflowRuns");
       for (const r of runs) {
         if (r.status === "running") {
-          await executorReconcile(r.runId, buildExecutorDeps({ requestApproval, reloadApprovals, projectMemory, ravenState: getRavenModeState() }));
+          await executorReconcile(r.runId, buildExecutorDeps({ requestApproval, reloadApprovals, projectMemory, projects, ravenState: getRavenModeState() }));
         }
       }
     })();
-  }, [ready, requestApproval, reloadApprovals, projectMemory]);
+  }, [ready, requestApproval, reloadApprovals, projectMemory, projects]);
 
   const value: Ctx = {
     ready, prefs: prefs ?? {
@@ -444,6 +452,7 @@ function buildExecutorDeps(hooks: {
   requestApproval: (a: Omit<Approval, "id" | "createdAt" | "status">) => Promise<Approval>;
   reloadApprovals: () => Promise<void>;
   projectMemory: ProjectMemoryRecord[];
+  projects: Project[];
   ravenState: { mode: "fast" | "deep"; pinnedIds: string[]; excludedIds: string[] };
 }) {
   return {
@@ -457,13 +466,33 @@ function buildExecutorDeps(hooks: {
         pinnedIds: hooks.ravenState.pinnedIds,
         excludedIds: hooks.ravenState.excludedIds,
       });
+      // Prepend real project name / description / goals so the AI actually
+      // receives the project's stated identity, not just related memory.
+      const project = wf.projectId
+        ? hooks.projects.find((p) => p.id === wf.projectId) ?? null
+        : null;
+      const projectHeader = project
+        ? [
+            `=== RAH PROJECT ===`,
+            `Name: ${project.name}`,
+            project.description ? `Description: ${project.description}` : null,
+            project.goals ? `Goals: ${project.goals}` : null,
+            `=== END RAH PROJECT ===`,
+          ].filter(Boolean).join("\n")
+        : "";
+      const text = projectHeader ? `${projectHeader}\n${packet.text}` : packet.text;
       return {
-        text: packet.text,
+        text,
         meta: {
           mode,
           selectedCount: packet.items?.length ?? 0,
-          selectedIds: (packet.items ?? []).map((i) => i.rec.id),
+          selectedIds: packet.selectedIds ?? (packet.items ?? []).map((i) => i.rec.id),
           approxTokens: packet.approxTokens ?? null,
+          packetHash: packet.packetHash ?? null,
+          parityId: packet.parityId ?? null,
+          generatedAt: packet.generatedAt ?? null,
+          projectId: wf.projectId ?? null,
+          projectName: project?.name ?? null,
         },
       };
     },

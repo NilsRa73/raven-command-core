@@ -1,5 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { buildContextPacket } from "@/lib/rah/ravenMode";
+import { getRavenModeState } from "@/lib/rah/ravenModeStore";
+import { useRah as _useRahForProject } from "@/lib/rah/context";
+void _useRahForProject;
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -176,12 +180,15 @@ function AutomationsPage() {
     URL.revokeObjectURL(a.href);
   }
   async function handleImport(file: File) {
+    if ((dirty || isDraftUnsaved) && !confirm("Discard unsaved changes to the current workflow?")) return;
     try {
       const text = await file.text();
       const wf = importWorkflowJson(text);
       const db = await getDB();
       await db.put("workflows", wf);
       await reloadAll();
+      setDirty(false);
+      setIsDraftUnsaved(false);
       setSelectedId(wf.id);
       toast.success(`Imported "${wf.name}"`);
     } catch (e) {
@@ -195,6 +202,29 @@ function AutomationsPage() {
     setDryRunPlan(plan);
     toast.message("Dry run planned. No side effects executed.");
   }
+
+  // Warn on hard page unload while a draft has unsaved changes.
+  useEffect(() => {
+    if (!(dirty || isDraftUnsaved)) return;
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [dirty, isDraftUnsaved]);
+
+  // Fast/Deep packet preview — same builder the executor uses at run-time,
+  // so what you see here is what the AI will actually receive.
+  const packetPreview = useMemo(() => {
+    if (!draft) return null;
+    try {
+      const rs = getRavenModeState();
+      return buildContextPacket(rah.projectMemory, {
+        mode: draft.executionProfile === "deep" ? "deep" : "fast",
+        projectId: draft.projectId ?? null,
+        pinnedIds: rs.pinnedIds,
+        excludedIds: rs.excludedIds,
+      });
+    } catch { return null; }
+  }, [draft, rah.projectMemory]);
 
   async function handleStartRun() {
     if (!draft) return;
@@ -354,6 +384,22 @@ function AutomationsPage() {
                   })}
                 </ol>
               </div>
+
+              {packetPreview && (
+                <div className="glass-panel p-4 space-y-2">
+                  <h2 className="font-semibold flex items-center gap-2">
+                    <FlaskConical className="h-4 w-4" /> Context packet preview ({packetPreview.mode})
+                  </h2>
+                  <div className="text-xs text-muted-foreground flex flex-wrap gap-x-3">
+                    <span>selected: {packetPreview.selectedIds.length}</span>
+                    <span>~tokens: {packetPreview.approxTokens}</span>
+                    <span>parity: {packetPreview.parityId}</span>
+                    <span>hash: {packetPreview.packetHash}</span>
+                  </div>
+                  <pre className="text-[11px] bg-black/40 rounded p-2 max-h-40 overflow-auto whitespace-pre-wrap">{packetPreview.text}</pre>
+                  <p className="text-[10px] text-muted-foreground">This is the exact context block the executor will build when this workflow runs. Project name/goals are prepended when a project is selected.</p>
+                </div>
+              )}
 
               {dryRunPlan && (
                 <div className="glass-panel p-4 space-y-2">
@@ -520,43 +566,99 @@ function RunsPanel({ workflow, runs, onReload }: { workflow: Workflow; runs: Wor
                   {r.failureReason && <span className="text-destructive">reason: {r.failureReason}</span>}
                 </div>
               )}
-              {selectedRun === r.runId && (
-                <div className="grid gap-2 md:grid-cols-2">
-                  <div>
-                    <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Per-step results</div>
-                    <ol className="space-y-1 text-xs bg-black/30 rounded p-2 max-h-60 overflow-auto">
-                      {r.stepResults.length === 0 && <li className="text-muted-foreground">No steps executed yet.</li>}
-                      {r.stepResults.map((sr) => {
-                        const dur = sr.finishedAt && sr.startedAt ? sr.finishedAt - sr.startedAt : null;
-                        return (
-                          <li key={sr.stepId} className="flex flex-wrap items-baseline gap-x-2">
-                            <Badge variant="outline" className="text-[9px]">{sr.status}</Badge>
-                            <span className="font-mono">{sr.stepId}</span>
-                            {dur != null && <span className="text-[10px] text-muted-foreground">{dur}ms</span>}
-                            {sr.error && <span className="text-destructive text-[10px]">{sr.error}</span>}
-                            {sr.output && <span className="text-muted-foreground truncate">→ {String(sr.output).slice(0, 80)}</span>}
-                          </li>
-                        );
-                      })}
-                    </ol>
-                  </div>
-                  <div>
-                    <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Event log ({r.events.length})</div>
-                    <ol className="space-y-1 text-xs font-mono bg-black/40 rounded p-2 max-h-60 overflow-auto">
-                      {r.events.map((e) => (
-                        <li key={e.id}>
-                          #{e.seq} {new Date(e.ts).toISOString().slice(11, 19)} {e.type} {e.prevState ?? ""}→{e.nextState ?? ""} <span className="text-muted-foreground">{e.hash.slice(0, 12)}…</span>
-                        </li>
-                      ))}
-                    </ol>
-                  </div>
-                </div>
-              )}
+              {selectedRun === r.runId && <RunDetails run={r} workflow={workflow} />}
             </li>
           );
         })}
       </ul>
       <p className="text-[11px] text-muted-foreground">Event log is append-only, hash-chained, and tamper-evident (SHA-256 of each entry links to the previous). It is not cryptographically signed and the local database can still be replaced. "Verify chain" recomputes hashes locally.</p>
+    </div>
+  );
+}
+
+function fmtTime(t: number | null | undefined): string {
+  if (!t) return "—";
+  try { return new Date(t).toLocaleString(); } catch { return String(t); }
+}
+function fmtDuration(a: number | null | undefined, b: number | null | undefined): string {
+  if (!a || !b) return "—";
+  const ms = b - a;
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60_000) return `${(ms/1000).toFixed(1)}s`;
+  return `${Math.floor(ms/60_000)}m ${Math.round((ms%60_000)/1000)}s`;
+}
+
+function RunDetails({ run, workflow }: { run: WorkflowRun; workflow: Workflow }) {
+  const totalSteps = workflow.steps.length;
+  const done = Math.min(run.currentStepIndex, totalSteps);
+  const pct = totalSteps ? Math.round((done / totalSteps) * 100) : 0;
+  const currentStep = workflow.steps[run.currentStepIndex] ?? null;
+  const elapsed = fmtDuration(run.startedAt, run.finishedAt ?? Date.now());
+  return (
+    <div className="space-y-3">
+      <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3 text-xs">
+        <div><span className="text-muted-foreground">Run ID:</span> <span className="font-mono">{run.runId}</span></div>
+        <div><span className="text-muted-foreground">Status:</span> {run.status}</div>
+        <div><span className="text-muted-foreground">Progress:</span> {done}/{totalSteps} ({pct}%)</div>
+        <div><span className="text-muted-foreground">Current step:</span> {currentStep ? `${run.currentStepIndex + 1}. ${STEP_CATALOG[currentStep.type]?.label ?? currentStep.type}` : "—"}</div>
+        <div><span className="text-muted-foreground">Engine:</span> {run.engine ?? "—"} / {run.provider ?? "—"}</div>
+        <div><span className="text-muted-foreground">Model:</span> {run.model ?? "—"}</div>
+        <div><span className="text-muted-foreground">Transport:</span> {run.transport ?? "—"}</div>
+        <div><span className="text-muted-foreground">Created:</span> {fmtTime(run.createdAt)}</div>
+        <div><span className="text-muted-foreground">Started:</span> {fmtTime(run.startedAt)}</div>
+        <div><span className="text-muted-foreground">Finished:</span> {fmtTime(run.finishedAt)}</div>
+        <div><span className="text-muted-foreground">Elapsed:</span> {elapsed}</div>
+        {run.failureReason && (
+          <div className="text-destructive md:col-span-2 lg:col-span-3">
+            <span className="text-muted-foreground">Reason:</span> {run.failureReason}
+          </div>
+        )}
+      </div>
+
+      <div>
+        <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Per-step results</div>
+        <ol className="space-y-2 text-xs bg-black/30 rounded p-2 max-h-96 overflow-auto">
+          {run.stepResults.length === 0 && <li className="text-muted-foreground">No steps executed yet.</li>}
+          {run.stepResults.map((sr) => {
+            const dur = sr.finishedAt && sr.startedAt ? sr.finishedAt - sr.startedAt : null;
+            const stepDef = workflow.steps.find((s) => s.id === sr.stepId);
+            const label = stepDef ? STEP_CATALOG[stepDef.type]?.label ?? stepDef.type : sr.stepId;
+            return (
+              <li key={sr.stepId} className="rounded border border-border/60 p-2 space-y-1">
+                <div className="flex flex-wrap items-baseline gap-x-2">
+                  <Badge variant="outline" className="text-[9px]">{sr.status}</Badge>
+                  <span className="font-medium">{label}</span>
+                  <span className="font-mono text-muted-foreground">{sr.stepId}</span>
+                  {dur != null && <span className="text-[10px] text-muted-foreground">{dur}ms</span>}
+                  {sr.approvalId && <span className="text-[10px]">approval: <span className="font-mono">{sr.approvalId}</span></span>}
+                </div>
+                {sr.error && (
+                  <pre className="text-destructive whitespace-pre-wrap bg-black/30 rounded p-1 text-[11px]">{sr.error}</pre>
+                )}
+                {sr.output && (
+                  <pre className="whitespace-pre-wrap bg-black/20 rounded p-1 text-[11px] max-h-48 overflow-auto">{String(sr.output)}</pre>
+                )}
+              </li>
+            );
+          })}
+        </ol>
+      </div>
+
+      <div>
+        <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Event log ({run.events.length})</div>
+        <ol className="space-y-1 text-[11px] font-mono bg-black/40 rounded p-2 max-h-72 overflow-auto">
+          {run.events.map((e) => (
+            <li key={e.id}>
+              <div>
+                #{e.seq} {new Date(e.ts).toISOString().slice(11, 19)} {e.type} {e.prevState ?? ""}→{e.nextState ?? ""} <span className="text-muted-foreground">{e.hash.slice(0, 12)}…</span>
+              </div>
+              {e.metadata != null && (
+                <pre className="pl-4 whitespace-pre-wrap text-muted-foreground">{JSON.stringify(e.metadata, null, 0)}</pre>
+              )}
+            </li>
+          ))}
+        </ol>
+      </div>
     </div>
   );
 }

@@ -157,6 +157,11 @@ export function buildContextPacket(list, opts = {}) {
   });
   const footer = ["=== END RAH RAVEN CONTEXT ==="];
   const text = [...header, ...body, ...footer].join("\n");
+  const selectedIds = selected.map((s) => s.rec.id);
+  const packetHash = deterministicHash(
+    JSON.stringify({ mode, selectedIds, textLen: text.length, text }),
+  );
+  const parityId = `pkt_${mode}_${selectedIds.length}_${packetHash.slice(0, 12)}`;
   return {
     mode,
     text,
@@ -165,7 +170,22 @@ export function buildContextPacket(list, opts = {}) {
     approxTokens: Math.ceil(text.length / 4),
     generatedAt: Number(opts.now) || Date.now(),
     compressionPct: computeCompression(selected, list, mode),
+    selectedIds,
+    packetHash,
+    parityId,
   };
+}
+
+// Deterministic non-crypto hash (FNV-1a 32-bit hex). Sync, no WebCrypto.
+// Used only for parity/identity of a context packet — not for security.
+export function deterministicHash(str) {
+  let h = 0x811c9dc5;
+  const s = String(str ?? "");
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+  }
+  return ("00000000" + h.toString(16)).slice(-8);
 }
 
 function computeCompression(selected, list, mode) {

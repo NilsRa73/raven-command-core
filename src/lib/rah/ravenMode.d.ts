@@ -46,7 +46,12 @@ export interface ContextPacket {
   approxTokens: number;
   generatedAt: number;
   compressionPct: number;
+  selectedIds: string[];
+  packetHash: string;
+  parityId: string;
 }
+
+export function deterministicHash(str: string): string;
 
 export function buildContextPacket(list: ProjectMemoryRecord[], opts?: {
   mode?: RavenMode; projectId?: string | null; pinnedIds?: Iterable<string>;

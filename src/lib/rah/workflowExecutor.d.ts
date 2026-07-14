@@ -29,6 +29,11 @@ export interface WorkflowExecutorDeps {
       selectedCount: number;
       selectedIds: string[];
       approxTokens: number | null;
+      packetHash?: string | null;
+      parityId?: string | null;
+      generatedAt?: number | null;
+      projectId?: string | null;
+      projectName?: string | null;
     } | null;
   };
 }
@@ -36,7 +41,7 @@ export interface WorkflowExecutorDeps {
 export function runWorkflow(runId: string, deps: WorkflowExecutorDeps): Promise<void>;
 export function resumeAfterApproval(runId: string, approvalId: string, deps: WorkflowExecutorDeps): Promise<void>;
 export function pauseRun(runId: string, deps: WorkflowExecutorDeps): Promise<void>;
-export function cancelRun(runId: string, deps: WorkflowExecutorDeps): Promise<void>;
+export function cancelRun(runId: string, deps: WorkflowExecutorDeps, meta?: { reason?: string }): Promise<void>;
 export function resumePausedRun(runId: string, deps: WorkflowExecutorDeps): Promise<void>;
 export function retryRun(runId: string, deps: WorkflowExecutorDeps): Promise<void>;
 export function reconcileOnReload(runId: string, deps: WorkflowExecutorDeps): Promise<void>;
