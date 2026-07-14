@@ -275,6 +275,41 @@ export function RahProvider({ children }: { children: ReactNode }) {
     await reloadProjectMemory();
   }, [reloadProjectMemory]);
 
+  // Roadmap: explicit save replaces the milestone set for a project.
+  const saveRoadmap = useCallback<Ctx["saveRoadmap"]>(async (projectId, milestones) => {
+    const db = await getDB();
+    const existing = await db.getAllFromIndex("roadmapMilestones", "projectId", projectId);
+    const tx = db.transaction("roadmapMilestones", "readwrite");
+    const keepIds = new Set(milestones.map((m) => m.id));
+    for (const old of existing) if (!keepIds.has(old.id)) await tx.store.delete(old.id);
+    const now = Date.now();
+    for (const m of milestones) {
+      await tx.store.put({ ...m, projectId, updatedAt: now });
+    }
+    await tx.done;
+    await reloadRoadmap();
+  }, [reloadRoadmap]);
+
+  // Decisions: append immutable version; upsert decision aggregate.
+  const saveDecisionVersion = useCallback<Ctx["saveDecisionVersion"]>(async ({ decision, version }) => {
+    const db = await getDB();
+    const tx = db.transaction(["decisions", "decisionVersions"], "readwrite");
+    const existingVersion = await tx.objectStore("decisionVersions").get(version.id);
+    if (existingVersion) throw new Error("Version id already exists; history is immutable.");
+    await tx.objectStore("decisionVersions").put(version);
+    await tx.objectStore("decisions").put({ ...decision, updatedAt: Date.now() });
+    await tx.done;
+    await reloadDecisions();
+  }, [reloadDecisions]);
+
+  const archiveDecision = useCallback<Ctx["archiveDecision"]>(async (id, archived) => {
+    const db = await getDB();
+    const cur = await db.get("decisions", id);
+    if (!cur) return;
+    await db.put("decisions", { ...cur, archived, updatedAt: Date.now() });
+    await reloadDecisions();
+  }, [reloadDecisions]);
+
   const requestApproval = useCallback<Ctx["requestApproval"]>(async (a) => {
     const rec: Approval = { ...a, id: uid(), createdAt: Date.now(), status: "pending" };
     const db = await getDB();
