@@ -1823,6 +1823,102 @@ function VisionPage() {
         </section>
       )}
 
+      {analysis?.state === "done" && analysis.text && (
+        <section className="glass-panel border border-border/60 p-4 md:p-5 space-y-3" aria-labelledby="rah-vision-result">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <h2 id="rah-vision-result" className="display text-xl">Result Review</h2>
+            <span className="text-[11px] rounded-full border border-border/60 px-3 py-1 text-muted-foreground">
+              {savedResultId ? `saved · v${savedResults.find((r) => r.id === savedResultId)?.version ?? "?"}` : "unsaved"}
+            </span>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-1">
+              <div className="text-[11px] uppercase tracking-widest text-muted-foreground">Raw model output (immutable)</div>
+              <pre className="text-xs whitespace-pre-wrap break-words bg-background/40 border border-border/60 rounded p-2 max-h-64 overflow-auto">{analysis.text}</pre>
+              <div className="text-[11px] text-muted-foreground">
+                {analysis.provider || "—"} / {analysis.model || "—"}
+                {typeof analysis.latencyMs === "number" ? ` · ${(analysis.latencyMs / 1000).toFixed(2)}s` : ""}
+              </div>
+            </div>
+            <div className="space-y-1">
+              <div className="text-[11px] uppercase tracking-widest text-muted-foreground">Your edited draft</div>
+              <textarea
+                value={resultDraftText}
+                onChange={(e) => { setResultDraftText(e.target.value); setResultDraftDirty(e.target.value !== (analysis.text || "")); }}
+                rows={8}
+                className="w-full rounded-md border border-border/70 bg-background/40 p-2 text-xs"
+              />
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" type="button" onClick={() => void saveResult()}>
+                  <Save className="h-3.5 w-3.5" /> {savedResultId ? "Save as new version" : "Save Result (v1)"}
+                </Button>
+                <Button size="sm" type="button" variant="ghost" onClick={discardResultEdits} disabled={!resultDraftDirty}>
+                  Discard edits
+                </Button>
+                <Button size="sm" type="button" variant="secondary" onClick={() => void copyResultDraft()}>
+                  <Copy className="h-3.5 w-3.5" /> Copy
+                </Button>
+              </div>
+              {saveReceipt && (
+                <div className="text-[11px] text-primary">
+                  Saved → <code>{saveReceipt.destination}</code> · id <code>{saveReceipt.id}</code> · {new Date(saveReceipt.at).toLocaleTimeString()}
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {analysis?.state === "done" && analysis.text && (
+        <section className="glass-panel border border-border/60 p-4 md:p-5 space-y-3" aria-labelledby="rah-vision-confirm">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <h2 id="rah-vision-confirm" className="display text-xl">Confirm Vision Action</h2>
+            <span className="text-[11px] rounded-full border border-border/60 px-3 py-1 text-muted-foreground">
+              Nothing runs without your explicit Confirm
+            </span>
+          </div>
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="text-xs space-y-1">
+              <span className="uppercase tracking-widest text-muted-foreground">Safe action</span>
+              <select
+                className="rounded-md border border-border/70 bg-background/40 p-2 text-sm"
+                value={proposalIntentId}
+                onChange={(e) => setProposalIntentId(e.target.value)}
+              >
+                {VISION_ACTION_CATALOG.map((e) => <option key={e.id} value={e.id}>{e.label}</option>)}
+              </select>
+            </label>
+            <Button size="sm" type="button" variant="secondary" onClick={buildSafeActionProposal}>
+              Propose safe action
+            </Button>
+            <Button size="sm" type="button" variant="secondary" onClick={buildWorkflowProposal}>
+              Propose workflow (inert handoff)
+            </Button>
+            {proposal && (
+              <Button size="sm" type="button" variant="ghost" onClick={() => { setProposal(null); setDispatchReceipt(null); }}>
+                Clear proposal
+              </Button>
+            )}
+          </div>
+          {proposal && confirmationPayload && (
+            <div className="rounded-md border border-border/60 bg-background/40 p-3 text-xs space-y-2">
+              <div><strong>Side-effect class:</strong> <code>{proposal.sideEffectClass}</code></div>
+              <pre className="whitespace-pre-wrap break-words text-[11px] max-h-56 overflow-auto">{JSON.stringify(confirmationPayload, null, 2)}</pre>
+              <div className="flex flex-wrap gap-2 pt-1">
+                <Button size="sm" type="button" onClick={confirmDispatch}>
+                  {proposal.sideEffectClass === "workflow_handoff" ? "Confirm handoff to Automations" : "Confirm safe action"}
+                </Button>
+              </div>
+              {dispatchReceipt && (
+                <div className="text-[11px] text-primary">
+                  Dispatched → <code>{dispatchReceipt.destination}</code> · id <code>{dispatchReceipt.id}</code> · {new Date(dispatchReceipt.at).toLocaleTimeString()}
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      )}
+
       {(sharing === "error" || showDiagnostics) && (
         <section className="glass-panel border border-yellow-500/40 p-4 space-y-2" aria-label="Screen Vision diagnostics">
           <div className="flex items-center justify-between gap-3">
