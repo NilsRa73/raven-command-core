@@ -432,3 +432,158 @@ transcripts live in IndexedDB on the current device — no cross-device
 sync. The existing `/voice` route retains its Sprint 1 pipeline; the
 v0.2 workflow lives at `/voice-profiles` and shares the AI, memory,
 and approvals infrastructure.
+
+## Native companion v0.3 — Tauri updater readiness + safe upgrade UX
+
+**Deterministic (verified by tests):**
+- `src/lib/rah/updater.js` (+ `.d.ts`) — pure helpers:
+  strict SemVer parse/compare (prerelease + build metadata),
+  `isNewerVersion`, `meetsMinimum`, 11-state updater FSM with
+  legal-transition allowlist, `selectReleaseChannel` (stable/beta/dev,
+  unknown falls back to stable), `normalizeTarget` (windows-x86_64 is
+  the only supported target), `validateReleaseManifest`
+  (schema v3, HTTPS-only URL, 64-hex SHA-256, filename pattern,
+  optional minisign signature, downgrade rejection, target/channel
+  mismatch), `shapeDownloadProgress`, `formatBytes`, `evaluateRollback`
+  (requires local installer + verified checksum + older version + same
+  target/channel — no automatic rollback ever claimed),
+  `summarizeSigningReadiness` (independent updater vs Windows
+  installer signing surfaces), `evaluateSidecarCompatibility` (same
+  major + meets `bridgeMinVersion`), `computeRestartBlockers`
+  (workflow runs, approvals, unsaved drafts, focus session, active
+  download), `createHistoryEvent` / `filterHistory` /
+  `exportHistoryJson` / `exportHistoryMarkdown`,
+  `summarizeCompanionStatus` (single source of UI truth — unknown
+  values render as “—”), `normalizeCheckResult` (no fabrication:
+  missing version => `failed`, not newer => `up_to_date`).
+- `desktop-bridge/tests/updater.test.js` — 54 cases covering state
+  machine, SemVer edge cases (prerelease ordering, build ignored,
+  invalid returns null), channel selection, target normalization,
+  manifest fail-closed behaviour (http, bad sha, filename mismatch,
+  downgrade, target/channel mismatch, signature type), progress
+  shaping, rollback eligibility branches, signing readiness overall
+  states, sidecar compatibility, restart-blocker aggregation, history
+  event validation + filter + export, companion summary (unsupported /
+  not_configured / idle / auto-check gate), and no-fabrication
+  contracts for `normalizeCheckResult`.
+
+**Configuration (opt-in, not enabled on developer machines):**
+- `desktop-bridge-native/src-tauri/Cargo.toml` adds
+  `tauri-plugin-updater = "2"` as a dependency (crate only —
+  initialization is CI-gated).
+- `desktop-bridge-native/src-tauri/tauri.updater.template.json`
+  contains the `plugins.updater` block with placeholders. It is
+  merged into `tauri.conf.json` by the production CI only when
+  `TAURI_UPDATER_PUBKEY` and `RELEASE_BASE_URL` secrets are present.
+- `desktop-bridge-native/src-tauri/capabilities/updater.template.json`
+  exposes `updater:default`. The default capabilities file is
+  unchanged, so `cargo tauri build` on a developer machine does not
+  pull the updater surface in.
+- `docs/release-signing.md` documents the full secret contract:
+  `TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`,
+  `TAURI_UPDATER_PUBKEY`, `WINDOWS_CERTIFICATE`,
+  `WINDOWS_CERTIFICATE_PASSWORD`, `WINDOWS_SIGNTOOL_PATH`,
+  `RELEASE_BASE_URL`, `RELEASE_SIGNATURE`, `RELEASE_KEY_ID`.
+  The repository never generates or commits private keys.
+
+**Scripts:**
+- `scripts/release-preflight.mjs` — Node 22 check, cross-package
+  version alignment (bridge / tauri.conf.json / Cargo.toml), NSIS
+  install mode `currentUser` enforcement, sidecar bundle + exe
+  presence, updater endpoint + pubkey structural check, signing env
+  presence (booleans only — never reads secret values), installer
+  SHA-256 re-verification vs the manifest, and separate blockers /
+  warnings output. Exits non-zero on blockers. `--json` mode for CI.
+- `scripts/build-updater-manifest.mjs` — reads the real installer,
+  computes real bytes + SHA-256, writes
+  `public/updater-manifest.json` (our schemaVersion 3 shape) using
+  `validateReleaseManifest`. Writes Tauri `public/latest.json` **only
+  when** installer + `RELEASE_BASE_URL` + `RELEASE_SIGNATURE` are all
+  present — otherwise refuses to fabricate a signed manifest and
+  exits non-zero.
+
+**CI templates:**
+- `.github/workflows/release-desktop-bridge-dev.yml` — unsigned dev
+  build. Runs tests + preflight (warnings-only), builds the SEA
+  sidecar + Tauri installer, labels every artifact
+  `-unsigned-dev.exe`, writes `dist/UNSIGNED.txt`. Never publishes.
+- `.github/workflows/release-desktop-bridge-prod.yml` — signed
+  production build. Fails fast if any of eight required secrets are
+  missing, merges the updater template into `tauri.conf.json` +
+  copies the updater capability, runs preflight in **must-pass**
+  mode, builds + signs, generates the updater manifest, and creates a
+  **draft** GitHub Release that a human must review and publish.
+
+**Web UI:**
+- `src/routes/native.tsx` — Native Companion / Updates page:
+  runtime card (native detected, versions, target, channel, last
+  check, downloaded version, state), readiness card (endpoint +
+  pubkey booleans, signing readiness summary, blockers list),
+  actions card (Check / Download / Install / Restart — each disabled
+  strictly by `summarizeCompanionStatus.can*`), preferences
+  (auto-check off by default; channel selector), and update history
+  (local-device only, JSON + Markdown export, Clear). Restart button
+  is disabled while `computeRestartBlockers` reports blockers unless
+  the user ticks the acknowledgement checkbox. Unknown values
+  everywhere render as `"—"`.
+- `src/components/rah/AppShell.tsx` — new nav entry
+  “Native Companion” between Device Center and Automations.
+
+**Preserved contracts:**
+- Bridge HMAC, one-time approval tokens, path containment, PNA,
+  loopback enforcement, and feature manifest gates are unchanged.
+- IndexedDB v7 migration is unchanged (update history intentionally
+  uses `localStorage` under `rah.updateHistory.v1`, documented as
+  local-device only — no new DB migration was necessary).
+- Existing 400/400 bridge tests continue to pass.
+
+**Verification (final):**
+- `desktop-bridge/tests/*.test.js`: **454 / 454 pass** (400 existing
+  + 54 new updater cases).
+- `bunx tsgo --noEmit`: clean.
+- `bun run build`: production web build succeeds.
+- `node scripts/release-preflight.mjs`: runs end-to-end; blockers list
+  is empty for the source-only path in this environment; warnings
+  include `sidecar_exe_not_built_windows_ci_required` and
+  `updater_plugin_not_configured_in_tauri.conf.json` — both are
+  **expected** on a non-Windows dev host and are gated by the
+  production CI.
+- Rust `cargo check` / `cargo test`: NOT run — no Rust toolchain in
+  this sandbox. The Windows workflow (`build-rah-desktop-bridge-windows.yml`)
+  continues to run `cargo test --lib --release` and `cargo clippy`
+  on `windows-latest`, and the new production workflow reruns it
+  before signing.
+
+**Known limitations (honest):**
+- No signed installer was produced in this environment. Only signing
+  **readiness** is verifiable here; the actual `cargo tauri build`
+  with Authenticode + minisign runs only on Windows CI with real
+  secrets. The docs and preflight distinguish `not_configured`,
+  `installer_signed_updater_not_configured`,
+  `ready_updater_only_installer_unsigned`, and `ready_signed`.
+- The Native Companion page cannot actually call the Tauri updater
+  from a plain browser — when opened outside the Tauri webview it
+  reports `unsupported` and disables every action. Real update
+  actions run only inside the packaged native companion.
+- Rollback is advisory: the helper reports eligibility from an
+  explicit local-installer record, but the repository does not ship
+  an automatic rollback mechanism.
+- Update history is per-device (localStorage); it is never uploaded
+  and does not roam.
+- The updater plugin is deliberately **not** initialized in
+  `main.rs` on developer builds. Enabling it in production requires
+  the secret-gated CI merge documented in `docs/release-signing.md`.
+
+**Remaining manual steps to ship a signed release:**
+1. Generate a minisign keypair off-machine; store the private key +
+   password in GitHub Secrets as `TAURI_SIGNING_PRIVATE_KEY` and
+   `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`; store the base64 public key
+   as `TAURI_UPDATER_PUBKEY`.
+2. Provision a Windows Authenticode code-signing certificate; store
+   the PFX (base64) as `WINDOWS_CERTIFICATE` and its password as
+   `WINDOWS_CERTIFICATE_PASSWORD`.
+3. Publish the HTTPS `latest.json` endpoint URL as
+   `RELEASE_BASE_URL`.
+4. Push a `desktop-bridge-v<semver>` tag to trigger
+   `release-desktop-bridge-prod.yml`, then review + publish the draft
+   GitHub Release manually.
