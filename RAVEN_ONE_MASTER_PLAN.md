@@ -1,6 +1,6 @@
 # Raven One — Master Plan
 
-Version: Raven One · Alpha 0.2 — Workflow Engine + Fast/Deep hardening + Raven Home v0.2 + Voice v0.2 + Native companion v0.3 + Screen Vision v0.3 (hashing + lifecycle)
+Version: Raven One · Alpha 0.2 — Workflow Engine + Fast/Deep hardening + Raven Home v0.2 + Voice v0.2 + Native companion v0.3 + Screen Vision v0.3 (drag overlay + export)
 Owner: Nils (RAH AI Studios)
 Status: Living document — single source of truth for the Raven One product line.
 
