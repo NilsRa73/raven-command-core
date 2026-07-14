@@ -14,6 +14,7 @@ const nav = [
   { to: "/voice", label: "Voice Assistant", icon: Mic },
   { to: "/voice-profiles", label: "Voice Profiles", icon: Mic },
   { to: "/vision", label: "Screen Vision", icon: MonitorPlay },
+  { to: "/vision-history", label: "Vision History", icon: HistoryIcon },
   { to: "/agents", label: "Agent Team", icon: Users },
   { to: "/projects", label: "Projects", icon: FolderKanban },
   { to: "/devices", label: "Device Center", icon: MonitorSmartphone },
