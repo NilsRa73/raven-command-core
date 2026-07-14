@@ -1,6 +1,6 @@
 # Raven One — Master Plan
 
-Version: Alpha 0.1
+Version: Alpha 0.3 (hardening batch 3)
 Owner: Nils (RAH AI Studios)
 Status: Living document — single source of truth for the Raven One product line.
 
@@ -52,29 +52,60 @@ progress, or telemetry.
 - `save_memory` writes to Project Memory; `chronicle_entry` writes a
   `daily_log`-typed memory. Both only after per-step approval.
 - `bridge_read_file` uses `files.readText`; `bridge_write_file` uses
-  `files.copy` (the honest bridge capability — no `files.rename` proxy);
+  `files.copy` and is surfaced in the UI as **Copy File (Bridge)** with
+  explicit Source and Destination fields; validation rejects missing or
+  identical source/dest (backward-compatible: legacy `path` is accepted as
+  source when `source` is absent, but a distinct `dest` is still required);
   `bridge_launch_url` requires `https://`; `bridge_launch_app` uses
   `launch.program`. Executor asserts paired-online status and capability
   presence before any bridge call.
 - Manual checkpoint pauses; Resume, Cancel, Retry-Failed-Step, Start-New-Run
   wired through the executor. Reload reconciles orphaned `running` runs to
-  `paused`.
+  `paused`. **Emergency Stop** cancels every non-terminal run — `draft`,
+  `queued`, `awaiting_approval`, `paused`, and `running` — through a single
+  executor code path with an explicit `emergency_stop` reason and exactly-
+  once terminal cancellation events.
 - Approvals extended with `workflowRunId` / `workflowStepId`;
   `resolveApproval` dispatches to the executor exactly once.
 - `exportAll` includes `projectMemory`, `workflows`, and `workflowRuns`.
 
-**Known limitations (not operational in this alpha):**
+## Alpha 0.3 — Fast/Deep + Hardening (shipped)
+
+- Fast/Deep mode with deterministic packet builder in `ravenMode.js`.
+  Fast Mode is bounded, not empty: it always includes pinned + task-scoped
+  memories plus a small cap of recent, high-scoring supporting memories
+  (default cap 2, min relevance 30) so short answers still have context.
+- Every AI step (chat + workflow) receives the exact packet used at run
+  time. The returned `packet` object carries `mode`, `selectedIds`,
+  `estimatedTokens`, `generatedAt`, `packetHash` (FNV-1a) and `parityId`;
+  workflow step results persist those metadata without duplicating memory
+  contents.
+- Workflow AI context prepends real project name + goals when the run has
+  a `projectId`.
+- `planDryRun` fails **closed** on missing / unknown / empty bridge
+  capability manifests; an empty array is never treated as permission.
+  Automations pulls capabilities from the authenticated `/v1/capabilities`
+  and filters to enabled entries.
+- Automations: New Workflow is a true in-memory draft (nothing hits
+  IndexedDB until Save); dirty drafts guard route navigation (TanStack
+  `useBlocker`), sidebar switching, import, and hard reload
+  (`beforeunload`).
+- Run Inspector: full expandable outputs / errors, approval refs,
+  route/provider/model/transport/engine, timestamps + elapsed duration,
+  current step + %, full event metadata, Verify Chain, and Export Run JSON.
+- Context Packet Preview surfaces the exact packet that will be sent to
+  the AI before running.
+
+**Known limitations (still true after this batch):**
 - The append-only local log is tamper-evident, **not** cryptographically
   signed. The local IndexedDB can still be replaced or wiped externally.
-  UI copy has been updated to say "append-only, hash-chained, tamper-evident
-  local log" everywhere.
-- Bridge `writeFile` is implemented via `files.copy`. The bridge protocol
-  does not yet expose an atomic `files.writeText`; that is planned but not
-  in v0.2.1.
-- Workflow autosaves-on-create for now (new workflow persists immediately
-  with an empty AI-prompt step). Full draft-only-in-memory is deferred.
-- Run Inspector is minimal (event log, cancel, verify chain). A richer
-  inspector with per-step provider/latency drill-down is planned for 0.3.
+  UI copy consistently says "append-only, hash-chained, tamper-evident
+  local log".
+- Bridge `writeFile` is still implemented via `files.copy` — an atomic
+  `files.writeText` is planned but not shipped, which is why the step is
+  labelled Copy File in the UI.
+- Native companion auto-update / signed installer are still planned, not
+  shipped.
 
 ## Design principles
 
