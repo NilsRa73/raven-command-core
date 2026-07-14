@@ -23,6 +23,8 @@ import {
   PRIVACY_HEURISTIC_DISCLAIMER, PRIVACY_CLASS_LABEL,
   type RedactionRegion,
 } from "@/lib/rah/visionSessions";
+import { hashFrameBytes } from "@/lib/rah/visionHash";
+import { shapeHashResult } from "@/lib/rah/visionLifecycle";
 import { getDB, uid } from "@/lib/rah/db";
 
 export const Route = createFileRoute("/vision")({
@@ -43,6 +45,10 @@ interface CapturedFrame {
   height: number;
   sizeBytes: number;
   capturedAt: number;
+  /** SHA-256 of the exact JPEG bytes for this frame; null on hash failure. */
+  hash: string | null;
+  /** Explicit failure reason when `hash` is null (never fabricated). */
+  hashFailureReason: string | null;
 }
 
 type ReviewStage = "idle" | "captured" | "confirming_sensitive" | "analyzing" | "reviewing_result";
@@ -192,9 +198,31 @@ async function captureViaImageCapture(
     if (isLikelyBlankFrame(stats)) return null;
     const blob = await encodeCanvasJpeg(canvas);
     const dataUrl = await blobToDataUrl(blob);
-    return { dataUrl, width, height, sizeBytes: blob.size, capturedAt: Date.now() };
+    const { hash, failureReason } = await hashBlobSafe(blob);
+    return { dataUrl, width, height, sizeBytes: blob.size, capturedAt: Date.now(), hash, hashFailureReason: failureReason };
   } finally {
     try { bmp.close(); } catch { /* older browsers */ }
+  }
+}
+
+async function hashBlobSafe(blob: Blob): Promise<{ hash: string | null; failureReason: string | null }> {
+  try {
+    const buf = await blob.arrayBuffer();
+    const { hash } = await hashFrameBytes(new Uint8Array(buf));
+    if (hash) return { hash, failureReason: null };
+    return { hash: null, failureReason: "hash_unavailable" };
+  } catch (err) {
+    return { hash: null, failureReason: (err as Error)?.message || "hash_error" };
+  }
+}
+
+async function hashDataUrlSafe(dataUrl: string): Promise<{ hash: string | null; failureReason: string | null }> {
+  try {
+    const { hash } = await hashFrameBytes(dataUrl);
+    if (hash) return { hash, failureReason: null };
+    return { hash: null, failureReason: "hash_unavailable" };
+  } catch (err) {
+    return { hash: null, failureReason: (err as Error)?.message || "hash_error" };
   }
 }
 
@@ -230,7 +258,8 @@ async function captureCurrentFrame(
   }
   const blob = await encodeCanvasJpeg(canvas);
   const dataUrl = await blobToDataUrl(blob);
-  return { dataUrl, width, height, sizeBytes: blob.size, capturedAt: Date.now() };
+  const { hash, failureReason } = await hashBlobSafe(blob);
+  return { dataUrl, width, height, sizeBytes: blob.size, capturedAt: Date.now(), hash, hashFailureReason: failureReason };
 }
 
 function VisionPage() {
