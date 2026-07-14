@@ -24,7 +24,8 @@ function mondayOf(d) {
 }
 
 export function weekBoundsFromDate(d) {
-  const start = mondayOf(d);
+  const dateObj = d instanceof Date ? d : new Date(d);
+  const start = mondayOf(dateObj);
   const end = new Date(start);
   end.setDate(end.getDate() + 6);
   const endD = endOfLocalDay(end);
