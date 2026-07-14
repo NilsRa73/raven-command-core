@@ -16,7 +16,10 @@ export interface WorkflowExecutorDeps {
   bridge: {
     status(): Promise<{ status: string; capabilities: string[] }>;
     readFile(path: string): Promise<{ text: string; size?: number }>;
-    writeFile(path: string, source?: string): Promise<{ ok: boolean }>;
+    /** Copy File — Bridge protocol implements files.copy, not arbitrary write-text. */
+    copyFile?(source: string, dest: string): Promise<{ ok: boolean }>;
+    /** Legacy alias for copyFile: writeFile(dest, source). */
+    writeFile(dest: string, source?: string): Promise<{ ok: boolean }>;
     launchUrl(url: string): Promise<{ ok: boolean }>;
     launchApp(program: string): Promise<{ ok: boolean }>;
   };

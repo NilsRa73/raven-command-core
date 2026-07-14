@@ -13,7 +13,10 @@ export interface WorkflowStep {
   type: StepType;
   config: Record<string, unknown> & {
     prompt?: string; title?: string; content?: string;
-    path?: string; url?: string; program?: string; note?: string;
+    path?: string;        // legacy: bridge_write_file destination
+    source?: string;      // bridge_write_file (Copy File) source
+    dest?: string;        // bridge_write_file (Copy File) destination
+    url?: string; program?: string; note?: string;
   };
 }
 

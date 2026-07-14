@@ -15,7 +15,9 @@ export const STEP_CATALOG = {
   save_memory:       { label: "Save to Project Memory", category: "memory",   sideEffect: true,  requiresApproval: true,  requiresBridgeCapability: null,             risk: "low" },
   chronicle_entry:   { label: "Create Chronicle Entry", category: "chronicle",sideEffect: true,  requiresApproval: true,  requiresBridgeCapability: null,             risk: "low" },
   bridge_read_file:  { label: "Read File (Bridge)",     category: "bridge",   sideEffect: false, requiresApproval: false, requiresBridgeCapability: "files.readText", risk: "low" },
-  bridge_write_file: { label: "Write File (Bridge)",    category: "bridge",   sideEffect: true,  requiresApproval: true,  requiresBridgeCapability: "files.copy",     risk: "medium" },
+  // Backwards-compat step type name; the visible action is Copy File.
+  // The bridge protocol implements files.copy, not arbitrary write-text.
+  bridge_write_file: { label: "Copy File (Bridge)",     category: "bridge",   sideEffect: true,  requiresApproval: true,  requiresBridgeCapability: "files.copy",     risk: "medium" },
   bridge_launch_url: { label: "Open URL (Bridge)",      category: "bridge",   sideEffect: true,  requiresApproval: true,  requiresBridgeCapability: "launch.url",     risk: "low" },
   bridge_launch_app: { label: "Launch App (Bridge)",    category: "bridge",   sideEffect: true,  requiresApproval: true,  requiresBridgeCapability: "launch.program", risk: "high" },
   wait_manual:       { label: "Manual Checkpoint",      category: "control",  sideEffect: false, requiresApproval: false, requiresBridgeCapability: null,             risk: "low" },
@@ -81,7 +83,18 @@ export function validateWorkflow(w) {
     if (s.type === "save_memory"      && !s.config?.title?.trim())  errors.push(`step ${i + 1}: memory title required`);
     if (s.type === "chronicle_entry"  && !s.config?.title?.trim())  errors.push(`step ${i + 1}: chronicle title required`);
     if (s.type === "bridge_read_file" && !s.config?.path?.trim())   errors.push(`step ${i + 1}: path required`);
-    if (s.type === "bridge_write_file"&& !s.config?.path?.trim())   errors.push(`step ${i + 1}: path required`);
+    if (s.type === "bridge_write_file") {
+      // Copy File requires an explicit source and destination. Legacy
+      // workflows stored only `path` (destination); those are blocked
+      // honestly rather than silently copying a file onto itself.
+      const dest = (s.config?.dest ?? s.config?.path);
+      if (!dest || !String(dest).trim()) errors.push(`step ${i + 1}: destination path required`);
+      if (!s.config?.source || !String(s.config.source).trim()) {
+        errors.push(`step ${i + 1}: source path required (Copy File needs source and destination)`);
+      } else if (dest && String(s.config.source).trim() === String(dest).trim()) {
+        errors.push(`step ${i + 1}: source and destination must differ`);
+      }
+    }
     if (s.type === "bridge_launch_url"&& !s.config?.url?.trim())    errors.push(`step ${i + 1}: url required`);
     if (s.type === "bridge_launch_url"&& s.config?.url && !/^https:\/\//i.test(s.config.url)) errors.push(`step ${i + 1}: url must be https://`);
     if (s.type === "bridge_launch_app"&& !s.config?.program?.trim())errors.push(`step ${i + 1}: program required`);
@@ -130,7 +143,11 @@ function previewStep(s) {
     case "save_memory":      return `Would save memory: ${s.config?.title ?? ""}`;
     case "chronicle_entry":  return `Would log chronicle: ${s.config?.title ?? ""}`;
     case "bridge_read_file": return `Would read: ${s.config?.path ?? ""}`;
-    case "bridge_write_file":return `Would write: ${s.config?.path ?? ""}`;
+    case "bridge_write_file": {
+      const dest = s.config?.dest ?? s.config?.path ?? "";
+      const src = s.config?.source ?? "";
+      return `Would copy: ${src || "(source missing)"} → ${dest || "(destination missing)"}`;
+    }
     case "bridge_launch_url":return `Would open URL: ${s.config?.url ?? ""}`;
     case "bridge_launch_app":return `Would launch program: ${s.config?.program ?? ""}`;
     case "wait_manual":      return `Pause for manual checkpoint: ${s.config?.note ?? ""}`;
