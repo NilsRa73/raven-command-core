@@ -34,9 +34,47 @@ progress, or telemetry.
 | Screen Vision       | `src/routes/vision.tsx`, `src/lib/rah/screenVision.js` |
 | Project Memory      | `src/routes/memory.tsx`, `src/lib/rah/projectMemory.js` |
 | AI Council / Agents | `src/routes/agents.tsx`, `src/lib/rah/orchestrator.js` |
+| Workflow Engine     | `src/routes/automations.tsx`, `src/lib/rah/workflow.js`, `src/lib/rah/workflowExecutor.js` |
 | Bridge client       | `src/lib/rah/bridge.ts`, `src/lib/rah/bridgeStatus.ts` |
 | Bridge server       | `desktop-bridge/src/`                        |
 | Native supervisor   | `desktop-bridge-native/src-tauri/src/`       |
+
+## Alpha 0.2 — Workflow Engine
+
+**Operational (verified by tests):**
+- Deterministic state machine and hash-chained event log (SHA-256 chained;
+  test-deterministic when `now`/`rng` are injected).
+- Dependency-injected `workflowExecutor` running steps sequentially with
+  per-step approval gating, exactly-once resume, and AbortController-based
+  cancel/emergency stop.
+- AI steps route through the existing `streamChat` path (real provider /
+  model / transport / latency captured).
+- `save_memory` writes to Project Memory; `chronicle_entry` writes a
+  `daily_log`-typed memory. Both only after per-step approval.
+- `bridge_read_file` uses `files.readText`; `bridge_write_file` uses
+  `files.copy` (the honest bridge capability — no `files.rename` proxy);
+  `bridge_launch_url` requires `https://`; `bridge_launch_app` uses
+  `launch.program`. Executor asserts paired-online status and capability
+  presence before any bridge call.
+- Manual checkpoint pauses; Resume, Cancel, Retry-Failed-Step, Start-New-Run
+  wired through the executor. Reload reconciles orphaned `running` runs to
+  `paused`.
+- Approvals extended with `workflowRunId` / `workflowStepId`;
+  `resolveApproval` dispatches to the executor exactly once.
+- `exportAll` includes `projectMemory`, `workflows`, and `workflowRuns`.
+
+**Known limitations (not operational in this alpha):**
+- The append-only local log is tamper-evident, **not** cryptographically
+  signed. The local IndexedDB can still be replaced or wiped externally.
+  UI copy has been updated to say "append-only, hash-chained, tamper-evident
+  local log" everywhere.
+- Bridge `writeFile` is implemented via `files.copy`. The bridge protocol
+  does not yet expose an atomic `files.writeText`; that is planned but not
+  in v0.2.1.
+- Workflow autosaves-on-create for now (new workflow persists immediately
+  with an empty AI-prompt step). Full draft-only-in-memory is deferred.
+- Run Inspector is minimal (event log, cancel, verify chain). A richer
+  inspector with per-step provider/latency drill-down is planned for 0.3.
 
 ## Design principles
 

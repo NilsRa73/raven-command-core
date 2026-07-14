@@ -167,56 +167,17 @@ function AutomationsPage() {
       runId: run.runId, workflowId: draft.id, type: "run.created",
       actor: "user", nextState: "draft",
     });
-    // Queue → running (or awaiting_approval if any side-effect step exists)
-    const needsApproval = draft.steps.some((s) => STEP_CATALOG[s.type]?.requiresApproval);
     const queued = transitionRun(run, "queued");
     queued.events = await appendEvent(run.events, {
       runId: run.runId, workflowId: draft.id, type: "run.queued",
       actor: "user", prevState: "draft", nextState: "queued",
     });
-    run = queued;
-
-    if (needsApproval) {
-      const approval = await rah.requestApproval({
-        title: `Run workflow: ${draft.name}`,
-        reason: "This workflow contains side-effecting steps (memory writes, chronicle entries, or bridge actions).",
-        tools: draft.steps.map((s) => STEP_CATALOG[s.type]?.label ?? s.type),
-        dataShared: draft.projectId ? ["active project context", "pinned memory"] : ["pinned memory"],
-        expectedResult: `Execute ${draft.steps.length} step(s) once. Approval is one-shot.`,
-        risk: draft.steps.some((s) => STEP_CATALOG[s.type]?.risk === "high") ? "high"
-             : draft.steps.some((s) => STEP_CATALOG[s.type]?.risk === "medium") ? "medium" : "low",
-        category: "workflow",
-        undo: "Cancel the run at any time. Immutable event log records every step.",
-      });
-      run.approvalIds.push(approval.id);
-      const gated = transitionRun(run, "awaiting_approval");
-      gated.events = await appendEvent(run.events, {
-        runId: run.runId, workflowId: draft.id, type: "run.awaiting_approval",
-        actor: "system", prevState: "queued", nextState: "awaiting_approval",
-        metadata: { approvalId: approval.id },
-      });
-      run = gated;
-      await db.put("workflowRuns", run);
-      await reloadAll();
-      toast.message("Approval requested. Approve it in Approvals to start the run.");
-      return;
-    }
-
-    // No side-effects → move to completed after logging plan (this is an inference-only run).
-    const running = transitionRun(run, "running");
-    running.events = await appendEvent(run.events, {
-      runId: run.runId, workflowId: draft.id, type: "run.started",
-      actor: "system", prevState: "queued", nextState: "running",
-    });
-    const completed = transitionRun(running, "completed");
-    completed.events = await appendEvent(running.events, {
-      runId: run.runId, workflowId: draft.id, type: "run.completed",
-      actor: "system", prevState: "running", nextState: "completed",
-      metadata: { note: "Deterministic run plan recorded. Attach an AI executor to run inference." },
-    });
-    await db.put("workflowRuns", completed);
+    await db.put("workflowRuns", queued);
     await reloadAll();
-    toast.success("Run recorded.");
+    // Hand off to the real executor. It handles per-step approval requests,
+    // sequential execution, hash-chained events, and safe pause/cancel.
+    void rah.workflowRun(queued.runId).then(reloadAll);
+    toast.success("Run started. Side-effect steps will request per-step approval.");
   }
 
   return (
@@ -226,7 +187,7 @@ function AutomationsPage() {
           <h1 className="display text-3xl gold-text">Automations</h1>
           <p className="text-muted-foreground">
             Local-first workflows. Every side-effect requires explicit approval. Every run
-            writes to an immutable, hash-chained event log.
+            writes to an append-only, hash-chained, tamper-evident local log.
           </p>
         </div>
         <div className="ml-auto flex gap-2">
@@ -473,7 +434,7 @@ function RunsPanel({ runs, onReload }: { runs: WorkflowRun[]; onReload: () => Pr
           );
         })}
       </ul>
-      <p className="text-[11px] text-muted-foreground">Event log is append-only and hash-chained (SHA-256 of each entry links to the previous). "Verify chain" recomputes hashes locally.</p>
+      <p className="text-[11px] text-muted-foreground">Event log is append-only, hash-chained, and tamper-evident (SHA-256 of each entry links to the previous). It is not cryptographically signed and the local database can still be replaced. "Verify chain" recomputes hashes locally.</p>
       <div className="hidden"><Pause /><RotateCcw /></div>
     </div>
   );

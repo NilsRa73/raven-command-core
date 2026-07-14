@@ -106,6 +106,12 @@ export interface Approval {
   status: "pending" | "approved" | "rejected" | "cancelled";
   /** The queued CommandRecord this approval authorises, if any. */
   commandId?: string;
+  /** The workflow run this approval authorises, if any. */
+  workflowRunId?: string;
+  /** The specific workflow step id this approval authorises. */
+  workflowStepId?: string;
+  /** Human-readable action label for the workflow step, if any. */
+  workflowAction?: string;
 }
 
 export interface Preferences {
@@ -239,13 +245,16 @@ export async function savePrefs(p: Preferences) {
 
 export async function exportAll(): Promise<Blob> {
   const db = await getDB();
-  const [projects, commands, memory, approvals, prefs, files] = await Promise.all([
+  const [projects, commands, memory, approvals, prefs, files, projectMemory, workflows, workflowRuns] = await Promise.all([
     db.getAll("projects"),
     db.getAll("commands"),
     db.getAll("memory"),
     db.getAll("approvals"),
     db.getAll("prefs"),
     db.getAll("files"),
+    db.getAll("projectMemory"),
+    db.getAll("workflows"),
+    db.getAll("workflowRuns"),
   ]);
   const payload = {
     exportedAt: new Date().toISOString(),
@@ -255,6 +264,9 @@ export async function exportAll(): Promise<Blob> {
     approvals,
     prefs,
     files: files.map((f) => ({ ...f, blob: undefined, byteSize: f.size })),
+    projectMemory,
+    workflows,
+    workflowRuns,
   };
   return new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
 }
