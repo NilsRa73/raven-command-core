@@ -383,20 +383,20 @@ export function RahProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const workflowRun = useCallback<Ctx["workflowRun"]>(async (runId) => {
-    await executorRunWorkflow(runId, buildExecutorDeps({ requestApproval, reloadApprovals, projectMemory, ravenState: getRavenModeState() }));
-  }, [requestApproval, reloadApprovals, projectMemory]);
+    await executorRunWorkflow(runId, buildExecutorDeps({ requestApproval, reloadApprovals, projectMemory, projects, ravenState: getRavenModeState() }));
+  }, [requestApproval, reloadApprovals, projectMemory, projects]);
   const workflowPause = useCallback<Ctx["workflowPause"]>(async (runId) => {
-    await executorPauseRun(runId, buildExecutorDeps({ requestApproval, reloadApprovals, projectMemory, ravenState: getRavenModeState() }));
-  }, [requestApproval, reloadApprovals, projectMemory]);
+    await executorPauseRun(runId, buildExecutorDeps({ requestApproval, reloadApprovals, projectMemory, projects, ravenState: getRavenModeState() }));
+  }, [requestApproval, reloadApprovals, projectMemory, projects]);
   const workflowCancel = useCallback<Ctx["workflowCancel"]>(async (runId) => {
-    await executorCancelRun(runId, buildExecutorDeps({ requestApproval, reloadApprovals, projectMemory, ravenState: getRavenModeState() }));
-  }, [requestApproval, reloadApprovals, projectMemory]);
+    await executorCancelRun(runId, buildExecutorDeps({ requestApproval, reloadApprovals, projectMemory, projects, ravenState: getRavenModeState() }));
+  }, [requestApproval, reloadApprovals, projectMemory, projects]);
   const workflowResume = useCallback<Ctx["workflowResume"]>(async (runId) => {
-    await executorResumePaused(runId, buildExecutorDeps({ requestApproval, reloadApprovals, projectMemory, ravenState: getRavenModeState() }));
-  }, [requestApproval, reloadApprovals, projectMemory]);
+    await executorResumePaused(runId, buildExecutorDeps({ requestApproval, reloadApprovals, projectMemory, projects, ravenState: getRavenModeState() }));
+  }, [requestApproval, reloadApprovals, projectMemory, projects]);
   const workflowRetry = useCallback<Ctx["workflowRetry"]>(async (runId) => {
-    await executorRetry(runId, buildExecutorDeps({ requestApproval, reloadApprovals, projectMemory, ravenState: getRavenModeState() }));
-  }, [requestApproval, reloadApprovals, projectMemory]);
+    await executorRetry(runId, buildExecutorDeps({ requestApproval, reloadApprovals, projectMemory, projects, ravenState: getRavenModeState() }));
+  }, [requestApproval, reloadApprovals, projectMemory, projects]);
 
   // Reconcile stale workflow runs on startup.
   useEffect(() => {
@@ -406,11 +406,11 @@ export function RahProvider({ children }: { children: ReactNode }) {
       const runs = await db.getAll("workflowRuns");
       for (const r of runs) {
         if (r.status === "running") {
-          await executorReconcile(r.runId, buildExecutorDeps({ requestApproval, reloadApprovals, projectMemory, ravenState: getRavenModeState() }));
+          await executorReconcile(r.runId, buildExecutorDeps({ requestApproval, reloadApprovals, projectMemory, projects, ravenState: getRavenModeState() }));
         }
       }
     })();
-  }, [ready, requestApproval, reloadApprovals, projectMemory]);
+  }, [ready, requestApproval, reloadApprovals, projectMemory, projects]);
 
   const value: Ctx = {
     ready, prefs: prefs ?? {
@@ -453,6 +453,7 @@ function buildExecutorDeps(hooks: {
   requestApproval: (a: Omit<Approval, "id" | "createdAt" | "status">) => Promise<Approval>;
   reloadApprovals: () => Promise<void>;
   projectMemory: ProjectMemoryRecord[];
+  projects: Project[];
   ravenState: { mode: "fast" | "deep"; pinnedIds: string[]; excludedIds: string[] };
 }) {
   return {
@@ -466,13 +467,33 @@ function buildExecutorDeps(hooks: {
         pinnedIds: hooks.ravenState.pinnedIds,
         excludedIds: hooks.ravenState.excludedIds,
       });
+      // Prepend real project name / description / goals so the AI actually
+      // receives the project's stated identity, not just related memory.
+      const project = wf.projectId
+        ? hooks.projects.find((p) => p.id === wf.projectId) ?? null
+        : null;
+      const projectHeader = project
+        ? [
+            `=== RAH PROJECT ===`,
+            `Name: ${project.name}`,
+            project.description ? `Description: ${project.description}` : null,
+            project.goals ? `Goals: ${project.goals}` : null,
+            `=== END RAH PROJECT ===`,
+          ].filter(Boolean).join("\n")
+        : "";
+      const text = projectHeader ? `${projectHeader}\n${packet.text}` : packet.text;
       return {
-        text: packet.text,
+        text,
         meta: {
           mode,
           selectedCount: packet.items?.length ?? 0,
-          selectedIds: (packet.items ?? []).map((i) => i.rec.id),
+          selectedIds: packet.selectedIds ?? (packet.items ?? []).map((i) => i.rec.id),
           approxTokens: packet.approxTokens ?? null,
+          packetHash: packet.packetHash ?? null,
+          parityId: packet.parityId ?? null,
+          generatedAt: packet.generatedAt ?? null,
+          projectId: wf.projectId ?? null,
+          projectName: project?.name ?? null,
         },
       };
     },
