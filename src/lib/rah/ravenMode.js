@@ -163,9 +163,12 @@ export function buildContextPacket(list, opts = {}) {
   const mode = opts.mode === "deep" ? "deep" : "fast";
   const meta = RAVEN_MODE_META[mode];
   const selected = selectContextForMode(list, opts);
+  const composition = mode === "fast"
+    ? "critical + active + up to " + (meta.fastSupportingCap ?? 0) + " recent supporting"
+    : "critical + active + supporting";
   const header = [
     `=== RAH RAVEN CONTEXT · ${meta.label.toUpperCase()} ===`,
-    `Selected ${selected.length}/${(list || []).length} memory records (${meta.includeSupporting ? "critical+active+supporting" : "critical+active only"}).`,
+    `Selected ${selected.length}/${(list || []).length} memory records (${composition}).`,
   ];
   const body = selected.map((s) => {
     const tags = (s.rec.tags && s.rec.tags.length) ? ` [${s.rec.tags.join(", ")}]` : "";
