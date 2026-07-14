@@ -12,18 +12,31 @@ import { useRah } from "@/lib/rah/context";
 import { useBridgeStatus } from "@/lib/rah/bridgeStatus";
 import { getLocalAiSettings } from "@/lib/rah/localAi";
 import { streamChat } from "@/lib/rah/ai";
-import { getDB, type FileItem } from "@/lib/rah/db";
+import { getDB, uid, type FileItem, type RoadmapMilestone, type DecisionVersion } from "@/lib/rah/db";
 import {
   buildProjectOverview,
   computeProjectHealth,
   buildProjectTimeline,
-  deriveRoadmap,
   deterministicProjectProfile,
   buildProjectBriefContext,
   buildContinueProjectPreview,
   PROJECT_DNA_TABS,
 } from "@/lib/rah/projectDna";
 import { filterMemories, MEMORY_TYPES, MEMORY_TYPE_LABEL, type MemoryType, type ProjectMemoryRecord } from "@/lib/rah/projectMemory";
+import {
+  ROADMAP_STATUSES, ROADMAP_STATUS_LABEL, ROADMAP_COLUMNS, UNASSIGNED_COLUMN, ROADMAP_PRIORITIES,
+  groupByColumn, moveMilestone, reorderWithinColumn, isRoadmapDirty, validateRoadmap,
+  exportRoadmapJson, exportRoadmapMarkdown, normalizeMilestone,
+  type RoadmapColumn, type RoadmapStatus,
+} from "@/lib/rah/roadmap";
+import {
+  DECISION_STATUSES, DECISION_STATUS_LABEL,
+  makeInitialVersion, makeNextVersion, groupVersions, latestVersions,
+  diffVersions, findDuplicateCandidates, isVersionDirty,
+  exportChangelogJson, exportChangelogMarkdown,
+  type DecisionStatus,
+} from "@/lib/rah/decisions";
+import { shouldConfirmDiscard } from "@/lib/rah/draftGuard";
 
 type Tab = typeof PROJECT_DNA_TABS[number];
 
