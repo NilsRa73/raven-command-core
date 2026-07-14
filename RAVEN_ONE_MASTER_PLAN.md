@@ -101,9 +101,9 @@ progress, or telemetry.
   signed. The local IndexedDB can still be replaced or wiped externally.
   UI copy consistently says "append-only, hash-chained, tamper-evident
   local log".
-- Bridge `writeFile` is still implemented via `files.copy` — an atomic
-  `files.writeText` is planned but not shipped, which is why the step is
-  labelled Copy File in the UI.
+- The bridge exposes `files.copy`, not `files.writeText`. That is why the
+  workflow step is labelled Copy File; arbitrary text writes are
+  intentionally unavailable, not silently emulated.
 - Native companion auto-update / signed installer are still planned, not
   shipped.
 
