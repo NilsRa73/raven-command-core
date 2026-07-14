@@ -462,7 +462,7 @@ function buildExecutorDeps(hooks: {
         meta: {
           mode,
           selectedCount: packet.items?.length ?? 0,
-          selectedIds: (packet.items ?? []).map((i: { id: string }) => i.id),
+          selectedIds: (packet.items ?? []).map((i) => i.rec.id),
           approxTokens: packet.approxTokens ?? null,
         },
       };
