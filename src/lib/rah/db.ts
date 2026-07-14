@@ -11,6 +11,8 @@ import type { DecisionRecord, DecisionVersion } from "./decisions";
 export type { DecisionRecord, DecisionVersion } from "./decisions";
 import type { FocusSession } from "./focusSession";
 export type { FocusSession } from "./focusSession";
+import type { VoiceProfile, VoiceSessionRecord, VoiceTranscriptReview } from "./voiceProfiles";
+export type { VoiceProfile, VoiceSessionRecord, VoiceTranscriptReview } from "./voiceProfiles";
 
 export type ApprovalMode = "advisory" | "ask_every" | "trusted_low_risk";
 export type Theme = "raven" | "forest" | "arctic" | "hc";
@@ -157,13 +159,16 @@ interface Schema extends DBSchema {
   decisions: { key: string; value: DecisionRecord; indexes: { projectId: string; updatedAt: number } };
   decisionVersions: { key: string; value: DecisionVersion; indexes: { decisionId: string; createdAt: number } };
   focusSessions: { key: string; value: FocusSession; indexes: { projectId: string; createdAt: number; status: string } };
+  voiceProfiles: { key: string; value: VoiceProfile; indexes: { projectId: string; updatedAt: number } };
+  voiceSessions: { key: string; value: VoiceSessionRecord; indexes: { projectId: string; createdAt: number; status: string } };
+  voiceTranscripts: { key: string; value: VoiceTranscriptReview; indexes: { projectId: string; profileId: string; createdAt: number; status: string } };
 }
 
 let dbp: Promise<IDBPDatabase<Schema>> | null = null;
 export function getDB() {
   if (typeof indexedDB === "undefined") throw new Error("IndexedDB unavailable");
   if (!dbp) {
-    dbp = openDB<Schema>("rah-listen-key", 6, {
+    dbp = openDB<Schema>("rah-listen-key", 7, {
       upgrade(db, oldVersion) {
         if (oldVersion < 1) {
           const p = db.createObjectStore("projects", { keyPath: "id" });
@@ -216,6 +221,20 @@ export function getDB() {
           fs.createIndex("projectId", "projectId");
           fs.createIndex("createdAt", "createdAt");
           fs.createIndex("status", "status");
+        }
+        if (oldVersion < 7) {
+          const vp = db.createObjectStore("voiceProfiles", { keyPath: "id" });
+          vp.createIndex("projectId", "projectId");
+          vp.createIndex("updatedAt", "updatedAt");
+          const vs = db.createObjectStore("voiceSessions", { keyPath: "id" });
+          vs.createIndex("projectId", "projectId");
+          vs.createIndex("createdAt", "createdAt");
+          vs.createIndex("status", "status");
+          const vt = db.createObjectStore("voiceTranscripts", { keyPath: "id" });
+          vt.createIndex("projectId", "projectId");
+          vt.createIndex("profileId", "profileId");
+          vt.createIndex("createdAt", "createdAt");
+          vt.createIndex("status", "status");
         }
       },
     });
@@ -280,7 +299,7 @@ export async function savePrefs(p: Preferences) {
 
 export async function exportAll(): Promise<Blob> {
   const db = await getDB();
-  const [projects, commands, memory, approvals, prefs, files, projectMemory, workflows, workflowRuns, deviceHistory, roadmapMilestones, decisions, decisionVersions, focusSessions] = await Promise.all([
+  const [projects, commands, memory, approvals, prefs, files, projectMemory, workflows, workflowRuns, deviceHistory, roadmapMilestones, decisions, decisionVersions, focusSessions, voiceProfiles, voiceSessions, voiceTranscripts] = await Promise.all([
     db.getAll("projects"),
     db.getAll("commands"),
     db.getAll("memory"),
@@ -295,6 +314,9 @@ export async function exportAll(): Promise<Blob> {
     db.getAll("decisions"),
     db.getAll("decisionVersions"),
     db.getAll("focusSessions"),
+    db.getAll("voiceProfiles"),
+    db.getAll("voiceSessions"),
+    db.getAll("voiceTranscripts"),
   ]);
   const payload = {
     exportedAt: new Date().toISOString(),
@@ -312,13 +334,16 @@ export async function exportAll(): Promise<Blob> {
     decisions,
     decisionVersions,
     focusSessions,
+    voiceProfiles,
+    voiceSessions,
+    voiceTranscripts,
   };
   return new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
 }
 
 export async function wipeAll() {
   const db = await getDB();
-  for (const store of ["projects", "commands", "memory", "files", "approvals", "prefs", "projectMemory", "workflows", "workflowRuns", "deviceHistory", "roadmapMilestones", "decisions", "decisionVersions", "focusSessions"] as const) {
+  for (const store of ["projects", "commands", "memory", "files", "approvals", "prefs", "projectMemory", "workflows", "workflowRuns", "deviceHistory", "roadmapMilestones", "decisions", "decisionVersions", "focusSessions", "voiceProfiles", "voiceSessions", "voiceTranscripts"] as const) {
     await db.clear(store);
   }
 }
