@@ -1,6 +1,6 @@
 # Raven One — Master Plan
 
-Version: Alpha 0.3 (hardening batch 3)
+Version: Raven One · Alpha 0.2 — Workflow Engine + Fast/Deep Memory hardening
 Owner: Nils (RAH AI Studios)
 Status: Living document — single source of truth for the Raven One product line.
 
