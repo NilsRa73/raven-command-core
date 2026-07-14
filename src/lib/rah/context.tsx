@@ -427,8 +427,22 @@ export function RahProvider({ children }: { children: ReactNode }) {
 function buildExecutorDeps(hooks: {
   requestApproval: (a: Omit<Approval, "id" | "createdAt" | "status">) => Promise<Approval>;
   reloadApprovals: () => Promise<void>;
+  projectMemory: ProjectMemoryRecord[];
+  ravenState: { mode: "fast" | "deep"; pinnedIds: string[]; excludedIds: string[] };
 }) {
   return {
+    buildContextExtra: (wf: { id: string; projectId: string | null; executionProfile?: "fast" | "deep" }) => {
+      // Build the SAME packet the CommandBar uses so Fast/Deep behavior in
+      // workflows is observable and matches the Context Manager preview.
+      const mode = wf.executionProfile === "deep" ? "deep" : "fast";
+      const packet = buildContextPacket(hooks.projectMemory, {
+        mode,
+        projectId: wf.projectId ?? null,
+        pinnedIds: hooks.ravenState.pinnedIds,
+        excludedIds: hooks.ravenState.excludedIds,
+      });
+      return packet.text;
+    },
     loadRun: async (id: string) => {
       const db = await getDB();
       return (await db.get("workflowRuns", id)) ?? null;
@@ -464,10 +478,17 @@ function buildExecutorDeps(hooks: {
       await hooks.reloadApprovals();
       return approval;
     },
-    ai: async ({ prompt, signal, mode }: { prompt: string; signal: AbortSignal; mode: string }) => {
+    ai: async ({ prompt, signal, mode, systemExtra }: { prompt: string; signal: AbortSignal; mode: string; systemExtra?: string }) => {
       let text = "", provider = "", model = "", latencyMs = 0;
       await streamChat(
-        { prompt, agents: ["brain"], mode: (mode as "fast" | "deep_project"), signal, context: {} },
+        {
+          prompt, agents: ["brain"],
+          mode: (mode as "fast" | "deep_project"),
+          signal,
+          // Actually inject the Fast/Deep context packet the executor built.
+          // Empty string = no memory selected (still explicit, not silently omitted).
+          context: { projectMemoryBlock: systemExtra ?? "" },
+        },
         {
           onStart: (i) => { provider = i.provider; model = i.model; },
           onDelta: (_c, full) => { text = full; },
@@ -501,7 +522,20 @@ function buildExecutorDeps(hooks: {
     bridge: {
       status: async () => {
         const s = await bridgeStatusSnapshot();
-        return { status: s.ui, capabilities: [] };
+        if (s.ui !== "paired_online") return { status: s.ui, capabilities: [] as string[] };
+        // Fetch the real capability manifest. If the call fails we return
+        // an empty list, which now DENIES all bridge steps by default
+        // (see workflowExecutor.assertBridgeCapability).
+        try {
+          const c = await bridgeCapabilities();
+          const disabled = new Set(c?.disabled ?? []);
+          const caps = Object.entries(c?.capabilities ?? {})
+            .filter(([id, spec]) => !disabled.has(id as never) && !(spec as { disabled?: boolean }).disabled)
+            .map(([id]) => id);
+          return { status: s.ui, capabilities: caps };
+        } catch {
+          return { status: s.ui, capabilities: [] as string[] };
+        }
       },
       readFile: async (p: string) => {
         const r = await bridgeReadText(p);
