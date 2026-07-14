@@ -270,19 +270,21 @@ export function normalizeTranscript(raw) {
 export function segmentTranscript(raw) {
   const s = String(raw ?? "").trim();
   if (!s) return [];
-  const parts = s.split(/(?<=[.!?])\s+|\n+/g).map((p) => p.trim()).filter(Boolean);
+  const parts = s.split(/(?<=[.!?])\s+|\n+/g)
+    .map((p) => p.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
   return parts;
 }
 
 /** Detect a near-duplicate against a small recent history window. */
 export function isDuplicateTranscript(candidate, history = [], windowMs = 5 * 60_000, now = Date.now()) {
-  const norm = normalizeTranscript(candidate?.rawText ?? candidate);
+  const norm = normalizeTranscript(candidate?.rawText ?? candidate).toLowerCase();
   if (!norm) return false;
   for (const prev of history) {
     if (!prev) continue;
     const prevAt = Number.isFinite(prev.createdAt) ? prev.createdAt : 0;
     if (now - prevAt > windowMs) continue;
-    const prevNorm = normalizeTranscript(prev.rawText ?? prev);
+    const prevNorm = normalizeTranscript(prev.rawText ?? prev).toLowerCase();
     if (prevNorm && prevNorm === norm) return true;
   }
   return false;
@@ -356,7 +358,10 @@ export function proposeVoiceCommand(input) {
     .sort((a, b) => b.score - a.score);
   const top = scored[0] ?? null;
   const alternatives = scored.slice(1, 4).filter((s) => s.score > 0);
-  if (!top || top.score === 0) {
+  // No-match floor: anything below LOW_CONFIDENCE_THRESHOLD is treated as
+  // "we cannot honestly identify a command". This prevents accidental
+  // dispatch of a barely-related utterance.
+  if (!top || top.score < LOW_CONFIDENCE_THRESHOLD) {
     return { status: "no_match", reason: "no_catalog_match", top: null, alternatives: [], confidenceOk: false };
   }
   const proposalThreshold = clamp01(profile.wakeConfidenceThreshold ?? DEFAULT_CONFIDENCE_THRESHOLD);
