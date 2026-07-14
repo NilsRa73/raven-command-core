@@ -1455,6 +1455,88 @@ function VisionPage() {
         </div>
       </section>
 
+      <section className="glass-panel border border-border/60 p-4 md:p-5 space-y-3" aria-labelledby="rah-vision-session">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <h2 id="rah-vision-session" className="display text-xl">Vision Session</h2>
+          {activeSession && (
+            <span className={"text-[11px] rounded-full border px-3 py-1 " + (isSessionLive(activeSession) ? "border-primary text-primary" : "border-border/60 text-muted-foreground")}>
+              {activeSession.status} · captures {activeSession.captureCount}
+            </span>
+          )}
+        </div>
+        {!activeSession ? (
+          <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto_auto] items-end">
+            <label className="text-xs space-y-1">
+              <span className="uppercase tracking-widest text-muted-foreground">Project</span>
+              <select
+                className="w-full rounded-md border border-border/70 bg-background/40 p-2 text-sm"
+                value={selectedProjectId === undefined ? "" : (selectedProjectId ?? "__none__")}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === "") setSelectedProjectId(undefined);
+                  else if (v === "__none__") setSelectedProjectId(null);
+                  else setSelectedProjectId(v);
+                }}
+              >
+                <option value="">— choose —</option>
+                <option value="__none__">No project</option>
+                {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </label>
+            <label className="text-xs space-y-1">
+              <span className="uppercase tracking-widest text-muted-foreground">Session title</span>
+              <input
+                type="text"
+                value={sessionTitle}
+                onChange={(e) => setSessionTitle(e.target.value)}
+                placeholder="Untitled vision session"
+                className="w-full rounded-md border border-border/70 bg-background/40 p-2 text-sm"
+              />
+            </label>
+            <label className="text-xs space-y-1">
+              <span className="uppercase tracking-widest text-muted-foreground">Mode</span>
+              <select
+                className="rounded-md border border-border/70 bg-background/40 p-2 text-sm"
+                value={sessionMode}
+                onChange={(e) => setSessionMode(e.target.value === "deep" ? "deep" : "fast")}
+              >
+                <option value="fast">Fast</option>
+                <option value="deep">Deep</option>
+              </select>
+            </label>
+            <Button type="button" onClick={startVisionSession} disabled={!active || selectedProjectId === undefined}>
+              Start Vision Session
+            </Button>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="text-muted-foreground">
+              <strong className="text-foreground">{sessionTitle.trim() || "Untitled vision session"}</strong>
+              {" · "}
+              {activeSession.projectId
+                ? (projects.find((p) => p.id === activeSession.projectId)?.name || activeSession.projectId)
+                : "No project"}
+              {" · mode "}{activeSession.mode}
+            </span>
+            {isSessionLive(activeSession) ? (
+              <>
+                <Button type="button" size="sm" variant="secondary" onClick={() => void endVisionSession()}>End session</Button>
+                <Button type="button" size="sm" variant="ghost" onClick={() => void cancelVisionSession()}>Cancel session</Button>
+              </>
+            ) : (
+              <Button type="button" size="sm" variant="ghost" onClick={() => { setActiveSession(null); setSelectedProjectId(undefined); setSessionTitle(""); }}>
+                Start new session
+              </Button>
+            )}
+          </div>
+        )}
+        {!activeSession && (
+          <p className="text-[11px] text-muted-foreground">
+            Captures, evidence, and results are bound to the active session. Choose <em>No project</em> if this vision run isn't tied to a specific project.
+          </p>
+        )}
+      </section>
+
       {pendingFrame && reviewStage !== "idle" && (
         <section className="glass-panel gold-border p-4 md:p-5 space-y-4" aria-labelledby="rah-vision-review">
           <div className="flex items-center justify-between gap-3 flex-wrap">
