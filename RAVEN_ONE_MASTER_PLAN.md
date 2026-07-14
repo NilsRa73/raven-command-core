@@ -80,6 +80,24 @@ progress, or telemetry.
 - [x] Tests: `morning.test.js`, `command-palette.test.js` (10 new tests,
       total 225 passing).
 
+## Alpha 0.2 — Workflow Engine (shipped)
+
+- [x] Deterministic core in `src/lib/rah/workflow.js`: step catalog, Fast/Deep
+      execution profiles, run state machine (draft → queued → awaiting_approval
+      → running → paused → completed/failed/cancelled) with validated
+      transitions, dry-run planner that flags blocked bridge steps, and
+      Fast/Deep context selector.
+- [x] Hash-chained event log (SHA-256, prevHash + payload) with
+      `appendEvent` and `verifyEventChain`; tamper-evident and locally
+      verifiable — never described as cryptographic signing.
+- [x] IndexedDB v3 migration adds `workflows` and `workflowRuns` stores.
+- [x] `src/routes/automations.tsx` rewritten as Workflow Builder + Execution
+      Center: explicit Save, Dry Run, Run, Cancel, Import/Export,
+      side-effecting workflows gated by one-shot `requestApproval`, run log
+      viewer with chain verification.
+- [x] Tests: `desktop-bridge/tests/workflow.test.js` (11 new tests,
+      total 236 passing). `bunx tsgo --noEmit` clean.
+
 - Device Center v0.2: role-based dashboards, hardware history charts.
 - Chronicle v0.2: per-project chronicle views, weekly summary drafts.
 - Project DNA v0.2: roadmap milestone drag-and-drop, decisions changelog.
