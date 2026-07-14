@@ -327,7 +327,7 @@ function AutomationsPage() {
                 </div>
               )}
 
-              <RunsPanel runs={runs.filter((r) => r.workflowId === draft.id)} onReload={reloadAll} />
+              <RunsPanel workflow={draft} runs={runs.filter((r) => r.workflowId === draft.id)} onReload={reloadAll} />
             </>
           )}
         </section>
@@ -370,7 +370,8 @@ function StepEditor({ step, onChange }: { step: WorkflowStep; onChange: (c: Work
   }
 }
 
-function RunsPanel({ runs, onReload }: { runs: WorkflowRun[]; onReload: () => Promise<void> }) {
+function RunsPanel({ workflow, runs, onReload }: { workflow: Workflow; runs: WorkflowRun[]; onReload: () => Promise<void> }) {
+  const rah = useRah();
   const [chainStatus, setChainStatus] = useState<Record<string, "ok" | "bad" | null>>({});
   const [selectedRun, setSelectedRun] = useState<string | null>(null);
 
@@ -380,16 +381,41 @@ function RunsPanel({ runs, onReload }: { runs: WorkflowRun[]; onReload: () => Pr
   }
 
   async function cancelRun(run: WorkflowRun) {
-    if (!["draft","queued","awaiting_approval","running","paused"].includes(run.status)) return;
-    const db = await getDB();
-    const next = transitionRun(run, "cancelled");
-    next.events = await appendEvent(run.events, {
-      runId: run.runId, workflowId: run.workflowId, type: "run.cancelled",
-      actor: "user", prevState: run.status, nextState: "cancelled",
-    });
-    await db.put("workflowRuns", next);
+    await rah.workflowCancel(run.runId);
     await onReload();
     toast.message("Run cancelled.");
+  }
+  async function pauseRun(run: WorkflowRun) {
+    await rah.workflowPause(run.runId);
+    await onReload();
+    toast.message("Run paused.");
+  }
+  async function resumeRun(run: WorkflowRun) {
+    await onReload();
+    void rah.workflowResume(run.runId).then(onReload);
+    toast.success("Run resumed.");
+  }
+  async function retryRun(run: WorkflowRun) {
+    await onReload();
+    void rah.workflowRetry(run.runId).then(onReload);
+    toast.success("Run re-queued.");
+  }
+  async function startNewRun() {
+    const db = await getDB();
+    let run = createRun(workflow);
+    run.events = await appendEvent(run.events, {
+      runId: run.runId, workflowId: workflow.id, type: "run.created",
+      actor: "user", nextState: "draft",
+    });
+    const queued = transitionRun(run, "queued");
+    queued.events = await appendEvent(run.events, {
+      runId: run.runId, workflowId: workflow.id, type: "run.queued",
+      actor: "user", prevState: "draft", nextState: "queued",
+    });
+    await db.put("workflowRuns", queued);
+    await onReload();
+    void rah.workflowRun(queued.runId).then(onReload);
+    toast.success("New run started.");
   }
 
   return (
@@ -413,29 +439,69 @@ function RunsPanel({ runs, onReload }: { runs: WorkflowRun[]; onReload: () => Pr
                      : chainStatus[r.runId] === "bad" ? <ShieldAlert className="h-4 w-4 text-red-500" />
                      : "Verify chain"}
                   </Button>
+                  {ctrls.includes("pause") && (
+                    <Button size="sm" variant="ghost" title="Pause" onClick={() => void pauseRun(r)}><Pause className="h-4 w-4" /></Button>
+                  )}
+                  {ctrls.includes("resume") && (
+                    <Button size="sm" variant="ghost" title="Resume" onClick={() => void resumeRun(r)}><Play className="h-4 w-4" /></Button>
+                  )}
+                  {ctrls.includes("retry") && (
+                    <Button size="sm" variant="ghost" title="Retry" onClick={() => void retryRun(r)}><RotateCcw className="h-4 w-4" /></Button>
+                  )}
+                  {ctrls.includes("startNew") && (
+                    <Button size="sm" variant="ghost" title="New run" onClick={() => void startNewRun()}><Plus className="h-4 w-4" /></Button>
+                  )}
                   {ctrls.includes("cancel") && (
                     <Button size="sm" variant="ghost" onClick={() => void cancelRun(r)}><Ban className="h-4 w-4" /></Button>
                   )}
                   <Button size="sm" variant="ghost" onClick={() => setSelectedRun(selectedRun === r.runId ? null : r.runId)}>
-                    {selectedRun === r.runId ? "Hide log" : "View log"}
+                    {selectedRun === r.runId ? "Hide details" : "Inspect"}
                   </Button>
                 </div>
               </div>
+              {(r.failureReason || r.provider) && (
+                <div className="text-[10px] text-muted-foreground flex flex-wrap gap-x-3">
+                  {r.provider && <span>engine: {r.provider}{r.model ? ` · ${r.model}` : ""}</span>}
+                  {r.failureReason && <span className="text-destructive">reason: {r.failureReason}</span>}
+                </div>
+              )}
               {selectedRun === r.runId && (
-                <ol className="space-y-1 text-xs font-mono bg-black/40 rounded p-2 max-h-60 overflow-auto">
-                  {r.events.map((e) => (
-                    <li key={e.id}>
-                      #{e.seq} {new Date(e.ts).toISOString()} {e.type} {e.prevState ?? ""}→{e.nextState ?? ""} <span className="text-muted-foreground">{e.hash.slice(0, 12)}…</span>
-                    </li>
-                  ))}
-                </ol>
+                <div className="grid gap-2 md:grid-cols-2">
+                  <div>
+                    <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Per-step results</div>
+                    <ol className="space-y-1 text-xs bg-black/30 rounded p-2 max-h-60 overflow-auto">
+                      {r.stepResults.length === 0 && <li className="text-muted-foreground">No steps executed yet.</li>}
+                      {r.stepResults.map((sr) => {
+                        const dur = sr.finishedAt && sr.startedAt ? sr.finishedAt - sr.startedAt : null;
+                        return (
+                          <li key={sr.stepId} className="flex flex-wrap items-baseline gap-x-2">
+                            <Badge variant="outline" className="text-[9px]">{sr.status}</Badge>
+                            <span className="font-mono">{sr.stepId}</span>
+                            {dur != null && <span className="text-[10px] text-muted-foreground">{dur}ms</span>}
+                            {sr.error && <span className="text-destructive text-[10px]">{sr.error}</span>}
+                            {sr.output && <span className="text-muted-foreground truncate">→ {String(sr.output).slice(0, 80)}</span>}
+                          </li>
+                        );
+                      })}
+                    </ol>
+                  </div>
+                  <div>
+                    <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Event log ({r.events.length})</div>
+                    <ol className="space-y-1 text-xs font-mono bg-black/40 rounded p-2 max-h-60 overflow-auto">
+                      {r.events.map((e) => (
+                        <li key={e.id}>
+                          #{e.seq} {new Date(e.ts).toISOString().slice(11, 19)} {e.type} {e.prevState ?? ""}→{e.nextState ?? ""} <span className="text-muted-foreground">{e.hash.slice(0, 12)}…</span>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                </div>
               )}
             </li>
           );
         })}
       </ul>
       <p className="text-[11px] text-muted-foreground">Event log is append-only, hash-chained, and tamper-evident (SHA-256 of each entry links to the previous). It is not cryptographically signed and the local database can still be replaced. "Verify chain" recomputes hashes locally.</p>
-      <div className="hidden"><Pause /><RotateCcw /></div>
     </div>
   );
 }

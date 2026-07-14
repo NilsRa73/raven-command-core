@@ -29,6 +29,8 @@ export function runWorkflow(runId: string, deps: WorkflowExecutorDeps): Promise<
 export function resumeAfterApproval(runId: string, approvalId: string, deps: WorkflowExecutorDeps): Promise<void>;
 export function pauseRun(runId: string, deps: WorkflowExecutorDeps): Promise<void>;
 export function cancelRun(runId: string, deps: WorkflowExecutorDeps): Promise<void>;
+export function resumePausedRun(runId: string, deps: WorkflowExecutorDeps): Promise<void>;
+export function retryRun(runId: string, deps: WorkflowExecutorDeps): Promise<void>;
 export function reconcileOnReload(runId: string, deps: WorkflowExecutorDeps): Promise<void>;
 export function abortRun(runId: string): void;
 export function isRunning(runId: string): boolean;

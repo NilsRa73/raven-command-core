@@ -11,12 +11,16 @@ import {
   cancelRun as executorCancelRun,
   reconcileOnReload as executorReconcile,
   abortRun as executorAbort,
+  resumePausedRun as executorResumePaused,
+  retryRun as executorRetry,
 } from "./workflowExecutor";
-import { STEP_CATALOG } from "./workflow";
+import { STEP_CATALOG, appendEvent, transitionRun } from "./workflow";
 import {
   bridgeStatusSnapshot,
-  bridgeReadText, bridgePrepare, bridgeExecute,
+  bridgeReadText, bridgePrepare, bridgeExecute, bridgeCapabilities,
 } from "./bridge";
+import { buildContextPacket } from "./ravenMode";
+import { getRavenModeState } from "./ravenModeStore";
 
 type Ctx = {
   ready: boolean;
@@ -56,6 +60,8 @@ type Ctx = {
   workflowRun: (runId: string) => Promise<void>;
   workflowPause: (runId: string) => Promise<void>;
   workflowCancel: (runId: string) => Promise<void>;
+  workflowResume: (runId: string) => Promise<void>;
+  workflowRetry: (runId: string) => Promise<void>;
   focusCommandBar: () => void;
   registerCommandBarFocus: (fn: () => void) => () => void;
 };
@@ -277,9 +283,9 @@ export function RahProvider({ children }: { children: ReactNode }) {
     }
     // Workflow approvals: dispatch to executor.
     if (cur.workflowRunId) {
-      void executorResumeAfterApproval(cur.workflowRunId, id, buildExecutorDeps({ requestApproval, reloadApprovals }));
+      void executorResumeAfterApproval(cur.workflowRunId, id, buildExecutorDeps({ requestApproval, reloadApprovals, projectMemory, ravenState: getRavenModeState() }));
     }
-  }, [reloadApprovals]);
+  }, [reloadApprovals, requestApproval, projectMemory]);
 
   const runApprovedCommand = useCallback<Ctx["runApprovedCommand"]>(async (commandId) => {
     const db = await getDB();
@@ -336,12 +342,28 @@ export function RahProvider({ children }: { children: ReactNode }) {
 
   const emergencyStop = useCallback(async () => {
     const db = await getDB();
+    // 1. Cancel every pending approval (including workflow step approvals).
     const pending = await db.getAll("approvals");
     for (const a of pending) if (a.status === "pending") await db.put("approvals", { ...a, status: "cancelled" });
     await reloadApprovals();
-    // Abort any running workflow executors.
+    // 2. Abort in-flight executors AND persist cancellation for every
+    // active/awaiting_approval/paused workflow run so no later step can run.
     const runs = await db.getAll("workflowRuns");
-    for (const r of runs) if (r.status === "running" || r.status === "awaiting_approval") executorAbort(r.runId);
+    const now = Date.now();
+    for (const r of runs) {
+      if (r.status === "running" || r.status === "awaiting_approval" || r.status === "paused") {
+        executorAbort(r.runId);
+        const moved = transitionRun(r, "cancelled", { now });
+        moved.events = await appendEvent(r.events, {
+          runId: r.runId, workflowId: r.workflowId, type: "run.cancelled",
+          actor: "user", prevState: r.status, nextState: "cancelled",
+          ts: now,
+          metadata: { reason: "emergency_stop" },
+        });
+        moved.failureReason = "emergency_stop";
+        await db.put("workflowRuns", moved);
+      }
+    }
     if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("rah:emergency-stop"));
   }, [reloadApprovals]);
 
@@ -352,14 +374,20 @@ export function RahProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const workflowRun = useCallback<Ctx["workflowRun"]>(async (runId) => {
-    await executorRunWorkflow(runId, buildExecutorDeps({ requestApproval, reloadApprovals }));
-  }, [requestApproval, reloadApprovals]);
+    await executorRunWorkflow(runId, buildExecutorDeps({ requestApproval, reloadApprovals, projectMemory, ravenState: getRavenModeState() }));
+  }, [requestApproval, reloadApprovals, projectMemory]);
   const workflowPause = useCallback<Ctx["workflowPause"]>(async (runId) => {
-    await executorPauseRun(runId, buildExecutorDeps({ requestApproval, reloadApprovals }));
-  }, [requestApproval, reloadApprovals]);
+    await executorPauseRun(runId, buildExecutorDeps({ requestApproval, reloadApprovals, projectMemory, ravenState: getRavenModeState() }));
+  }, [requestApproval, reloadApprovals, projectMemory]);
   const workflowCancel = useCallback<Ctx["workflowCancel"]>(async (runId) => {
-    await executorCancelRun(runId, buildExecutorDeps({ requestApproval, reloadApprovals }));
-  }, [requestApproval, reloadApprovals]);
+    await executorCancelRun(runId, buildExecutorDeps({ requestApproval, reloadApprovals, projectMemory, ravenState: getRavenModeState() }));
+  }, [requestApproval, reloadApprovals, projectMemory]);
+  const workflowResume = useCallback<Ctx["workflowResume"]>(async (runId) => {
+    await executorResumePaused(runId, buildExecutorDeps({ requestApproval, reloadApprovals, projectMemory, ravenState: getRavenModeState() }));
+  }, [requestApproval, reloadApprovals, projectMemory]);
+  const workflowRetry = useCallback<Ctx["workflowRetry"]>(async (runId) => {
+    await executorRetry(runId, buildExecutorDeps({ requestApproval, reloadApprovals, projectMemory, ravenState: getRavenModeState() }));
+  }, [requestApproval, reloadApprovals, projectMemory]);
 
   // Reconcile stale workflow runs on startup.
   useEffect(() => {
@@ -369,11 +397,11 @@ export function RahProvider({ children }: { children: ReactNode }) {
       const runs = await db.getAll("workflowRuns");
       for (const r of runs) {
         if (r.status === "running") {
-          await executorReconcile(r.runId, buildExecutorDeps({ requestApproval, reloadApprovals }));
+          await executorReconcile(r.runId, buildExecutorDeps({ requestApproval, reloadApprovals, projectMemory, ravenState: getRavenModeState() }));
         }
       }
     })();
-  }, [ready, requestApproval, reloadApprovals]);
+  }, [ready, requestApproval, reloadApprovals, projectMemory]);
 
   const value: Ctx = {
     ready, prefs: prefs ?? {
@@ -401,7 +429,7 @@ export function RahProvider({ children }: { children: ReactNode }) {
     approvals, reloadApprovals, requestApproval, resolveApproval,
     runApprovedCommand,
     emergencyStop,
-    workflowRun, workflowPause, workflowCancel,
+    workflowRun, workflowPause, workflowCancel, workflowResume, workflowRetry,
     focusCommandBar, registerCommandBarFocus,
   };
 
@@ -415,8 +443,22 @@ export function RahProvider({ children }: { children: ReactNode }) {
 function buildExecutorDeps(hooks: {
   requestApproval: (a: Omit<Approval, "id" | "createdAt" | "status">) => Promise<Approval>;
   reloadApprovals: () => Promise<void>;
+  projectMemory: ProjectMemoryRecord[];
+  ravenState: { mode: "fast" | "deep"; pinnedIds: string[]; excludedIds: string[] };
 }) {
   return {
+    buildContextExtra: (wf: { id: string; projectId: string | null; executionProfile?: "fast" | "deep" }) => {
+      // Build the SAME packet the CommandBar uses so Fast/Deep behavior in
+      // workflows is observable and matches the Context Manager preview.
+      const mode = wf.executionProfile === "deep" ? "deep" : "fast";
+      const packet = buildContextPacket(hooks.projectMemory, {
+        mode,
+        projectId: wf.projectId ?? null,
+        pinnedIds: hooks.ravenState.pinnedIds,
+        excludedIds: hooks.ravenState.excludedIds,
+      });
+      return packet.text;
+    },
     loadRun: async (id: string) => {
       const db = await getDB();
       return (await db.get("workflowRuns", id)) ?? null;
@@ -452,10 +494,17 @@ function buildExecutorDeps(hooks: {
       await hooks.reloadApprovals();
       return approval;
     },
-    ai: async ({ prompt, signal, mode }: { prompt: string; signal: AbortSignal; mode: string }) => {
+    ai: async ({ prompt, signal, mode, systemExtra }: { prompt: string; signal: AbortSignal; mode: string; systemExtra?: string }) => {
       let text = "", provider = "", model = "", latencyMs = 0;
       await streamChat(
-        { prompt, agents: ["brain"], mode: (mode as "fast" | "deep_project"), signal, context: {} },
+        {
+          prompt, agents: ["brain"],
+          mode: (mode as "fast" | "deep_project"),
+          signal,
+          // Actually inject the Fast/Deep context packet the executor built.
+          // Empty string = no memory selected (still explicit, not silently omitted).
+          context: { projectMemoryBlock: systemExtra ?? "" },
+        },
         {
           onStart: (i) => { provider = i.provider; model = i.model; },
           onDelta: (_c, full) => { text = full; },
@@ -489,7 +538,20 @@ function buildExecutorDeps(hooks: {
     bridge: {
       status: async () => {
         const s = await bridgeStatusSnapshot();
-        return { status: s.ui, capabilities: [] };
+        if (s.ui !== "paired_online") return { status: s.ui, capabilities: [] as string[] };
+        // Fetch the real capability manifest. If the call fails we return
+        // an empty list, which now DENIES all bridge steps by default
+        // (see workflowExecutor.assertBridgeCapability).
+        try {
+          const c = await bridgeCapabilities();
+          const disabled = new Set(c?.disabled ?? []);
+          const caps = Object.entries(c?.capabilities ?? {})
+            .filter(([id, spec]) => !disabled.has(id as never) && !(spec as { disabled?: boolean }).disabled)
+            .map(([id]) => id);
+          return { status: s.ui, capabilities: caps };
+        } catch {
+          return { status: s.ui, capabilities: [] as string[] };
+        }
       },
       readFile: async (p: string) => {
         const r = await bridgeReadText(p);
