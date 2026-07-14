@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { CommandBar } from "@/components/rah/CommandBar";
+import { FocusBlockCard } from "@/components/rah/FocusBlockCard";
 import { useRah } from "@/lib/rah/context";
 import { RavenMark } from "@/components/rah/RavenMark";
 import {
@@ -205,7 +206,7 @@ function CommandCenter() {
       <header className="glass-panel gold-border p-4">
         <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4 sm:flex sm:flex-wrap sm:items-center">
           <div className="min-w-0">
-            <div className="text-[11px] uppercase tracking-widest text-muted-foreground">Raven Home · Alpha 0.1</div>
+            <div className="text-[11px] uppercase tracking-widest text-muted-foreground">Raven Home · Alpha 0.2</div>
             <h1 className="display text-2xl md:text-3xl gold-text truncate">
               {welcome.salutation}, {welcome.userName || "there"}.
             </h1>
@@ -290,6 +291,9 @@ function CommandCenter() {
 
       {/* ── Command Bar (always immediately reachable) ─────────────── */}
       <CommandBar />
+
+      {/* ── Focus block (mission timer + explicit workflow) ─────────── */}
+      <FocusBlockCard />
 
       {focus ? null : (
         <div className="grid gap-4 lg:grid-cols-3">
