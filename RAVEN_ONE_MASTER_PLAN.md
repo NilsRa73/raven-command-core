@@ -694,3 +694,65 @@ and approvals infrastructure.
 - TypeScript `tsgo --noEmit`: clean.
 - `bun run build`: succeeds.
 - Not deployed, not published.
+
+## Screen Vision v0.3 — Foundation (drag geometry, integrity hashing, history route)
+
+**Shipped in this batch (verified by tests):**
+- New deterministic helper `src/lib/rah/visionGeometry.js` (+ `.d.ts`)
+  owns every geometry decision so the future drag-to-draw UI can be a
+  thin renderer: `computeDisplayTransform` (contain / cover / stretch),
+  `displayToImage` / `imageToDisplay` roundtrips, `normalizeDrag` (any
+  direction → positive-dimension rect, clamped to frame, min-edge
+  enforced, honest `reason` codes on rejection), `clampRegionToFrame`,
+  `moveRegion`, `resizeRegion` (per-handle with min-edge preservation),
+  `hitTestRegion` and `hitTestHandle` (display-space handle detection
+  with body/handle discrimination), `sortRegionsStable`, `regionsAreDirty`,
+  and a capped, coalescing undo/redo history (`createHistory`,
+  `historyPush`, `historyUndo`, `historyRedo`, `canUndo`, `canRedo`).
+- New deterministic helper `src/lib/rah/visionHash.js` (+ `.d.ts`)
+  computes **SHA-256** frame integrity hashes. Isomorphic: uses Web
+  Crypto when available (browser + Node 20+), falls back to
+  `node:crypto`. Accepts `Uint8Array`, `ArrayBuffer`, `ArrayBufferView`,
+  UTF-8 strings, and `data:` base64 URLs. Returns `null` (never throws)
+  for invalid input so upstream code can persist evidence with a labelled
+  hash gap rather than fabricating one. `hashFrameBytes` returns
+  `{ hash: "sha256:<hex>", algorithm: "sha256", hashedAt }`.
+  `hashesEqual` is prefix-agnostic and length-strict (64 hex chars).
+  Duplicate detection in geometry (`frameDuplicateStrength`) prefers
+  cryptographic hash equality and clearly labels weaker metadata-only
+  matches so the UI never overstates confidence.
+- New route **`/vision-history`** (`src/routes/vision-history.tsx`)
+  renders a read-only history of sessions and evidence built entirely
+  from `filterVisionHistory` + IndexedDB v8 stores. Search, status, and
+  privacy-class filters. Sensitive captures are gated behind an explicit
+  Reveal/Hide toggle — nothing sensitive is displayed by default.
+  Missing integrity hashes are surfaced with an explicit "no integrity
+  hash" chip; no hash is ever fabricated. Export JSON and Export
+  Markdown reuse the already-shipped helpers; Markdown export continues
+  to omit raw image data (asserted by existing tests).
+- Nav link added to `AppShell.tsx` between `Screen Vision` and the
+  authoring routes.
+
+**Known limitations (honest):**
+- Drag-to-draw pointer UI on the capture canvas is **not wired** in this
+  batch. All geometry primitives (transforms, drag normalization, hit
+  testing, move/resize, undo/redo) are shipped and unit-tested; the UI
+  glue lives in `src/routes/vision.tsx` and remains numeric-coordinate
+  entry until the next batch.
+- Frame hashing is not yet computed automatically inside
+  `src/routes/vision.tsx`; the helper is shipped and safe to call. The
+  `hash` field on stored `FrameMetadata` will start populating when the
+  capture pipeline wires `hashFrameBytes` around the produced PNG bytes.
+- The history route is read-only. Deletion still happens via the
+  Privacy page's wipe controls.
+- No IndexedDB migration in this batch (v8 remains current); v0.3 only
+  adds pure helpers, a new read-only route, and a nav entry.
+
+**Verification:**
+- Two new deterministic test files added: `vision-geometry.test.js`
+  (15 cases covering transforms, drag normalization edge cases,
+  clamp/move/resize/handle detection, stable ordering, capped
+  undo/redo, and hash-first duplicate detection) and
+  `vision-hash.test.js` (8 cases including NIST SHA-256 vectors for
+  empty input and `"abc"`, base64 `data:` URL equivalence, `null`
+  handling, and prefix-agnostic equality).
