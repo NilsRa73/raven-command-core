@@ -258,6 +258,60 @@ function VisionPage() {
   const [videoLastError, setVideoLastError] = useState<string>("");
   const [showDiagnostics, setShowDiagnostics] = useState<boolean>(false);
 
+  // Screen Vision v0.2 additions ----------------------------------------
+  const [reviewStage, setReviewStage] = useState<ReviewStage>("idle");
+  const [pendingFrame, setPendingFrame] = useState<CapturedFrame | null>(null);
+  const [userMarkedSensitive, setUserMarkedSensitive] = useState(false);
+  const [privacyNote, setPrivacyNote] = useState("");
+  const [regions, setRegions] = useState<RedactionRegion[]>([]);
+  const [showRedactionPanel, setShowRedactionPanel] = useState(false);
+  const [previewRedacted, setPreviewRedacted] = useState(true);
+  const [redactedDataUrl, setRedactedDataUrl] = useState<string>("");
+  const [savedEvidenceId, setSavedEvidenceId] = useState<string | null>(null);
+  const [regionDraft, setRegionDraft] = useState<{ x: string; y: string; w: string; h: string; label: string }>({ x: "", y: "", w: "", h: "", label: "" });
+
+  const privacy = useMemo(() =>
+    classifyPrivacy({
+      userMarkedSensitive,
+      note: privacyNote,
+      question,
+      sourceLabel,
+    }), [userMarkedSensitive, privacyNote, question, sourceLabel]);
+
+  const variantChoice = useMemo(() => selectFrameVariant({
+    regions,
+    privacyClass: privacy.class,
+    userChoice: previewRedacted && regions.length > 0 ? "redacted" : "original",
+  }), [regions, privacy.class, previewRedacted]);
+
+  const advanceReview = useCallback((event: Parameters<typeof nextReviewState>[1]) => {
+    setReviewStage((s) => nextReviewState(s, event) as ReviewStage);
+  }, []);
+
+  // Build a redacted preview by drawing black rectangles over accepted regions.
+  useEffect(() => {
+    if (!pendingFrame || regions.length === 0) { setRedactedDataUrl(""); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const img = new Image();
+        img.src = pendingFrame.dataUrl;
+        await new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = () => rej(new Error("preview_load_failed")); });
+        const canvas = document.createElement("canvas");
+        canvas.width = pendingFrame.width;
+        canvas.height = pendingFrame.height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#000";
+        for (const r of regions) ctx.fillRect(r.x, r.y, r.w, r.h);
+        const url = canvas.toDataURL("image/jpeg", 0.85);
+        if (!cancelled) setRedactedDataUrl(url);
+      } catch { /* ignore preview failures */ }
+    })();
+    return () => { cancelled = true; };
+  }, [pendingFrame, regions]);
+
   // Cleanup on unmount: stop any active tracks + abort any in-flight request.
   useEffect(() => {
     return () => {
