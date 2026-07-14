@@ -14,7 +14,7 @@ import {
   resumePausedRun as executorResumePaused,
   retryRun as executorRetry,
 } from "./workflowExecutor";
-import { STEP_CATALOG, appendEvent, transitionRun } from "./workflow";
+import { STEP_CATALOG, appendEvent } from "./workflow";
 import {
   bridgeStatusSnapshot,
   bridgeReadText, bridgePrepare, bridgeExecute, bridgeCapabilities,
