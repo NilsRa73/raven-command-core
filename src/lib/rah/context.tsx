@@ -381,11 +381,11 @@ export function RahProvider({ children }: { children: ReactNode }) {
       const runs = await db.getAll("workflowRuns");
       for (const r of runs) {
         if (r.status === "running") {
-          await executorReconcile(r.runId, buildExecutorDeps({ requestApproval, reloadApprovals }));
+          await executorReconcile(r.runId, buildExecutorDeps({ requestApproval, reloadApprovals, projectMemory, ravenState: getRavenModeState() }));
         }
       }
     })();
-  }, [ready, requestApproval, reloadApprovals]);
+  }, [ready, requestApproval, reloadApprovals, projectMemory]);
 
   const value: Ctx = {
     ready, prefs: prefs ?? {
@@ -413,7 +413,7 @@ export function RahProvider({ children }: { children: ReactNode }) {
     approvals, reloadApprovals, requestApproval, resolveApproval,
     runApprovedCommand,
     emergencyStop,
-    workflowRun, workflowPause, workflowCancel,
+    workflowRun, workflowPause, workflowCancel, workflowResume, workflowRetry,
     focusCommandBar, registerCommandBarFocus,
   };
 
