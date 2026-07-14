@@ -1,6 +1,6 @@
 # Raven One — Master Plan
 
-Version: Raven One · Alpha 0.2 — Workflow Engine + Fast/Deep hardening + Raven Home v0.2 + Voice v0.2 + Native companion v0.3 + Screen Vision v0.3 (foundation)
+Version: Raven One · Alpha 0.2 — Workflow Engine + Fast/Deep hardening + Raven Home v0.2 + Voice v0.2 + Native companion v0.3 + Screen Vision v0.3 (hashing + lifecycle)
 Owner: Nils (RAH AI Studios)
 Status: Living document — single source of truth for the Raven One product line.
 
@@ -39,6 +39,7 @@ progress, or telemetry.
 | Screen Vision       | `src/routes/vision.tsx`, `src/lib/rah/screenVision.js` |
 | Vision History      | `src/routes/vision-history.tsx`, `src/lib/rah/visionSessions.js` |
 | Vision geometry     | `src/lib/rah/visionGeometry.js`, `src/lib/rah/visionHash.js` |
+| Vision lifecycle    | `src/lib/rah/visionLifecycle.js` (session lifecycle, result versioning, storage choice, receipts, import planner) |
 | Project Memory      | `src/routes/memory.tsx`, `src/lib/rah/projectMemory.js` |
 | AI Council / Agents | `src/routes/agents.tsx`, `src/lib/rah/orchestrator.js` |
 | Workflow Engine     | `src/routes/automations.tsx`, `src/lib/rah/workflow.js`, `src/lib/rah/workflowExecutor.js` |
@@ -747,6 +748,103 @@ and approvals infrastructure.
   Privacy page's wipe controls.
 - No IndexedDB migration in this batch (v8 remains current); v0.3 only
   adds pure helpers, a new read-only route, and a nav entry.
+
+## Screen Vision v0.3 — Hashing + lifecycle batch (this batch)
+
+**Shipped in this batch (verified by tests):**
+- New deterministic helper `src/lib/rah/visionLifecycle.js` (+ `.d.ts`)
+  covers the missing v0.3 pure-logic layer without a schema migration:
+  - `startSession` requires explicit `projectId` choice (may be `null` for
+    "no project" but must be provided), consent, and a source label; never
+    fabricates a session on stream connect.
+  - `incrementCaptureCount` advances only on active sessions (no
+    silent inflation on ended/cancelled sessions).
+  - `endSession` / `cancelSession` are idempotent, terminal, and
+    stamp `endReason`; `isSessionLive` is the single truth for exit
+    guards.
+  - `shapeHashResult` never fabricates a hash — records `byteLength`,
+    `algorithm`, `hashedAt`, and an explicit `failureReason` when hashing
+    is unavailable or decode fails.
+  - `chooseEvidenceStorage` defaults to `metadata_only`; explicit opt-in
+    with `includeImage: true` requires actual `hasImageBytes` and returns
+    an honest `no_image_bytes_available` warning otherwise.
+  - `createResult` stores IMMUTABLE raw model output; `createResultVersion`
+    appends new versions (`editedText` + `previousVersionId`) without
+    mutating `rawText`; `buildResultChain` walks the append-only chain in
+    version order.
+  - `shapeSaveReceipt` returns a typed destination receipt (id + at +
+    meta) from the fixed `SAVE_DESTINATIONS` set (project_memory,
+    chronicle, evidence_version, command_center, workflow_proposal,
+    safe_action_proposal, clipboard) — unknown destinations are rejected.
+  - `canDispatchProposal` is the confirmation dispatch gate: `denied`
+    proposals cannot execute, `ui_only` require explicit `confirmed`,
+    `workflow_handoff` always returns `handoff_inert` (never dispatched
+    directly regardless of confirmation).
+  - `filterVisionArtifacts` filters sessions, evidence, and results
+    independently on the same criteria (q, projectId, status,
+    privacyClass, source, since, until) so a text search inside a result
+    is not masked by a session that doesn't share the text.
+  - `planImportApply` classifies each incoming session/evidence as
+    `create` | `replace` | `skip` with `duplicate_id` / `hash_collision`
+    reasons; per-id `conflictActions` overrides let the UI resolve
+    conflicts explicitly. No silent overwrite.
+  - `shouldConfirmVisionExit` unifies the navigation guard across live
+    sessions and dirty drafts (regions, result draft, evidence notes).
+- `src/routes/vision.tsx` now hashes captured frames **automatically**:
+  both the ImageCapture and video-canvas capture paths compute SHA-256
+  over the exact JPEG bytes before returning a `CapturedFrame`. The
+  hash and its `hashFailureReason` (never fabricated) are stored on the
+  frame object, passed through to `shapeEvidenceRecord` on Save, and
+  surfaced honestly in the save toast (`sha256 <first-16>…` or
+  `no integrity hash (<reason>)`). The redacted-derivative bytes are
+  hashed at save time and persisted on `redactedFrame.hash` when regions
+  exist and a redacted preview is generated.
+- `src/routes/vision-history.tsx` gains project, source-contains, and
+  since/until date filters wired through `filterVisionArtifacts`, plus a
+  "· N versions" hint per result computed from `buildResultChain`.
+  Sensitive-frame Reveal gating, integrity-hash chips, and metadata-only
+  Markdown/JSON exports are unchanged.
+
+**Known limitations (honest):**
+- Drag-to-draw pointer overlay on the capture canvas remains **not
+  wired** in this batch. All geometry primitives (transforms, drag
+  normalization, hit testing, move/resize, undo/redo) are shipped and
+  unit-tested in `visionGeometry.js`; the capture-review panel in
+  `vision.tsx` still uses numeric coordinate entry for region editing.
+- The explicit `startSession` / `endSession` / `cancelSession` helpers
+  are shipped, tested, and exported, but the vision route has not yet
+  been migrated to require an explicit "Start Vision Session" click
+  before capture — a session is still implicit in this batch. Follow-up
+  work will wire the helpers to the `visionSessions` IndexedDB store.
+- Immutable result versioning helpers (`createResult`,
+  `createResultVersion`, `buildResultChain`) are shipped and tested;
+  persistence of full version chains through explicit "Save Result" and
+  "Save Edit as New Version" buttons in `vision.tsx` is not yet wired.
+  `visionResults` records still come only from the pre-existing evidence
+  path.
+- Destination receipts, confirmation dispatch gates, and import-apply
+  planning are shipped as pure helpers with typed shapes; the "Confirm
+  Vision Action" modal and the JSON import Preview / Apply UI are not
+  yet mounted in `vision.tsx`. No claims of OCR, automatic sensitive-
+  data detection, or successful side-effect execution are made anywhere
+  in the shipped UI.
+
+**Verification:**
+- New deterministic test file `desktop-bridge/tests/vision-lifecycle.test.js`
+  (14 cases) covering: session lifecycle (start requirements, capture
+  count, terminal transitions, live detection); hash-result shaping
+  (never fabricates, records byte length + failure reason); storage
+  choice (metadata-only default, explicit opt-in with image bytes);
+  immutable result versioning (raw preserved, chain order); destination
+  receipts (unknown destination rejection); confirmation dispatch gates
+  (denied / ui_only / workflow_handoff behavior); cross-artifact
+  filtering (independent q / project / status / privacy / source /
+  range); import apply planning (duplicate id + hash collision +
+  per-id overrides); combined exit guard.
+- Full suite: **525/525 passing** (was 511).
+- `bunx tsgo --noEmit`: clean.
+- `bun run build`: succeeds.
+- Not deployed, not published.
 
 **Verification:**
 - Two new deterministic test files added: `vision-geometry.test.js`
