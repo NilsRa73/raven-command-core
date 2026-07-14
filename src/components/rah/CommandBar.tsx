@@ -27,6 +27,10 @@ import {
 } from "@/lib/rah/localAi";
 import { useBridgeStatus, refreshBridgeStatus } from "@/lib/rah/bridgeStatus";
 import { routeText as computeRouteText, shouldShowBridgeOfflineBanner } from "@/lib/rah/bridgeStatusLabels";
+import { RavenModeControl } from "./RavenModeControl";
+import { getRavenModeState, subscribeRavenMode } from "@/lib/rah/ravenModeStore";
+import { buildContextPacket, classifyRoute, RAVEN_MODE_META } from "@/lib/rah/ravenMode";
+import { logRavenAudit } from "@/lib/rah/ravenAudit";
 import {
   prepareImage, releasePrepared, validateBatch, metaFromPrepared,
   drainPendingImages, preparedFromPending, ACCEPTED_MIME,
@@ -59,6 +63,9 @@ export function CommandBar() {
   const streaming = response?.state === "thinking" || response?.state === "streaming";
   const { snapshot: bridgeSnap, refresh: refreshBridge, refreshing: bridgeRefreshing } = useBridgeStatus();
   const orch = useOrchestration();
+  const [ravenState, setRavenState] = useState(() => getRavenModeState());
+  useEffect(() => subscribeRavenMode(setRavenState), []);
+  const ravenMode = ravenState.mode;
   // Also kick a refresh whenever the CommandBar mounts (e.g. user returns to
   // Command Center from another route) so the route line and offline banner
   // reflect current truth immediately, not the 5s-old poll tick.
@@ -241,7 +248,15 @@ export function CommandBar() {
       const memory = rah.prefs.memoryEnabled
         ? rah.memory.filter((m) => !m.disabled && (!m.projectId || m.projectId === rah.activeProject?.id)).map((m) => m.text)
         : [];
-      const projectMemoryBlock = rah.prefs.memoryEnabled ? rah.buildProjectMemoryContext().memoryBlock : "";
+      const packet = rah.prefs.memoryEnabled
+        ? buildContextPacket(rah.projectMemory, {
+            mode: ravenMode, projectId: rah.activeProject?.id ?? null,
+            pinnedIds: ravenState.pinnedIds, excludedIds: ravenState.excludedIds,
+          })
+        : null;
+      const projectMemoryBlock = packet?.text ?? "";
+      const route = classifyRoute(prompt, { mode: ravenMode, approvalMode });
+      logRavenAudit({ type: "route_decision", detail: `${route.label} (${route.target})`, source: "send", meta: { mode: ravenMode, reasons: route.reasons } });
       const cmd = await rah.addCommand({
         prompt, agents: selectedAgents, mode, fileIds: [],
         projectId: rah.activeProject?.id, inputType: listening ? "voice" : "text",
@@ -387,7 +402,15 @@ export function CommandBar() {
     const memory = rah.prefs.memoryEnabled
       ? rah.memory.filter((m) => !m.disabled && (!m.projectId || m.projectId === rah.activeProject?.id)).map((m) => m.text)
       : [];
-    const projectMemoryBlock = rah.prefs.memoryEnabled ? rah.buildProjectMemoryContext().memoryBlock : "";
+    const packet = rah.prefs.memoryEnabled
+      ? buildContextPacket(rah.projectMemory, {
+          mode: ravenMode, projectId: rah.activeProject?.id ?? null,
+          pinnedIds: ravenState.pinnedIds, excludedIds: ravenState.excludedIds,
+        })
+      : null;
+    const projectMemoryBlock = packet?.text ?? "";
+    const route = classifyRoute(prompt, { mode: ravenMode, approvalMode });
+    logRavenAudit({ type: "route_decision", detail: `${route.label} (${route.target})`, source: "runInference", meta: { mode: ravenMode, target: RAVEN_MODE_META[ravenMode].target } });
 
     try {
       let providerLabel = "Lovable AI Gateway";
@@ -493,6 +516,7 @@ export function CommandBar() {
       onDrop={onDrop}
     >
       <div className="flex flex-wrap items-center gap-2 text-xs">
+        <RavenModeControl prompt={text} />
         <Select value={rah.activeProject?.id ?? "none"} onValueChange={(v) => void rah.setActiveProject(v === "none" ? undefined : v)}>
           <SelectTrigger className="h-8 w-[180px]"><SelectValue placeholder="Project" /></SelectTrigger>
           <SelectContent>
