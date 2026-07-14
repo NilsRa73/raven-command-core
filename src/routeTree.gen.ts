@@ -17,6 +17,7 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
+import { Route as NativeRouteImport } from './routes/native'
 import { Route as MemoryRouteImport } from './routes/memory'
 import { Route as HistoryRouteImport } from './routes/history'
 import { Route as FilesRouteImport } from './routes/files'
@@ -70,6 +71,11 @@ const PrivacyRoute = PrivacyRouteImport.update({
 const OnboardingRoute = OnboardingRouteImport.update({
   id: '/onboarding',
   path: '/onboarding',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NativeRoute = NativeRouteImport.update({
+  id: '/native',
+  path: '/native',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MemoryRoute = MemoryRouteImport.update({
@@ -154,6 +160,7 @@ export interface FileRoutesByFullPath {
   '/files': typeof FilesRoute
   '/history': typeof HistoryRoute
   '/memory': typeof MemoryRoute
+  '/native': typeof NativeRoute
   '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
   '/projects': typeof ProjectsRouteWithChildren
@@ -178,6 +185,7 @@ export interface FileRoutesByTo {
   '/files': typeof FilesRoute
   '/history': typeof HistoryRoute
   '/memory': typeof MemoryRoute
+  '/native': typeof NativeRoute
   '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
   '/projects': typeof ProjectsRouteWithChildren
@@ -203,6 +211,7 @@ export interface FileRoutesById {
   '/files': typeof FilesRoute
   '/history': typeof HistoryRoute
   '/memory': typeof MemoryRoute
+  '/native': typeof NativeRoute
   '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
   '/projects': typeof ProjectsRouteWithChildren
@@ -229,6 +238,7 @@ export interface FileRouteTypes {
     | '/files'
     | '/history'
     | '/memory'
+    | '/native'
     | '/onboarding'
     | '/privacy'
     | '/projects'
@@ -253,6 +263,7 @@ export interface FileRouteTypes {
     | '/files'
     | '/history'
     | '/memory'
+    | '/native'
     | '/onboarding'
     | '/privacy'
     | '/projects'
@@ -277,6 +288,7 @@ export interface FileRouteTypes {
     | '/files'
     | '/history'
     | '/memory'
+    | '/native'
     | '/onboarding'
     | '/privacy'
     | '/projects'
@@ -302,6 +314,7 @@ export interface RootRouteChildren {
   FilesRoute: typeof FilesRoute
   HistoryRoute: typeof HistoryRoute
   MemoryRoute: typeof MemoryRoute
+  NativeRoute: typeof NativeRoute
   OnboardingRoute: typeof OnboardingRoute
   PrivacyRoute: typeof PrivacyRoute
   ProjectsRoute: typeof ProjectsRouteWithChildren
@@ -371,6 +384,13 @@ declare module '@tanstack/react-router' {
       path: '/onboarding'
       fullPath: '/onboarding'
       preLoaderRoute: typeof OnboardingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/native': {
+      id: '/native'
+      path: '/native'
+      fullPath: '/native'
+      preLoaderRoute: typeof NativeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/memory': {
@@ -497,6 +517,7 @@ const rootRouteChildren: RootRouteChildren = {
   FilesRoute: FilesRoute,
   HistoryRoute: HistoryRoute,
   MemoryRoute: MemoryRoute,
+  NativeRoute: NativeRoute,
   OnboardingRoute: OnboardingRoute,
   PrivacyRoute: PrivacyRoute,
   ProjectsRoute: ProjectsRouteWithChildren,
