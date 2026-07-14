@@ -1,0 +1,77 @@
+name: Build RAH Desktop Bridge — Development (unsigned)
+
+# Dev/PR builds. NEVER attempts code signing. Produces an unsigned
+# installer clearly labelled as such. Runs the release preflight but
+# tolerates missing signing secrets (they are expected to be absent
+# here). Never publishes.
+
+on:
+  workflow_dispatch: {}
+  pull_request:
+    paths:
+      - "desktop-bridge/**"
+      - "desktop-bridge-native/**"
+      - "scripts/**"
+      - "src/lib/rah/updater.js"
+      - ".github/workflows/release-desktop-bridge-dev.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  dev-build:
+    name: Unsigned dev installer (windows-x86_64)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+
+      - name: Bridge tests
+        working-directory: desktop-bridge
+        run: node --test tests/*.test.js
+
+      - name: Release preflight (warnings only for dev)
+        run: node scripts/release-preflight.mjs || echo "::warning::preflight reported blockers (expected on dev)"
+
+      - name: Bundle sidecar
+        run: node desktop-bridge-native/package-sidecar.mjs
+
+      - uses: dtolnay/rust-toolchain@stable
+        with: { targets: x86_64-pc-windows-msvc }
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: "desktop-bridge-native/src-tauri -> target" }
+
+      - name: Rust unit tests
+        working-directory: desktop-bridge-native/src-tauri
+        run: cargo test --lib --release
+
+      - name: Build SEA sidecar exe
+        shell: pwsh
+        working-directory: desktop-bridge-native/src-tauri/binaries
+        run: |
+          node --experimental-sea-config sea-config.json
+          Copy-Item (Get-Command node).Source rah-bridge-sidecar-x86_64-pc-windows-msvc.exe
+          npx --yes postject rah-bridge-sidecar-x86_64-pc-windows-msvc.exe NODE_SEA_BLOB sea-prep.blob `
+            --sentinel-fuse NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2
+
+      - name: Build Tauri installer (UNSIGNED)
+        working-directory: desktop-bridge-native/src-tauri
+        run: cargo tauri build --target x86_64-pc-windows-msvc --bundles nsis
+
+      - name: Label artifacts as unsigned
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Get-ChildItem -Recurse desktop-bridge-native/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis -Filter *.exe | ForEach-Object {
+            Copy-Item $_.FullName ("dist/" + $_.BaseName + "-unsigned-dev.exe") -Force
+          }
+          "This build is UNSIGNED and for development testing only." | Out-File -Encoding ascii dist/UNSIGNED.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rah-desktop-bridge-dev-unsigned
+          path: dist/
+          if-no-files-found: error
