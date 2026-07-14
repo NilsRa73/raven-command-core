@@ -16,9 +16,9 @@ progress, or telemetry.
 - Local AI: LM Studio / Ollama on the user's PC, proxied through the
   authenticated RAH Desktop Bridge (v0.2.1) at `127.0.0.1:47824`.
 - Cloud AI: Lovable AI Gateway as a manual fallback.
-- Storage: IndexedDB v3 with stores for commands, memory, files, approvals,
-  workflows, and workflowRuns; plus localStorage for lightweight settings
-  (devices, focus mode, engine).
+- Storage: IndexedDB v4 with stores for commands, memory, files, approvals,
+  workflows, workflowRuns, and deviceHistory; plus localStorage for
+  lightweight settings (devices, focus mode, engine).
 - Native companion: `desktop-bridge-native/` (Tauri 2 + Node SEA sidecar).
 - Bridge protocol: HTTPS/loopback, HMAC-signed, one-time approval tokens,
   Private Network Access, path containment, feature manifest.
@@ -29,7 +29,7 @@ progress, or telemetry.
 | ------------------- | -------------------------------------------- |
 | Raven Home          | `src/routes/index.tsx`                       |
 | Project DNA         | `src/routes/projects.$id.tsx`, `src/lib/rah/projectDna.js` |
-| Device Center       | `src/routes/devices.tsx`, `src/lib/rah/devices.js` |
+| Device Center       | `src/routes/devices.tsx`, `src/lib/rah/devices.js`, `src/lib/rah/deviceRolesV2.js`, `src/lib/rah/deviceHistory.js`, `src/lib/rah/deviceHistoryDb.ts` |
 | Raven Chronicle     | `src/routes/chronicle.tsx`, `src/lib/rah/chronicle.js` |
 | Voice Assistant     | `src/routes/voice.tsx`, `src/lib/rah/voiceAssistant.js` |
 | Screen Vision       | `src/routes/vision.tsx`, `src/lib/rah/screenVision.js` |
@@ -205,11 +205,60 @@ progress, or telemetry.
       step and % progress, full event metadata, Verify Chain, Export Run
       JSON, and Context Packet Preview before Run.
 - [x] Tests: `hardening-batch.test.js`, `copy-file-and-fast-supporting.test.js`,
-      and `draft-guard.test.js` added. Current verified total: **294/294 tests
-      pass**, `bunx tsgo --noEmit` is clean, and the production build
-      succeeds.
+      and `draft-guard.test.js` added.
 
-- Device Center v0.2: role-based dashboards, hardware history charts.
+## Device Center v0.2 — Role dashboards + hardware history (complete)
+
+- [x] New pure helpers in `src/lib/rah/deviceRolesV2.js` (role definitions,
+      legacy mapping, grouping, per-role summaries, capability coverage) and
+      `src/lib/rah/deviceHistory.js` (snapshot capture from live bridge
+      health/system status, range filtering, gap detection, sparkline
+      normalization, JSON import validation + merge). All deterministic —
+      React components render helper output only.
+- [x] Seven v2 roles: **Command Node**, **AI Compute Node**, **Display / VR
+      Node**, **Storage Node**, **Bridge / Automation Node**, **Planned
+      Device**, and **Unassigned**. Legacy manual roles (`ai_core`,
+      `development`, `media`, `vr`, `pocket`, `other`) map safely into v2
+      buckets; unknown roles land in **Unassigned** — never guessed.
+- [x] Role dashboard on `/devices` shows live / offline / planned / unknown
+      counts, capability coverage, last-seen, and blocker chips. Missing
+      telemetry renders as "—"; no CPU/GPU/RAM/network values are ever
+      fabricated. Empty roles remain visible but muted.
+- [x] Local-first hardware history in IndexedDB v4 (`deviceHistory` store,
+      keyed by snapshot id, indexed by `deviceId` and `capturedAt`). Only
+      real snapshots are stored; disk/network fields are `null` today
+      because the Bridge does not report them yet.
+- [x] Explicit **Capture live snapshot** action in the device drawer,
+      disabled with an honest reason when the Bridge cannot supply
+      telemetry (`captureDisabledReason`). No silent polling.
+- [x] Device drawer detail view: role (v2 label), status, source label
+      (**Bridge / Manual / Planned**), latest real snapshot, selectable
+      range (24h / 7d / 30d / all), and simple accessible SVG sparklines
+      for CPU load and RAM used.
+- [x] Import / export device history as JSON (`raven-device-history/v1`).
+      Import validates every row, filters to the current device, and asks
+      the user (OK = replace, Cancel = skip) before overwriting entries
+      with the same id. No silent overwrite.
+- [x] IndexedDB upgraded from v3 → v4 with an additive `deviceHistory`
+      store; all prior user data preserved. `exportAll` and `wipeAll`
+      include the new store.
+- [x] Tests: `device-roles-v2.test.js` (7 cases) and
+      `device-history.test.js` (9 cases) added, covering role mapping,
+      dashboard summaries, capability coverage, range filtering, gap
+      detection, sparkline null-skip, import validation + merge modes,
+      and fail-closed capture behaviour. Existing `devices.test.js`
+      remains green — no regressions.
+- [x] Verified: **309/309 bridge tests pass**, `bunx tsgo --noEmit` clean,
+      `bun run build` succeeds.
+
+**Known limitations (honest):** Disk (storage) and per-interface network
+telemetry are not yet supplied by the Bridge, so the history stores those
+fields as `null` and the UI renders "—". Live capture is only available
+for the paired Bridge device; manual/planned nodes accept imported
+snapshots but cannot be captured from Raven itself. Sparklines are simple
+time-normalized SVG lines, not full charts. No cross-device aggregation
+charts yet — role dashboard shows counts only.
+
 - Chronicle v0.2: per-project chronicle views, weekly summary drafts.
 - Project DNA v0.2: roadmap milestone drag-and-drop, decisions changelog.
 - Raven Home v0.2: mission timer, "focus block" workflow, keyboard-first

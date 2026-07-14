@@ -3,6 +3,8 @@ import type { ProjectMemoryRecord } from "./projectMemory";
 export type { ProjectMemoryRecord } from "./projectMemory";
 import type { Workflow, WorkflowRun } from "./workflow";
 export type { Workflow, WorkflowRun } from "./workflow";
+import type { DeviceSnapshot } from "./deviceHistory";
+export type { DeviceSnapshot } from "./deviceHistory";
 
 export type ApprovalMode = "advisory" | "ask_every" | "trusted_low_risk";
 export type Theme = "raven" | "forest" | "arctic" | "hc";
@@ -144,13 +146,14 @@ interface Schema extends DBSchema {
   projectMemory: { key: string; value: ProjectMemoryRecord; indexes: { updatedAt: number; projectId: string } };
   workflows: { key: string; value: Workflow; indexes: { updatedAt: number; projectId: string } };
   workflowRuns: { key: string; value: WorkflowRun; indexes: { createdAt: number; workflowId: string; status: string } };
+  deviceHistory: { key: string; value: DeviceSnapshot; indexes: { capturedAt: number; deviceId: string } };
 }
 
 let dbp: Promise<IDBPDatabase<Schema>> | null = null;
 export function getDB() {
   if (typeof indexedDB === "undefined") throw new Error("IndexedDB unavailable");
   if (!dbp) {
-    dbp = openDB<Schema>("rah-listen-key", 3, {
+    dbp = openDB<Schema>("rah-listen-key", 4, {
       upgrade(db, oldVersion) {
         if (oldVersion < 1) {
           const p = db.createObjectStore("projects", { keyPath: "id" });
@@ -181,6 +184,11 @@ export function getDB() {
           wr.createIndex("createdAt", "createdAt");
           wr.createIndex("workflowId", "workflowId");
           wr.createIndex("status", "status");
+        }
+        if (oldVersion < 4) {
+          const dh = db.createObjectStore("deviceHistory", { keyPath: "id" });
+          dh.createIndex("capturedAt", "capturedAt");
+          dh.createIndex("deviceId", "deviceId");
         }
       },
     });
@@ -245,7 +253,7 @@ export async function savePrefs(p: Preferences) {
 
 export async function exportAll(): Promise<Blob> {
   const db = await getDB();
-  const [projects, commands, memory, approvals, prefs, files, projectMemory, workflows, workflowRuns] = await Promise.all([
+  const [projects, commands, memory, approvals, prefs, files, projectMemory, workflows, workflowRuns, deviceHistory] = await Promise.all([
     db.getAll("projects"),
     db.getAll("commands"),
     db.getAll("memory"),
@@ -255,6 +263,7 @@ export async function exportAll(): Promise<Blob> {
     db.getAll("projectMemory"),
     db.getAll("workflows"),
     db.getAll("workflowRuns"),
+    db.getAll("deviceHistory"),
   ]);
   const payload = {
     exportedAt: new Date().toISOString(),
@@ -267,13 +276,14 @@ export async function exportAll(): Promise<Blob> {
     projectMemory,
     workflows,
     workflowRuns,
+    deviceHistory,
   };
   return new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
 }
 
 export async function wipeAll() {
   const db = await getDB();
-  for (const store of ["projects", "commands", "memory", "files", "approvals", "prefs", "projectMemory", "workflows", "workflowRuns"] as const) {
+  for (const store of ["projects", "commands", "memory", "files", "approvals", "prefs", "projectMemory", "workflows", "workflowRuns", "deviceHistory"] as const) {
     await db.clear(store);
   }
 }
