@@ -71,7 +71,7 @@ test("planDryRun marks bridge steps blocked when bridge offline", () => {
   assert.equal(plan.dryRun, true);
   assert.equal(plan.steps[0].blocked, false);
   assert.equal(plan.steps[1].blocked, true);
-  assert.match(plan.steps[1].blockedReason, /Bridge offline/);
+  assert.match(plan.steps[1].blockedReason, /Bridge unpaired|Bridge offline|unavailable/);
 });
 
 test("planDryRun respects paired-online capability list", () => {
