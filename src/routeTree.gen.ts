@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as VoiceProfilesRouteImport } from './routes/voice-profiles'
 import { Route as VoiceRouteImport } from './routes/voice'
+import { Route as VisionHistoryRouteImport } from './routes/vision-history'
 import { Route as VisionRouteImport } from './routes/vision'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as SettingsRouteImport } from './routes/settings'
@@ -41,6 +42,11 @@ const VoiceProfilesRoute = VoiceProfilesRouteImport.update({
 const VoiceRoute = VoiceRouteImport.update({
   id: '/voice',
   path: '/voice',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const VisionHistoryRoute = VisionHistoryRouteImport.update({
+  id: '/vision-history',
+  path: '/vision-history',
   getParentRoute: () => rootRouteImport,
 } as any)
 const VisionRoute = VisionRouteImport.update({
@@ -167,6 +173,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/vision': typeof VisionRoute
+  '/vision-history': typeof VisionHistoryRoute
   '/voice': typeof VoiceRoute
   '/voice-profiles': typeof VoiceProfilesRoute
   '/api/rah-chat': typeof ApiRahChatRoute
@@ -192,6 +199,7 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/vision': typeof VisionRoute
+  '/vision-history': typeof VisionHistoryRoute
   '/voice': typeof VoiceRoute
   '/voice-profiles': typeof VoiceProfilesRoute
   '/api/rah-chat': typeof ApiRahChatRoute
@@ -218,6 +226,7 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/vision': typeof VisionRoute
+  '/vision-history': typeof VisionHistoryRoute
   '/voice': typeof VoiceRoute
   '/voice-profiles': typeof VoiceProfilesRoute
   '/api/rah-chat': typeof ApiRahChatRoute
@@ -245,6 +254,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/sitemap.xml'
     | '/vision'
+    | '/vision-history'
     | '/voice'
     | '/voice-profiles'
     | '/api/rah-chat'
@@ -270,6 +280,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/sitemap.xml'
     | '/vision'
+    | '/vision-history'
     | '/voice'
     | '/voice-profiles'
     | '/api/rah-chat'
@@ -295,6 +306,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/sitemap.xml'
     | '/vision'
+    | '/vision-history'
     | '/voice'
     | '/voice-profiles'
     | '/api/rah-chat'
@@ -321,6 +333,7 @@ export interface RootRouteChildren {
   SettingsRoute: typeof SettingsRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   VisionRoute: typeof VisionRoute
+  VisionHistoryRoute: typeof VisionHistoryRoute
   VoiceRoute: typeof VoiceRoute
   VoiceProfilesRoute: typeof VoiceProfilesRoute
   ApiRahChatRoute: typeof ApiRahChatRoute
@@ -342,6 +355,13 @@ declare module '@tanstack/react-router' {
       path: '/voice'
       fullPath: '/voice'
       preLoaderRoute: typeof VoiceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/vision-history': {
+      id: '/vision-history'
+      path: '/vision-history'
+      fullPath: '/vision-history'
+      preLoaderRoute: typeof VisionHistoryRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/vision': {
@@ -524,6 +544,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsRoute: SettingsRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   VisionRoute: VisionRoute,
+  VisionHistoryRoute: VisionHistoryRoute,
   VoiceRoute: VoiceRoute,
   VoiceProfilesRoute: VoiceProfilesRoute,
   ApiRahChatRoute: ApiRahChatRoute,
