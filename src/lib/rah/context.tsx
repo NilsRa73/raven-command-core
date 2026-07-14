@@ -10,7 +10,6 @@ import {
   pauseRun as executorPauseRun,
   cancelRun as executorCancelRun,
   reconcileOnReload as executorReconcile,
-  abortRun as executorAbort,
   resumePausedRun as executorResumePaused,
   retryRun as executorRetry,
 } from "./workflowExecutor";
