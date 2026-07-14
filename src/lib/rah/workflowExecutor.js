@@ -428,7 +428,10 @@ export async function cancelRun(runId, deps, meta = {}) {
   // Persist the terminal state BEFORE aborting so a concurrent step
   // completion cannot race past cancellation.
   await deps.saveRun(moved);
-  abortIntents.set(runId, "cancel");
+  // Explicit abort intent — "emergency" is distinct from "pause" and the
+  // ordinary user "cancel" so downstream telemetry / catch blocks can
+  // tell them apart. Anything unknown falls back to cancel.
+  abortIntents.set(runId, meta.reason === "emergency" ? "emergency" : "cancel");
   abortRun(runId);
 }
 
