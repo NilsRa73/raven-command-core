@@ -45,6 +45,8 @@ interface CapturedFrame {
   capturedAt: number;
 }
 
+type ReviewStage = "idle" | "captured" | "confirming_sensitive" | "analyzing" | "reviewing_result";
+
 interface AnalysisResult {
   question: string;
   frame: CapturedFrame;
