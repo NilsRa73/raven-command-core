@@ -25,6 +25,13 @@ import {
 } from "@/lib/rah/visionSessions";
 import { hashFrameBytes } from "@/lib/rah/visionHash";
 import { getDB, uid } from "@/lib/rah/db";
+import {
+  createPointerState, reducePointer, canUndo as canUndoState, canRedo as canRedoState,
+  draftDrawRect, shortcutsAreSuppressed,
+} from "@/lib/rah/visionPointer";
+import {
+  computeDisplayTransform, imageToDisplay, type Region,
+} from "@/lib/rah/visionGeometry";
 
 export const Route = createFileRoute("/vision")({
   head: () => ({
@@ -298,6 +305,91 @@ function VisionPage() {
   const [savedEvidenceId, setSavedEvidenceId] = useState<string | null>(null);
   const [regionDraft, setRegionDraft] = useState<{ x: string; y: string; w: string; h: string; label: string }>({ x: "", y: "", w: "", h: "", label: "" });
 
+  // Pointer/keyboard reducer state for drag-to-redact overlay.
+  const [pointer, setPointer] = useState(() => createPointerState([]));
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+  const previewImgRef = useRef<HTMLImageElement | null>(null);
+  const [displaySize, setDisplaySize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
+
+  const transform = useMemo(() => {
+    if (!pendingFrame || displaySize.w === 0 || displaySize.h === 0) return null;
+    return computeDisplayTransform({
+      displayWidth: displaySize.w,
+      displayHeight: displaySize.h,
+      sourceWidth: pendingFrame.width,
+      sourceHeight: pendingFrame.height,
+    });
+  }, [pendingFrame, displaySize]);
+
+  const pointerFrame = useMemo(
+    () => (pendingFrame ? { width: pendingFrame.width, height: pendingFrame.height } : null),
+    [pendingFrame],
+  );
+
+  // Sync reducer regions -> committed `regions` (source of truth for save).
+  useEffect(() => {
+    setRegions(pointer.regions as unknown as RedactionRegion[]);
+  }, [pointer.regions]);
+
+  // Reset overlay when the frame changes.
+  useEffect(() => {
+    setPointer(createPointerState([]));
+  }, [pendingFrame?.capturedAt]);
+
+  // Track display size for accurate coordinate math on resize.
+  useEffect(() => {
+    if (!showRedactionPanel) return;
+    const el = overlayRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const obs = new ResizeObserver(() => {
+      const rect = el.getBoundingClientRect();
+      setDisplaySize({ w: rect.width, h: rect.height });
+    });
+    obs.observe(el);
+    const rect = el.getBoundingClientRect();
+    setDisplaySize({ w: rect.width, h: rect.height });
+    return () => obs.disconnect();
+  }, [showRedactionPanel, pendingFrame?.capturedAt]);
+
+  // Global keyboard shortcuts for the overlay (arrow nudge, delete,
+  // undo/redo). Suppressed while typing in inputs/textareas.
+  useEffect(() => {
+    if (!showRedactionPanel || !pointerFrame) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (shortcutsAreSuppressed(e.target)) return;
+      if ((e.metaKey || e.ctrlKey) && (e.key === "z" || e.key === "Z")) {
+        e.preventDefault();
+        setPointer((s) => reducePointer(s, e.shiftKey ? { type: "redo" } : { type: "undo" }));
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && (e.key === "y" || e.key === "Y")) {
+        e.preventDefault();
+        setPointer((s) => reducePointer(s, { type: "redo" }));
+        return;
+      }
+      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Delete", "Backspace"].includes(e.key)) {
+        if (!pointer.selectedId) return;
+        e.preventDefault();
+        setPointer((s) => reducePointer(s, { type: "key", key: e.key, shift: e.shiftKey, frame: pointerFrame }));
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [showRedactionPanel, pointerFrame, pointer.selectedId]);
+
+  // Warn on tab close / navigation while a review draft or dirty
+  // redaction stack is unsaved.
+  useEffect(() => {
+    const hasUnsaved = !!pendingFrame && (pointer.dirty || (privacyNote && !savedEvidenceId));
+    if (!hasUnsaved) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [pendingFrame, pointer.dirty, privacyNote, savedEvidenceId]);
+
   const privacy = useMemo(() =>
     classifyPrivacy({
       userMarkedSensitive,
@@ -528,6 +620,7 @@ function VisionPage() {
     setAnalysis(null);
     setPendingFrame(null);
     setRegions([]);
+    setPointer(createPointerState([]));
     setUserMarkedSensitive(false);
     setPrivacyNote("");
     setRedactedDataUrl("");
