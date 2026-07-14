@@ -402,7 +402,15 @@ export function CommandBar() {
     const memory = rah.prefs.memoryEnabled
       ? rah.memory.filter((m) => !m.disabled && (!m.projectId || m.projectId === rah.activeProject?.id)).map((m) => m.text)
       : [];
-    const projectMemoryBlock = rah.prefs.memoryEnabled ? rah.buildProjectMemoryContext().memoryBlock : "";
+    const packet = rah.prefs.memoryEnabled
+      ? buildContextPacket(rah.projectMemory, {
+          mode: ravenMode, projectId: rah.activeProject?.id ?? null,
+          pinnedIds: ravenState.pinnedIds, excludedIds: ravenState.excludedIds,
+        })
+      : null;
+    const projectMemoryBlock = packet?.text ?? "";
+    const route = classifyRoute(prompt, { mode: ravenMode, approvalMode });
+    logRavenAudit({ type: "route_decision", detail: `${route.label} (${route.target})`, source: "runInference", meta: { mode: ravenMode, target: RAVEN_MODE_META[ravenMode].target } });
 
     try {
       let providerLabel = "Lovable AI Gateway";
