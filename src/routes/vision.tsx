@@ -439,7 +439,10 @@ function VisionPage() {
   // Warn on tab close / navigation while a review draft or dirty
   // redaction stack is unsaved.
   useEffect(() => {
-    const hasUnsaved = !!pendingFrame && (pointer.dirty || (privacyNote && !savedEvidenceId));
+    const hasUnsaved =
+      (!!pendingFrame && (pointer.dirty || (privacyNote && !savedEvidenceId))) ||
+      resultDraftDirty ||
+      isSessionLive(activeSession);
     if (!hasUnsaved) return;
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
       e.preventDefault();
@@ -447,7 +450,7 @@ function VisionPage() {
     };
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [pendingFrame, pointer.dirty, privacyNote, savedEvidenceId]);
+  }, [pendingFrame, pointer.dirty, privacyNote, savedEvidenceId, resultDraftDirty, activeSession]);
 
   const privacy = useMemo(() =>
     classifyPrivacy({
@@ -1420,7 +1423,7 @@ function VisionPage() {
               <Button
                 type="button"
                 onClick={() => void captureNow()}
-                disabled={!ready || streaming}
+                disabled={!ready || streaming || !isSessionLive(activeSession)}
                 className="min-w-40"
               >
                 <Camera className="h-4 w-4" /> Capture frame
