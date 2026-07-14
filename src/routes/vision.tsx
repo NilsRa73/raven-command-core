@@ -649,13 +649,19 @@ function VisionPage() {
   const saveEvidence = useCallback(async () => {
     if (!pendingFrame) { toast.error("No captured frame to save."); return; }
     try {
+      // Hash the redacted derivative bytes (if any) at save time.
+      const redactedHash = regions.length > 0 && redactedDataUrl
+        ? await hashDataUrlSafe(redactedDataUrl)
+        : { hash: null, failureReason: null };
       const rec = shapeEvidenceRecord({
         id: uid(),
         sessionId: null,
         projectId: null,
         createdAt: Date.now(),
-        frame: { width: pendingFrame.width, height: pendingFrame.height, sizeBytes: pendingFrame.sizeBytes, capturedAt: pendingFrame.capturedAt, mime: "image/jpeg", captureMethod: "video-canvas", hash: null },
-        redactedFrame: regions.length > 0 && redactedDataUrl ? { width: pendingFrame.width, height: pendingFrame.height, sizeBytes: Math.round(redactedDataUrl.length * 0.75), capturedAt: pendingFrame.capturedAt, mime: "image/jpeg", captureMethod: "video-canvas", hash: null } : null,
+        frame: { width: pendingFrame.width, height: pendingFrame.height, sizeBytes: pendingFrame.sizeBytes, capturedAt: pendingFrame.capturedAt, mime: "image/jpeg", captureMethod: "video-canvas", hash: pendingFrame.hash },
+        redactedFrame: regions.length > 0 && redactedDataUrl
+          ? { width: pendingFrame.width, height: pendingFrame.height, sizeBytes: Math.round(redactedDataUrl.length * 0.75), capturedAt: pendingFrame.capturedAt, mime: "image/jpeg", captureMethod: "video-canvas", hash: redactedHash.hash }
+          : null,
         redactionRegions: regions,
         privacy: { class: privacy.class, reasons: privacy.reasons },
         notes: privacyNote,
@@ -665,7 +671,11 @@ function VisionPage() {
       const db = await getDB();
       await db.put("visionEvidence", rec);
       setSavedEvidenceId(rec.id);
-      toast.success("Evidence saved locally (append-only)");
+      // Surface hash provenance honestly.
+      const hashLabel = pendingFrame.hash
+        ? `sha256 ${pendingFrame.hash.slice(0, 16)}…`
+        : `no integrity hash (${pendingFrame.hashFailureReason || "unknown"})`;
+      toast.success(`Evidence saved (${hashLabel})`);
     } catch (err) {
       toast.error("Failed to save evidence: " + (err instanceof Error ? err.message : String(err)));
     }
