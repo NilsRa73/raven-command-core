@@ -504,6 +504,14 @@ function RunsPanel({ workflow, runs, onReload }: { workflow: Workflow; runs: Wor
                   <Button size="sm" variant="ghost" onClick={() => setSelectedRun(selectedRun === r.runId ? null : r.runId)}>
                     {selectedRun === r.runId ? "Hide details" : "Inspect"}
                   </Button>
+                  <Button size="sm" variant="ghost" title="Export run as JSON" onClick={() => {
+                    const blob = new Blob([JSON.stringify(r, null, 2)], { type: "application/json" });
+                    const a = document.createElement("a");
+                    a.href = URL.createObjectURL(blob);
+                    a.download = `run-${r.runId}.json`;
+                    a.click();
+                    URL.revokeObjectURL(a.href);
+                  }}><Download className="h-4 w-4" /></Button>
                 </div>
               </div>
               {(r.failureReason || r.provider) && (
