@@ -4,6 +4,19 @@ import { streamChat } from "./ai";
 import { toast } from "sonner";
 import { applyBridgeAutoMigration } from "./localAi";
 import { selectRelevantForPrompt, buildMemoryInjectionBlock } from "./projectMemory";
+import {
+  runWorkflow as executorRunWorkflow,
+  resumeAfterApproval as executorResumeAfterApproval,
+  pauseRun as executorPauseRun,
+  cancelRun as executorCancelRun,
+  reconcileOnReload as executorReconcile,
+  abortRun as executorAbort,
+} from "./workflowExecutor";
+import { STEP_CATALOG } from "./workflow";
+import {
+  bridgeStatusSnapshot,
+  bridgeReadText, bridgePrepare, bridgeExecute,
+} from "./bridge";
 
 type Ctx = {
   ready: boolean;
@@ -40,6 +53,9 @@ type Ctx = {
   resolveApproval: (id: string, status: "approved" | "rejected" | "cancelled") => Promise<void>;
   runApprovedCommand: (commandId: string) => Promise<void>;
   emergencyStop: () => Promise<void>;
+  workflowRun: (runId: string) => Promise<void>;
+  workflowPause: (runId: string) => Promise<void>;
+  workflowCancel: (runId: string) => Promise<void>;
   focusCommandBar: () => void;
   registerCommandBarFocus: (fn: () => void) => () => void;
 };
@@ -242,6 +258,9 @@ export function RahProvider({ children }: { children: ReactNode }) {
     const db = await getDB();
     const cur = await db.get("approvals", id);
     if (!cur) return;
+    // Prevent double-use: an approval that has already left "pending" is
+    // spent and must not resume anything again.
+    if (cur.status !== "pending") return;
     await db.put("approvals", { ...cur, status });
     await reloadApprovals();
     if (status === "approved" && cur.commandId) {
@@ -255,6 +274,10 @@ export function RahProvider({ children }: { children: ReactNode }) {
         await db.put("commands", { ...rest, status: status === "rejected" ? "rejected" : "error", resultSummary: status === "rejected" ? "Rejected by user." : "Cancelled by user." });
         await reloadCommands();
       }
+    }
+    // Workflow approvals: dispatch to executor.
+    if (cur.workflowRunId) {
+      void executorResumeAfterApproval(cur.workflowRunId, id, buildExecutorDeps({ requestApproval, reloadApprovals }));
     }
   }, [reloadApprovals]);
 
@@ -316,6 +339,9 @@ export function RahProvider({ children }: { children: ReactNode }) {
     const pending = await db.getAll("approvals");
     for (const a of pending) if (a.status === "pending") await db.put("approvals", { ...a, status: "cancelled" });
     await reloadApprovals();
+    // Abort any running workflow executors.
+    const runs = await db.getAll("workflowRuns");
+    for (const r of runs) if (r.status === "running" || r.status === "awaiting_approval") executorAbort(r.runId);
     if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("rah:emergency-stop"));
   }, [reloadApprovals]);
 
@@ -324,6 +350,30 @@ export function RahProvider({ children }: { children: ReactNode }) {
     focusRef.current = fn;
     return () => { if (focusRef.current === fn) focusRef.current = () => {}; };
   }, []);
+
+  const workflowRun = useCallback<Ctx["workflowRun"]>(async (runId) => {
+    await executorRunWorkflow(runId, buildExecutorDeps({ requestApproval, reloadApprovals }));
+  }, [requestApproval, reloadApprovals]);
+  const workflowPause = useCallback<Ctx["workflowPause"]>(async (runId) => {
+    await executorPauseRun(runId, buildExecutorDeps({ requestApproval, reloadApprovals }));
+  }, [requestApproval, reloadApprovals]);
+  const workflowCancel = useCallback<Ctx["workflowCancel"]>(async (runId) => {
+    await executorCancelRun(runId, buildExecutorDeps({ requestApproval, reloadApprovals }));
+  }, [requestApproval, reloadApprovals]);
+
+  // Reconcile stale workflow runs on startup.
+  useEffect(() => {
+    if (!ready) return;
+    (async () => {
+      const db = await getDB();
+      const runs = await db.getAll("workflowRuns");
+      for (const r of runs) {
+        if (r.status === "running") {
+          await executorReconcile(r.runId, buildExecutorDeps({ requestApproval, reloadApprovals }));
+        }
+      }
+    })();
+  }, [ready, requestApproval, reloadApprovals]);
 
   const value: Ctx = {
     ready, prefs: prefs ?? {
@@ -351,8 +401,132 @@ export function RahProvider({ children }: { children: ReactNode }) {
     approvals, reloadApprovals, requestApproval, resolveApproval,
     runApprovedCommand,
     emergencyStop,
+    workflowRun, workflowPause, workflowCancel,
     focusCommandBar, registerCommandBarFocus,
   };
 
   return <RahContext.Provider value={value}>{children}</RahContext.Provider>;
+}
+
+// Build executor deps that read/write the same IndexedDB the rest of the
+// app uses and delegate to the real AI, memory, chronicle, and bridge
+// implementations. Constructed per-call so the current React callbacks
+// (requestApproval, reloadApprovals) are captured.
+function buildExecutorDeps(hooks: {
+  requestApproval: (a: Omit<Approval, "id" | "createdAt" | "status">) => Promise<Approval>;
+  reloadApprovals: () => Promise<void>;
+}) {
+  return {
+    loadRun: async (id: string) => {
+      const db = await getDB();
+      return (await db.get("workflowRuns", id)) ?? null;
+    },
+    saveRun: async (r: unknown) => {
+      const db = await getDB();
+      await db.put("workflowRuns", r as never);
+    },
+    loadWorkflow: async (id: string) => {
+      const db = await getDB();
+      return (await db.get("workflows", id)) ?? null;
+    },
+    loadApproval: async (id: string) => {
+      const db = await getDB();
+      return (await db.get("approvals", id)) ?? null;
+    },
+    requestApproval: async ({ step, workflow, run }: { step: { id: string; type: string; config: Record<string, unknown> }; workflow: { id: string; name: string; projectId: string | null }; run: { runId: string } }) => {
+      const cat = STEP_CATALOG[step.type as keyof typeof STEP_CATALOG];
+      const detail = summariseStepForApproval(step);
+      const approval = await hooks.requestApproval({
+        title: `${workflow.name} — ${cat?.label ?? step.type}`,
+        reason: detail,
+        tools: [cat?.label ?? step.type],
+        dataShared: workflow.projectId ? ["active project context"] : [],
+        expectedResult: detail,
+        risk: (cat?.risk as "low" | "medium" | "high") ?? "low",
+        category: "workflow",
+        undo: "This approval is one-shot and only authorises this single step.",
+        workflowRunId: run.runId,
+        workflowStepId: step.id,
+        workflowAction: cat?.label ?? step.type,
+      });
+      await hooks.reloadApprovals();
+      return approval;
+    },
+    ai: async ({ prompt, signal, mode }: { prompt: string; signal: AbortSignal; mode: string }) => {
+      let text = "", provider = "", model = "", latencyMs = 0;
+      await streamChat(
+        { prompt, agents: ["brain"], mode: (mode as "fast" | "deep_project"), signal, context: {} },
+        {
+          onStart: (i) => { provider = i.provider; model = i.model; },
+          onDelta: (_c, full) => { text = full; },
+          onDone: (i) => { text = i.text; provider = i.provider; model = i.model; latencyMs = i.latencyMs; },
+        },
+      );
+      return { text, provider, model, transport: "streamChat", engine: null, latencyMs };
+    },
+    memory: {
+      save: async (m: { title: string; content: string; projectId: string | null; tags: string[] }) => {
+        const db = await getDB();
+        const now = Date.now();
+        await db.put("projectMemory", {
+          id: uid(), projectId: m.projectId, title: m.title, content: m.content,
+          type: "note", tags: m.tags, source: "workflow",
+          archived: false, pinned: false, createdAt: now, updatedAt: now,
+        });
+      },
+    },
+    chronicle: {
+      log: async (c: { title: string; detail: string; projectId: string | null }) => {
+        const db = await getDB();
+        const now = Date.now();
+        await db.put("projectMemory", {
+          id: uid(), projectId: c.projectId, title: c.title, content: c.detail,
+          type: "daily_log", tags: ["chronicle"], source: "workflow",
+          archived: false, pinned: false, createdAt: now, updatedAt: now,
+        });
+      },
+    },
+    bridge: {
+      status: async () => {
+        const s = await bridgeStatusSnapshot();
+        return { status: s.ui, capabilities: [] };
+      },
+      readFile: async (p: string) => {
+        const r = await bridgeReadText(p);
+        return { text: r.text, size: r.size };
+      },
+      writeFile: async (p: string, source?: string) => {
+        // Uses files.copy capability (see workflow.js). Requires an
+        // approval-driven prepare/execute pair.
+        const prep = await bridgePrepare("files.copy", { source: source ?? p, dest: p });
+        await bridgeExecute(prep.job.id, prep.job.approvalId ?? "", prep.confirmationToken);
+        return { ok: true };
+      },
+      launchUrl: async (u: string) => {
+        const prep = await bridgePrepare("launch.url", { url: u });
+        await bridgeExecute(prep.job.id, prep.job.approvalId ?? "", prep.confirmationToken);
+        return { ok: true };
+      },
+      launchApp: async (p: string) => {
+        const prep = await bridgePrepare("launch.program", { program: p });
+        await bridgeExecute(prep.job.id, prep.job.approvalId ?? "", prep.confirmationToken);
+        return { ok: true };
+      },
+    },
+    now: () => Date.now(),
+    rng: () => Math.random().toString(36).slice(2, 8),
+  };
+}
+
+function summariseStepForApproval(step: { type: string; config: Record<string, unknown> }): string {
+  const c = step.config as Record<string, string | undefined>;
+  switch (step.type) {
+    case "save_memory": return `Save memory: ${c.title ?? "(untitled)"}`;
+    case "chronicle_entry": return `Log chronicle: ${c.title ?? "(untitled)"}`;
+    case "bridge_read_file": return `Read file: ${c.path ?? ""}`;
+    case "bridge_write_file": return `Write file: ${c.path ?? ""}`;
+    case "bridge_launch_url": return `Open URL: ${c.url ?? ""}`;
+    case "bridge_launch_app": return `Launch: ${c.program ?? ""}`;
+    default: return step.type;
+  }
 }

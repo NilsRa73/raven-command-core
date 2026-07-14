@@ -15,7 +15,7 @@ export const STEP_CATALOG = {
   save_memory:       { label: "Save to Project Memory", category: "memory",   sideEffect: true,  requiresApproval: true,  requiresBridgeCapability: null,             risk: "low" },
   chronicle_entry:   { label: "Create Chronicle Entry", category: "chronicle",sideEffect: true,  requiresApproval: true,  requiresBridgeCapability: null,             risk: "low" },
   bridge_read_file:  { label: "Read File (Bridge)",     category: "bridge",   sideEffect: false, requiresApproval: false, requiresBridgeCapability: "files.readText", risk: "low" },
-  bridge_write_file: { label: "Write File (Bridge)",    category: "bridge",   sideEffect: true,  requiresApproval: true,  requiresBridgeCapability: "files.rename",   risk: "medium" },
+  bridge_write_file: { label: "Write File (Bridge)",    category: "bridge",   sideEffect: true,  requiresApproval: true,  requiresBridgeCapability: "files.copy",     risk: "medium" },
   bridge_launch_url: { label: "Open URL (Bridge)",      category: "bridge",   sideEffect: true,  requiresApproval: true,  requiresBridgeCapability: "launch.url",     risk: "low" },
   bridge_launch_app: { label: "Launch App (Bridge)",    category: "bridge",   sideEffect: true,  requiresApproval: true,  requiresBridgeCapability: "launch.program", risk: "high" },
   wait_manual:       { label: "Manual Checkpoint",      category: "control",  sideEffect: false, requiresApproval: false, requiresBridgeCapability: null,             risk: "low" },
@@ -30,11 +30,11 @@ export const TERMINAL_STATES = ["completed","failed","cancelled"];
 const TRANSITIONS = {
   draft:             ["queued","cancelled"],
   queued:            ["awaiting_approval","running","cancelled","failed"],
-  awaiting_approval: ["running","cancelled","failed"],
+  awaiting_approval: ["running","paused","cancelled","failed"],
   running:           ["awaiting_approval","paused","completed","failed","cancelled"],
-  paused:            ["running","cancelled"],
+  paused:            ["running","awaiting_approval","cancelled","failed"],
   completed:         [],
-  failed:            ["queued"],
+  failed:            ["queued","cancelled"],
   cancelled:         [],
 };
 
@@ -158,9 +158,12 @@ async function sha256Hex(text) {
 export async function appendEvent(events, evt) {
   const seq = events.length ? events[events.length - 1].seq + 1 : 1;
   const prevHash = events.length ? events[events.length - 1].hash : "GENESIS";
+  const now = evt.ts ?? (evt.now ?? Date.now());
+  const idSeed = evt.id
+    ?? (typeof evt.rng === "function" ? evt.rng() : Math.random().toString(36).slice(2, 8));
   const base = {
-    id: evt.id ?? `evt_${seq}_${Math.random().toString(36).slice(2, 8)}`,
-    seq, ts: evt.ts ?? Date.now(),
+    id: evt.id ?? `evt_${seq}_${String(idSeed).replace(/-/g, "").slice(0, 8)}`,
+    seq, ts: now,
     runId: evt.runId, workflowId: evt.workflowId,
     type: evt.type, actor: evt.actor ?? "system",
     prevState: evt.prevState ?? null, nextState: evt.nextState ?? null,

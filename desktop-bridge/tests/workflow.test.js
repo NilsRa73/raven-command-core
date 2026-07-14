@@ -76,7 +76,7 @@ test("planDryRun marks bridge steps blocked when bridge offline", () => {
 
 test("planDryRun respects paired-online capability list", () => {
   const wf = createWorkflow({ name: "B", steps: [createStep("bridge_write_file", { path: "C:/a.txt" })] });
-  const okPlan = planDryRun(wf, { bridge: { status: "paired_online", capabilities: ["files.rename"] } });
+  const okPlan = planDryRun(wf, { bridge: { status: "paired_online", capabilities: ["files.copy"] } });
   assert.equal(okPlan.steps[0].blocked, false);
   const missing = planDryRun(wf, { bridge: { status: "paired_online", capabilities: ["files.readText"] } });
   assert.equal(missing.steps[0].blocked, true);

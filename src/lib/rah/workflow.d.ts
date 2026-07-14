@@ -69,6 +69,8 @@ export interface WorkflowRun {
   transport: string | null;
   stepResults: StepResult[];
   approvalIds: string[];
+  /** Map of stepId -> approvalId for per-step approvals. */
+  stepApprovals?: Record<string, string>;
   failureReason: string | null;
   events: RunEvent[];
   createdAt: number;
