@@ -1,6 +1,6 @@
 # Raven One — Master Plan
 
-Version: Raven One · Alpha 0.2 — Workflow Engine + Fast/Deep Memory hardening
+Version: Raven One · Alpha 0.2 — Workflow Engine + Fast/Deep hardening + Raven Home v0.2
 Owner: Nils (RAH AI Studios)
 Status: Living document — single source of truth for the Raven One product line.
 
@@ -16,9 +16,10 @@ progress, or telemetry.
 - Local AI: LM Studio / Ollama on the user's PC, proxied through the
   authenticated RAH Desktop Bridge (v0.2.1) at `127.0.0.1:47824`.
 - Cloud AI: Lovable AI Gateway as a manual fallback.
-- Storage: IndexedDB v4 with stores for commands, memory, files, approvals,
-  workflows, workflowRuns, and deviceHistory; plus localStorage for
-  lightweight settings (devices, focus mode, engine).
+- Storage: IndexedDB v6 with stores for commands, memory, files, approvals,
+  workflows, workflowRuns, deviceHistory, roadmapMilestones, decisions,
+  decisionVersions, and focusSessions; plus localStorage for lightweight
+  settings (devices, focus mode, engine).
 - Native companion: `desktop-bridge-native/` (Tauri 2 + Node SEA sidecar).
 - Bridge protocol: HTTPS/loopback, HMAC-signed, one-time approval tokens,
   Private Network Access, path containment, feature manifest.
@@ -313,3 +314,57 @@ charts yet — role dashboard shows counts only.
 4. Production build passes (`npm run build` via harness).
 5. No fabricated data, no silent memory writes, no bypassed approvals.
 6. Bridge tests remain green.
+
+## Raven Home v0.2 — Mission timer + Focus Block workflow (complete)
+
+- [x] Deterministic pure helper `src/lib/rah/focusSession.js` (+ `.d.ts`)
+      owns every timer transition: `newFocusDraft`, `start`, `pause`,
+      `resume`, `complete`, `cancel`, `reset`, `logInterruption`,
+      `computeTiming`, `restoreAfterReload`, `formatDuration`,
+      `buildCompletionDraft`, `filterHistory`, `shapeHistoryForExport`.
+      React renders helper output only.
+- [x] `FocusSession` shape carries id, projectId, title, mode
+      (`fast`/`deep`), `plannedDurationMs` (null = count-up), `startedAt` /
+      `pausedAt` / `completedAt` / `cancelledAt`, `accumulatedPausedMs`,
+      ordered `interruptions[]`, notes, agents, and `linkedWorkflowId` /
+      `linkedRunId` slots for future workflow handoff.
+- [x] Elapsed / remaining computed honestly; overdue is surfaced explicitly.
+      Backwards or missing clocks return `status: "invalid"` with a warning —
+      the UI never fabricates ticks. `restoreAfterReload` folds a live
+      session back into `paused` when the wall clock is inconsistent.
+- [x] IndexedDB upgraded v5 → v6 with an additive `focusSessions` store
+      keyed by id and indexed by `projectId`, `createdAt`, `status`.
+      `exportAll` and `wipeAll` include the new store.
+- [x] `FocusBlockCard` on Raven Home (`src/components/rah/FocusBlockCard.tsx`)
+      renders three explicit states: **Builder** (title, duration preset,
+      Fast/Deep mode, notes; Discard guarded by
+      `draftGuard.shouldConfirmDiscard`), **Live timer** (large tabular
+      elapsed + remaining/overdue, Pause/Resume, Log interruption,
+      Complete, Cancel), and **Completion review** (elapsed, interruptions,
+      notes, explicit **Save to Chronicle / Memory** or **Discard note**).
+      No silent saves — the session is persisted, the Chronicle entry is
+      only added on click.
+- [x] Keyboard-first: `Alt+F` start, `Alt+P` pause/resume, `Alt+I` log
+      interruption, `Alt+Enter` complete, `Alt+Shift+X` emergency stop,
+      `Ctrl+Space` / `Ctrl+K` palette, `?` opens the new
+      `ShortcutHelpOverlay`. All Alt-based shortcuts are suppressed while
+      typing (`shouldSuppressShortcut`) so form fields work normally.
+- [x] `commandPalette.js` gains a Focus section with the same actions,
+      and `CommandPalette.tsx` routes them to window events
+      (`rah:focus:start` / `pause` / `complete` / `cancel` / `interrupt`)
+      that the card subscribes to.
+- [x] Header badge updated to **Raven Home · Alpha 0.2**.
+- [x] Tests: `desktop-bridge/tests/focus-session.test.js` (17 cases)
+      cover dirty detection, start/pause/resume math, backward-clock
+      invalidation, completion pause-fold, cancel symmetry, reset,
+      interruption ordering, restore, duration formatting, completion
+      draft, history filtering, export manifest, ranking, and shortcut
+      suppression.
+- [x] Verified: **363/363 bridge tests pass**, `bunx tsgo --noEmit`
+      clean, `bun run build` succeeds.
+
+**Known limitations (honest):** the timer relies on `Date.now()` — clock
+skew between save and restore is detected but not corrected. Focus
+history is per-device (IndexedDB); cross-device sync is not implemented.
+Completion → Chronicle is a single memory entry per session, not a
+per-interruption timeline.
