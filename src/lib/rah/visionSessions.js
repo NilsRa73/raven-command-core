@@ -224,6 +224,7 @@ export function validateRedactionRegion(region, { width, height } = {}) {
   const h = toInt(region.h);
   if (x == null || y == null || w == null || h == null) return { ok: false, reason: "coords_not_numeric" };
   if (w <= 0 || h <= 0) return { ok: false, reason: "zero_area" };
+  if (x >= W || y >= H || x + w <= 0 || y + h <= 0) return { ok: false, reason: "out_of_bounds" };
   // Clamp inside frame bounds. If the clamped rect collapses, reject.
   const cx = Math.max(0, Math.min(W - 1, x));
   const cy = Math.max(0, Math.min(H - 1, y));
