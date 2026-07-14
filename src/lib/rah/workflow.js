@@ -99,7 +99,13 @@ export function planDryRun(workflow, ctx = {}) {
     const cat = STEP_CATALOG[s.type] ?? { label: s.type, sideEffect: false, requiresApproval: false, requiresBridgeCapability: null, risk: "low" };
     let blocked = false, blockedReason = null;
     if (cat.requiresBridgeCapability) {
-      if (bridge.status !== "paired_online") { blocked = true; blockedReason = `Bridge offline — ${cat.requiresBridgeCapability} unavailable`; }
+      if (!bridge || typeof bridge !== "object") {
+        blocked = true;
+        blockedReason = `Bridge status unknown — ${cat.requiresBridgeCapability} denied by default`;
+      } else if (bridge.status !== "paired_online") {
+        blocked = true;
+        blockedReason = `Bridge ${bridge.status ?? "unknown"} — ${cat.requiresBridgeCapability} unavailable`;
+      }
       else if (!Array.isArray(bridge.capabilities) || bridge.capabilities.length === 0) {
         // Deny-by-default. Unknown / empty capability data must never permit.
         blocked = true;
