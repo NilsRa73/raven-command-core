@@ -992,25 +992,17 @@ function VisionPage() {
             <div className="flex flex-wrap gap-2 pt-1">
               <Button
                 type="button"
-                onClick={() => void analyzeNow(question)}
+                onClick={() => void captureNow()}
                 disabled={!ready || streaming}
                 className="min-w-40"
               >
-                <Camera className="h-4 w-4" /> Capture & Analyze
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => void analyzeNow(question)}
-                disabled={!ready || streaming || !question.trim()}
-              >
-                <MessageSquare className="h-4 w-4" /> Ask about current screen
+                <Camera className="h-4 w-4" /> Capture frame
               </Button>
               {analysis && (
                 <>
                   <Button
                     type="button" variant="ghost"
-                    onClick={() => void analyzeNow(analysis.question)}
+                    onClick={() => void captureNow()}
                     disabled={!ready || streaming}
                   >
                     <RotateCcw className="h-4 w-4" /> Retake
@@ -1023,11 +1015,144 @@ function VisionPage() {
             </div>
             <div className="flex items-start gap-2 rounded-md border border-primary/40 bg-primary/5 p-3 text-xs text-primary">
               <ShieldCheck className="h-4 w-4 mt-0.5 shrink-0" />
-              <span>{PRIVACY_NOTE}</span>
+              <span>
+                {PRIVACY_NOTE}
+                <br />
+                <em className="opacity-80">{PRIVACY_HEURISTIC_DISCLAIMER}</em>
+              </span>
             </div>
           </div>
         </div>
       </section>
+
+      {pendingFrame && reviewStage !== "idle" && (
+        <section className="glass-panel gold-border p-4 md:p-5 space-y-4" aria-labelledby="rah-vision-review">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <h2 id="rah-vision-review" className="display text-xl gold-text">Capture Review</h2>
+            <span className={"text-xs rounded-full border px-3 py-1 " + (classIsSensitive(privacy.class) ? "border-destructive text-destructive" : "border-primary/60 text-primary")}>
+              Privacy: {PRIVACY_CLASS_LABEL[privacy.class] || privacy.class}
+            </span>
+          </div>
+          <div className="grid gap-4 md:grid-cols-[280px_1fr]">
+            <div className="space-y-2">
+              <img
+                src={regions.length > 0 && previewRedacted && redactedDataUrl ? redactedDataUrl : pendingFrame.dataUrl}
+                alt="Captured frame under review"
+                className="w-full rounded-md border border-border/60"
+              />
+              <div className="text-[11px] text-muted-foreground">
+                {pendingFrame.width}×{pendingFrame.height} · {Math.round(pendingFrame.sizeBytes / 1024)} KB · JPEG
+                {" · captured "}
+                {new Date(pendingFrame.capturedAt).toLocaleTimeString()}
+              </div>
+              <div className="text-[11px] text-muted-foreground">
+                Source: <span className="text-foreground">{sourceLabel || "—"}</span>
+              </div>
+            </div>
+            <div className="space-y-3 text-sm">
+              <div className="text-xs text-muted-foreground uppercase tracking-widest">Question</div>
+              <div className="text-foreground">{(question || "").trim() || "Describe what's on this screen and tell me what to do next."}</div>
+
+              <div className="flex flex-wrap gap-2 pt-2">
+                <Button size="sm" type="button" onClick={() => void analyzeReviewed()} disabled={reviewStage !== "captured"}>
+                  <MessageSquare className="h-4 w-4" /> Analyze
+                </Button>
+                <Button size="sm" type="button" variant="secondary" onClick={() => setShowRedactionPanel((v) => !v)} disabled={reviewStage !== "captured"}>
+                  {previewRedacted ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                  {showRedactionPanel ? "Hide redaction" : "Redact regions"}
+                </Button>
+                <Button size="sm" type="button" variant="secondary" onClick={() => void saveEvidence()} disabled={reviewStage !== "captured"}>
+                  <Save className="h-4 w-4" /> Save evidence
+                </Button>
+                <Button size="sm" type="button" variant="ghost" onClick={() => void captureNow()}>
+                  <RotateCcw className="h-4 w-4" /> Retake
+                </Button>
+                <Button size="sm" type="button" variant="ghost" onClick={clearAnalysis}>
+                  <Trash2 className="h-4 w-4" /> Discard
+                </Button>
+              </div>
+
+              <label className="flex items-center gap-2 text-xs pt-2">
+                <input type="checkbox" checked={userMarkedSensitive} onChange={(e) => setUserMarkedSensitive(e.target.checked)} />
+                <ShieldAlert className="h-3.5 w-3.5 text-destructive" />
+                Mark this frame as sensitive
+              </label>
+              <textarea
+                value={privacyNote}
+                onChange={(e) => setPrivacyNote(e.target.value)}
+                rows={2}
+                placeholder="Optional privacy note (e.g. 'contains email addresses')"
+                className="w-full rounded-md border border-border/70 bg-background/40 p-2 text-xs"
+              />
+              {savedEvidenceId && (
+                <div className="text-[11px] text-primary">Saved as evidence <code>{savedEvidenceId}</code></div>
+              )}
+
+              {showRedactionPanel && (
+                <div className="space-y-2 rounded-md border border-border/60 p-3">
+                  <div className="text-xs text-muted-foreground">Add rectangular redaction regions (pixel coords, 0,0 = top-left). Preview draws opaque black over each region.</div>
+                  <div className="flex flex-wrap gap-2 items-end">
+                    {(["x","y","w","h"] as const).map((k) => (
+                      <label key={k} className="text-[11px]">
+                        {k}
+                        <input
+                          className="block w-16 rounded border border-border/70 bg-background/40 p-1 text-xs"
+                          value={regionDraft[k]}
+                          onChange={(e) => setRegionDraft({ ...regionDraft, [k]: e.target.value })}
+                        />
+                      </label>
+                    ))}
+                    <label className="text-[11px]">
+                      label
+                      <input
+                        className="block w-32 rounded border border-border/70 bg-background/40 p-1 text-xs"
+                        value={regionDraft.label}
+                        onChange={(e) => setRegionDraft({ ...regionDraft, label: e.target.value })}
+                      />
+                    </label>
+                    <Button size="sm" type="button" variant="secondary" onClick={addRegionFromDraft}>Add region</Button>
+                    <label className="text-[11px] flex items-center gap-1 ml-auto">
+                      <input type="checkbox" checked={previewRedacted} onChange={(e) => setPreviewRedacted(e.target.checked)} />
+                      Send redacted variant to AI
+                    </label>
+                  </div>
+                  {regions.length > 0 && (
+                    <ul className="text-[11px] space-y-1">
+                      {regions.map((r, i) => (
+                        <li key={r.id} className="flex items-center gap-2">
+                          <span>#{i + 1} · {r.label || "region"} · {r.x},{r.y} {r.w}×{r.h}</span>
+                          <button type="button" className="text-destructive underline" onClick={() => setRegions((rs) => rs.filter((x) => x.id !== r.id))}>remove</button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <div className="text-[11px] text-muted-foreground">Variant that will be sent: <strong>{variantChoice.variant}</strong>{variantChoice.requiresSecondConfirmation && " (requires second confirmation)"}</div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {reviewStage === "confirming_sensitive" && (
+            <div className="rounded-md border border-destructive/70 bg-destructive/10 p-3 text-sm space-y-2" role="alertdialog">
+              <div className="flex items-start gap-2">
+                <ShieldAlert className="h-4 w-4 mt-0.5 text-destructive shrink-0" />
+                <div>
+                  <strong>Confirm sending original (unredacted) frame</strong>
+                  <div className="text-xs opacity-90">This frame is marked sensitive. Sending the ORIGINAL image will transmit the full unredacted screenshot to the AI provider. Redact regions or send the redacted variant instead if possible.</div>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button size="sm" variant="destructive" type="button" onClick={() => void analyzeReviewed({ forceOriginal: true })}>
+                  Send original anyway
+                </Button>
+                <Button size="sm" variant="ghost" type="button" onClick={() => advanceReview("cancel-send")}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+        </section>
+      )}
 
       {analysis && (
         <section className="glass-panel gold-border p-4 md:p-5 space-y-3" aria-live="polite">
