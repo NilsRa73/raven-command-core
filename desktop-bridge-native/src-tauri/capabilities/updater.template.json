@@ -1,0 +1,9 @@
+{
+  "$schema": "https://schema.tauri.app/config/2/capability",
+  "identifier": "updater",
+  "description": "OPT-IN capability that exposes the Tauri updater plugin (check + download + install). NOT loaded by default. Merged into the build only when the production CI has a valid TAURI_SIGNING_PRIVATE_KEY / _PASSWORD and a matching public key configured in tauri.conf.json under plugins.updater.pubkey.",
+  "windows": ["status"],
+  "permissions": [
+    "updater:default"
+  ]
+}

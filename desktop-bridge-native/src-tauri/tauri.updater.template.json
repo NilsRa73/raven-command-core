@@ -1,0 +1,13 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "plugins": {
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://releases.rah.studios/desktop-bridge/latest.json"
+      ],
+      "dialog": false,
+      "pubkey": "REPLACE_WITH_BASE64_MINISIGN_PUBLIC_KEY"
+    }
+  }
+}
