@@ -404,10 +404,13 @@ export async function cancelRun(runId, deps, meta = {}) {
   if (!run || TERMINAL_STATES.includes(run.status)) return;
   const moved = transitionRun(run, "cancelled", { now: nowFn(deps) });
   moved.events = run.events;
+  if (meta.reason) moved.failureReason = String(meta.reason);
   await logEvent(moved, deps, {
     type: "run.cancelled", prevState: run.status, nextState: "cancelled",
     metadata: { reason: meta.reason ?? "user" },
   });
+  // Persist the terminal state BEFORE aborting so a concurrent step
+  // completion cannot race past cancellation.
   await deps.saveRun(moved);
   abortIntents.set(runId, "cancel");
   abortRun(runId);
