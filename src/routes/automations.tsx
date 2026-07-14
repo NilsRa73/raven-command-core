@@ -316,7 +316,7 @@ function AutomationsPage() {
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         {EXECUTION_PROFILES.map((p) => (
-                          <SelectItem key={p} value={p}>{p === "fast" ? "Fast — pinned memory only" : "Deep — full project DNA + memory"}</SelectItem>
+                          <SelectItem key={p} value={p}>{p === "fast" ? "Fast — critical + active + recent supporting" : "Deep — full project DNA + memory"}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
