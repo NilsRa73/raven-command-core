@@ -32,6 +32,14 @@ import {
  * call `abortRun(runId)` to interrupt in-flight AI calls.
  */
 const controllers = new Map();
+/**
+ * Per-run abort intent. Set immediately before abortRun() so the AI
+ * catch block can distinguish a user pause from a user/emergency cancel.
+ *   "pause"  → run status already flipped to "paused"; do NOT force cancel.
+ *   "cancel" → run status flipped (or is being flipped) to "cancelled".
+ * Anything else / missing → treat as cancel for safety.
+ */
+const abortIntents = new Map();
 export function abortRun(runId) {
   const c = controllers.get(runId);
   if (c) { try { c.abort(); } catch { /* ignore */ } }
@@ -120,6 +128,14 @@ export async function runWorkflow(runId, deps) {
           type: "step.manual_checkpoint", stepId: step.id,
           metadata: { note: step.config?.note ?? null },
         });
+        // Advance PAST the checkpoint before pausing so Resume lands on the
+        // next step instead of pausing forever on the same checkpoint.
+        recordStepResult(run, step.id, {
+          status: "ok", startedAt: nowFn(deps), finishedAt: nowFn(deps),
+          output: "manual checkpoint reached",
+        });
+        run.currentStepIndex += 1;
+        await deps.saveRun(run);
         run = await transitionAndLog(run, deps, "paused", "run.paused", { reason: "manual_checkpoint", stepId: step.id });
         return;
       }
@@ -192,11 +208,30 @@ export async function runWorkflow(runId, deps) {
         await deps.saveRun(run);
       } catch (err) {
         if (controller.signal.aborted) {
-          recordStepResult(run, step.id, {
-            status: "failed", startedAt, finishedAt: nowFn(deps), error: "aborted",
+          const intent = abortIntents.get(runId);
+          abortIntents.delete(runId);
+          // Re-read run so a concurrent pause/cancel that already changed
+          // status wins deterministically.
+          const fresh = await deps.loadRun(runId);
+          if (intent === "pause" || (fresh && fresh.status === "paused")) {
+            const base = fresh ?? run;
+            recordStepResult(base, step.id, {
+              status: "paused", startedAt, finishedAt: nowFn(deps), error: "paused",
+            });
+            await deps.saveRun(base);
+            return;
+          }
+          const base = fresh ?? run;
+          recordStepResult(base, step.id, {
+            status: "cancelled", startedAt, finishedAt: nowFn(deps), error: "aborted",
           });
-          run.failureReason = "aborted";
-          run = await transitionAndLog(run, deps, "cancelled", "run.cancelled", { stepId: step.id, reason: "abort" });
+          if (!TERMINAL_STATES.includes(base.status)) {
+            base.failureReason = "aborted";
+            const moved = await transitionAndLog(base, deps, "cancelled", "run.cancelled", { stepId: step.id, reason: "abort" });
+            void moved;
+          } else {
+            await deps.saveRun(base);
+          }
           return;
         }
         const msg = err instanceof Error ? err.message : String(err);
@@ -211,6 +246,7 @@ export async function runWorkflow(runId, deps) {
     run = await transitionAndLog(run, deps, "completed", "run.completed");
   } finally {
     controllers.delete(runId);
+    abortIntents.delete(runId);
   }
 }
 
@@ -285,7 +321,12 @@ async function executeStep(step, wf, run, deps, signal) {
 
 function assertBridgeCapability(st, cap) {
   if (!st || st.status !== "paired_online") throw new Error(`Bridge offline — ${cap} unavailable`);
-  if (Array.isArray(st.capabilities) && st.capabilities.length && !st.capabilities.includes(cap)) {
+  // Deny-by-default: if the caller cannot prove the capability is present,
+  // block the action. Unknown / empty capability data must NOT permit.
+  if (!Array.isArray(st.capabilities) || st.capabilities.length === 0) {
+    throw new Error(`Bridge capability unknown — ${cap} denied by default`);
+  }
+  if (!st.capabilities.includes(cap)) {
     throw new Error(`Bridge missing capability ${cap}`);
   }
 }
@@ -348,18 +389,58 @@ export async function pauseRun(runId, deps) {
   moved.events = run.events;
   await logEvent(moved, deps, { type: "run.paused", prevState: "running", nextState: "paused", metadata: { reason: "user" } });
   await deps.saveRun(moved);
+  abortIntents.set(runId, "pause");
   abortRun(runId); // interrupt in-flight AI
 }
 
 /** Cancel a run (any non-terminal state). Aborts in-flight AI. */
-export async function cancelRun(runId, deps) {
+export async function cancelRun(runId, deps, meta = {}) {
   const run = await deps.loadRun(runId);
   if (!run || TERMINAL_STATES.includes(run.status)) return;
   const moved = transitionRun(run, "cancelled", { now: nowFn(deps) });
   moved.events = run.events;
-  await logEvent(moved, deps, { type: "run.cancelled", prevState: run.status, nextState: "cancelled", metadata: { reason: "user" } });
+  await logEvent(moved, deps, {
+    type: "run.cancelled", prevState: run.status, nextState: "cancelled",
+    metadata: { reason: meta.reason ?? "user" },
+  });
   await deps.saveRun(moved);
+  abortIntents.set(runId, "cancel");
   abortRun(runId);
+}
+
+/**
+ * Resume a paused run. Advances it back to `running` (a fresh loader
+ * transitions from `paused` → `running`) and continues execution from
+ * `currentStepIndex`, which pauseRun / manual checkpoint already advanced
+ * past the pause point.
+ */
+export async function resumePausedRun(runId, deps) {
+  const run = await deps.loadRun(runId);
+  if (!run) return;
+  if (run.status !== "paused") return;
+  const moved = transitionRun(run, "running", { now: nowFn(deps) });
+  moved.events = run.events;
+  await logEvent(moved, deps, {
+    type: "run.resumed", prevState: "paused", nextState: "running",
+    metadata: { reason: "user" },
+  });
+  await deps.saveRun(moved);
+  await runWorkflow(runId, deps);
+}
+
+/** Retry a failed run — re-queue and re-execute from its next step. */
+export async function retryRun(runId, deps) {
+  const run = await deps.loadRun(runId);
+  if (!run) return;
+  if (run.status !== "failed") return;
+  const moved = transitionRun(run, "queued", { now: nowFn(deps) });
+  moved.events = run.events;
+  await logEvent(moved, deps, {
+    type: "run.retried", prevState: "failed", nextState: "queued",
+    metadata: { reason: "user" },
+  });
+  await deps.saveRun(moved);
+  await runWorkflow(runId, deps);
 }
 
 /** Reconcile a stale run on app reload (running/awaiting stuck without an active controller). */
