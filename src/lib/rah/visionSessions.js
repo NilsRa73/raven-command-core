@@ -215,9 +215,11 @@ export function classIsSensitive(cls) {
  */
 export function validateRedactionRegion(region, { width, height } = {}) {
   if (!region || typeof region !== "object") return { ok: false, reason: "region_missing" };
-  const W = toInt(width, 1);
-  const H = toInt(height, 1);
-  if (W == null || H == null || W <= 0 || H <= 0) return { ok: false, reason: "frame_dimensions_invalid" };
+  const rawW = Number(width), rawH = Number(height);
+  if (!Number.isFinite(rawW) || !Number.isFinite(rawH) || rawW <= 0 || rawH <= 0) {
+    return { ok: false, reason: "frame_dimensions_invalid" };
+  }
+  const W = Math.floor(rawW), H = Math.floor(rawH);
   const x = toInt(region.x);
   const y = toInt(region.y);
   const w = toInt(region.w);
