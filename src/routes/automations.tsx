@@ -1,5 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { buildContextPacket } from "@/lib/rah/ravenMode";
+import { getRavenModeState } from "@/lib/rah/ravenModeStore";
+import { useRah as _useRahForProject } from "@/lib/rah/context";
+void _useRahForProject;
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -176,12 +180,15 @@ function AutomationsPage() {
     URL.revokeObjectURL(a.href);
   }
   async function handleImport(file: File) {
+    if ((dirty || isDraftUnsaved) && !confirm("Discard unsaved changes to the current workflow?")) return;
     try {
       const text = await file.text();
       const wf = importWorkflowJson(text);
       const db = await getDB();
       await db.put("workflows", wf);
       await reloadAll();
+      setDirty(false);
+      setIsDraftUnsaved(false);
       setSelectedId(wf.id);
       toast.success(`Imported "${wf.name}"`);
     } catch (e) {
@@ -195,6 +202,29 @@ function AutomationsPage() {
     setDryRunPlan(plan);
     toast.message("Dry run planned. No side effects executed.");
   }
+
+  // Warn on hard page unload while a draft has unsaved changes.
+  useEffect(() => {
+    if (!(dirty || isDraftUnsaved)) return;
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [dirty, isDraftUnsaved]);
+
+  // Fast/Deep packet preview — same builder the executor uses at run-time,
+  // so what you see here is what the AI will actually receive.
+  const packetPreview = useMemo(() => {
+    if (!draft) return null;
+    try {
+      const rs = getRavenModeState();
+      return buildContextPacket(rah.projectMemory, {
+        mode: draft.executionProfile === "deep" ? "deep" : "fast",
+        projectId: draft.projectId ?? null,
+        pinnedIds: rs.pinnedIds,
+        excludedIds: rs.excludedIds,
+      });
+    } catch { return null; }
+  }, [draft, rah.projectMemory]);
 
   async function handleStartRun() {
     if (!draft) return;
