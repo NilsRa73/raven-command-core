@@ -450,8 +450,27 @@ function StepEditor({ step, onChange }: { step: WorkflowStep; onChange: (c: Work
         </div>
       );
     case "bridge_read_file":
-    case "bridge_write_file":
       return <Input placeholder="Absolute path within allowed roots" value={String(c.path ?? "")} onChange={(e) => onChange({ path: e.target.value })} />;
+    case "bridge_write_file":
+      return (
+        <div className="grid gap-2">
+          <div>
+            <label className="text-[10px] uppercase text-muted-foreground">Source path</label>
+            <Input placeholder="Absolute path within allowed roots — file to copy from"
+                   value={String(c.source ?? "")} onChange={(e) => onChange({ source: e.target.value })} />
+          </div>
+          <div>
+            <label className="text-[10px] uppercase text-muted-foreground">Destination path</label>
+            <Input placeholder="Absolute path within allowed roots — where to copy to"
+                   value={String(c.dest ?? c.path ?? "")}
+                   onChange={(e) => onChange({ dest: e.target.value, path: e.target.value })} />
+          </div>
+          <p className="text-[10px] text-muted-foreground">
+            The Bridge protocol supports Copy File (<code>files.copy</code>), not arbitrary write-text.
+            Legacy workflows that stored only a single path are blocked until a source is provided.
+          </p>
+        </div>
+      );
     case "bridge_launch_url":
       return <Input placeholder="https://…" value={String(c.url ?? "")} onChange={(e) => onChange({ url: e.target.value })} />;
     case "bridge_launch_app":
