@@ -1,6 +1,6 @@
 # Raven One — Master Plan
 
-Version: Raven One · Alpha 0.2 — Workflow Engine + Fast/Deep hardening + Raven Home v0.2 + Voice v0.2 + Native companion v0.3 + Screen Vision v0.2
+Version: Raven One · Alpha 0.2 — Workflow Engine + Fast/Deep hardening + Raven Home v0.2 + Voice v0.2 + Native companion v0.3 + Screen Vision v0.3 (foundation)
 Owner: Nils (RAH AI Studios)
 Status: Living document — single source of truth for the Raven One product line.
 
@@ -37,6 +37,8 @@ progress, or telemetry.
 | Raven Chronicle     | `src/routes/chronicle.tsx`, `src/lib/rah/chronicle.js` |
 | Voice Assistant     | `src/routes/voice.tsx`, `src/routes/voice-profiles.tsx`, `src/lib/rah/voiceAssistant.js`, `src/lib/rah/voiceProfiles.js` |
 | Screen Vision       | `src/routes/vision.tsx`, `src/lib/rah/screenVision.js` |
+| Vision History      | `src/routes/vision-history.tsx`, `src/lib/rah/visionSessions.js` |
+| Vision geometry     | `src/lib/rah/visionGeometry.js`, `src/lib/rah/visionHash.js` |
 | Project Memory      | `src/routes/memory.tsx`, `src/lib/rah/projectMemory.js` |
 | AI Council / Agents | `src/routes/agents.tsx`, `src/lib/rah/orchestrator.js` |
 | Workflow Engine     | `src/routes/automations.tsx`, `src/lib/rah/workflow.js`, `src/lib/rah/workflowExecutor.js` |
