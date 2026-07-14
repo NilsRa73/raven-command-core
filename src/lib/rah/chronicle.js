@@ -19,6 +19,8 @@
  *   tone?: "ok"|"warn"|"bad"|"info",
  *   sourceId?: string,
  *   type?: string,
+ *   projectId?: string|null,
+ *   source?: string,
  * }} ChronicleEntry
  */
 
@@ -39,6 +41,11 @@ function safeStr(s, max = 200) {
  */
 export function buildChronicleEntries(sources) {
   const out = /** @type {ChronicleEntry[]} */ ([]);
+  // Build lookup maps for approval → projectId derivation.
+  const cmdById = new Map();
+  for (const c of sources.commands ?? []) if (c && c.id) cmdById.set(c.id, c);
+  const runById = new Map();
+  for (const r of sources.workflowRuns ?? []) if (r && r.runId) runById.set(r.runId, r);
   for (const c of sources.commands ?? []) {
     if (!c || typeof c.createdAt !== "number") continue;
     /** @type {"ok"|"warn"|"bad"|"info"} */
@@ -55,6 +62,8 @@ export function buildChronicleEntries(sources) {
       tone,
       sourceId: c.id,
       type: c.status,
+      projectId: c.projectId ?? null,
+      source: "command",
     });
   }
   for (const m of sources.projectMemory ?? []) {
@@ -74,6 +83,8 @@ export function buildChronicleEntries(sources) {
       tone,
       sourceId: m.id,
       type: m.type,
+      projectId: m.projectId ?? null,
+      source: "memory",
     });
   }
   for (const a of sources.approvals ?? []) {
@@ -83,6 +94,11 @@ export function buildChronicleEntries(sources) {
     const tone = a.status === "approved" ? "ok"
       : a.status === "rejected" ? "warn"
       : "info";
+    // Derive projectId from linked command or workflow run when possible.
+    // Never guess: leave null if no explicit link.
+    let projectId = null;
+    if (a.commandId && cmdById.has(a.commandId)) projectId = cmdById.get(a.commandId).projectId ?? null;
+    else if (a.workflowRunId && runById.has(a.workflowRunId)) projectId = runById.get(a.workflowRunId).projectId ?? null;
     out.push({
       id: "app:" + a.id,
       kind: "approval",
@@ -92,6 +108,29 @@ export function buildChronicleEntries(sources) {
       tone,
       sourceId: a.id,
       type: a.status,
+      projectId,
+      source: "approval",
+    });
+  }
+  for (const r of sources.workflowRuns ?? []) {
+    if (!r || typeof r.createdAt !== "number") continue;
+    // Only include terminal runs so we don't fabricate progress from drafts.
+    if (r.status !== "completed" && r.status !== "failed"
+        && r.status !== "cancelled") continue;
+    /** @type {"ok"|"warn"|"bad"|"info"} */
+    const tone = r.status === "completed" ? "ok"
+      : r.status === "failed" ? "bad" : "warn";
+    out.push({
+      id: "run:" + r.runId,
+      kind: "command",
+      ts: r.finishedAt ?? r.startedAt ?? r.createdAt,
+      title: `Workflow ${r.status}: ${safeStr(r.workflowName ?? r.workflowId ?? "workflow")}`,
+      detail: r.errorMessage ? safeStr(r.errorMessage, 240) : undefined,
+      tone,
+      sourceId: r.runId,
+      type: r.status,
+      projectId: r.projectId ?? null,
+      source: "workflow",
     });
   }
   out.sort((a, b) => b.ts - a.ts);
@@ -122,8 +161,21 @@ export function groupByDay(entries) {
 export function filterEntries(entries, opts = {}) {
   const q = (opts.q ?? "").trim().toLowerCase();
   const kinds = opts.kinds instanceof Set ? opts.kinds : new Set(opts.kinds ?? []);
+  const sources = opts.sources instanceof Set ? opts.sources : (opts.sources ? new Set(opts.sources) : null);
+  const from = Number.isFinite(opts.from) ? opts.from : null;
+  const to = Number.isFinite(opts.to) ? opts.to : null;
+  // projectFilter: undefined = all, null = unassigned only, string = that project id.
+  const projectFilter = opts.projectId;
   return entries.filter((e) => {
     if (kinds.size > 0 && !kinds.has(e.kind)) return false;
+    if (sources && sources.size > 0 && !sources.has(e.source ?? "unknown")) return false;
+    if (from != null && e.ts < from) return false;
+    if (to != null && e.ts > to) return false;
+    if (projectFilter !== undefined) {
+      const pid = e.projectId ?? null;
+      if (projectFilter === null) { if (pid !== null) return false; }
+      else if (pid !== projectFilter) return false;
+    }
     if (!q) return true;
     return (e.title + " " + (e.detail ?? "")).toLowerCase().includes(q);
   });
