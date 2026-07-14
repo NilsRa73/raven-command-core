@@ -253,7 +253,7 @@ export async function savePrefs(p: Preferences) {
 
 export async function exportAll(): Promise<Blob> {
   const db = await getDB();
-  const [projects, commands, memory, approvals, prefs, files, projectMemory, workflows, workflowRuns] = await Promise.all([
+  const [projects, commands, memory, approvals, prefs, files, projectMemory, workflows, workflowRuns, deviceHistory] = await Promise.all([
     db.getAll("projects"),
     db.getAll("commands"),
     db.getAll("memory"),
@@ -263,6 +263,7 @@ export async function exportAll(): Promise<Blob> {
     db.getAll("projectMemory"),
     db.getAll("workflows"),
     db.getAll("workflowRuns"),
+    db.getAll("deviceHistory"),
   ]);
   const payload = {
     exportedAt: new Date().toISOString(),
@@ -275,13 +276,14 @@ export async function exportAll(): Promise<Blob> {
     projectMemory,
     workflows,
     workflowRuns,
+    deviceHistory,
   };
   return new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
 }
 
 export async function wipeAll() {
   const db = await getDB();
-  for (const store of ["projects", "commands", "memory", "files", "approvals", "prefs", "projectMemory", "workflows", "workflowRuns"] as const) {
+  for (const store of ["projects", "commands", "memory", "files", "approvals", "prefs", "projectMemory", "workflows", "workflowRuns", "deviceHistory"] as const) {
     await db.clear(store);
   }
 }
