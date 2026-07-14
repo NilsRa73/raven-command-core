@@ -692,7 +692,7 @@ function VisionPage() {
     let frame: CapturedFrame;
     setAnalysis({
       question: trimmed,
-      frame: { dataUrl: "", width: 0, height: 0, sizeBytes: 0, capturedAt: Date.now() },
+      frame: { dataUrl: "", width: 0, height: 0, sizeBytes: 0, capturedAt: Date.now(), hash: null, hashFailureReason: "not_captured" },
       state: "capturing", text: "",
       runtimeLine: buildScreenVisionRuntimeLine({ sourceLabel: sourceLabel || undefined }),
       startedAt: Date.now(),
