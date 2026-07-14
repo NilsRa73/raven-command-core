@@ -58,7 +58,7 @@ progress, or telemetry.
   identical source/dest (backward-compatible: legacy `path` is interpreted as
   the destination `dest` when `dest` is absent; a distinct `source` is still
   mandatory);
-  source when `source` is absent, but a distinct `dest` is still required);
+  
   `bridge_launch_url` requires `https://`; `bridge_launch_app` uses
   `launch.program`. Executor asserts paired-online status and capability
   presence before any bridge call.
@@ -82,8 +82,7 @@ progress, or telemetry.
   time. The returned `packet` object carries `mode`, `selectedIds`,
   `estimatedTokens`, `generatedAt`, `packetHash` (SHA-256 via `sha256HexSync`)
   and `parityId`; the hash is a parity/identity check over the exact packet
-  text, while the event chain uses WebCrypto SHA-256.
-  workflow step results persist those metadata without duplicating memory
+  text, while the event chain uses WebCrypto SHA-256; workflow step results persist those metadata without duplicating memory
   contents.
 - Workflow AI context prepends real project name + goals when the run has
   a `projectId`.
