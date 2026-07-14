@@ -35,6 +35,14 @@ export const PALETTE_COMMANDS = /** @type {PaletteCommand[]} */ ([
   { id: "act:emergency_stop",     section: "Actions", title: "Emergency stop",          action: "emergency_stop",     shortcut: "Alt+Shift+X" },
   { id: "act:test_bridge",        section: "Actions", title: "Test Desktop Bridge",     action: "test_bridge" },
   { id: "act:toggle_focus_mode",  section: "Actions", title: "Toggle Focus mode",       action: "toggle_focus_mode" },
+
+  // Focus block (mission timer)
+  { id: "focus:start",    section: "Focus", title: "Start focus block",    action: "focus_start",    shortcut: "Alt+F", keywords: ["timer", "mission"] },
+  { id: "focus:pause",    section: "Focus", title: "Pause / resume focus", action: "focus_pause",    shortcut: "Alt+P" },
+  { id: "focus:complete", section: "Focus", title: "Complete focus block", action: "focus_complete", shortcut: "Alt+Enter" },
+  { id: "focus:cancel",   section: "Focus", title: "Cancel focus block",   action: "focus_cancel" },
+  { id: "focus:interrupt",section: "Focus", title: "Log interruption",     action: "focus_interrupt", shortcut: "Alt+I" },
+  { id: "focus:help",     section: "Focus", title: "Show keyboard shortcuts", action: "shortcut_help", shortcut: "?" },
 ]);
 
 /** Rank commands against a query. Higher score = better match. */

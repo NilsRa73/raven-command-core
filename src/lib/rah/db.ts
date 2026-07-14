@@ -9,6 +9,8 @@ import type { RoadmapMilestone } from "./roadmap";
 export type { RoadmapMilestone } from "./roadmap";
 import type { DecisionRecord, DecisionVersion } from "./decisions";
 export type { DecisionRecord, DecisionVersion } from "./decisions";
+import type { FocusSession } from "./focusSession";
+export type { FocusSession } from "./focusSession";
 
 export type ApprovalMode = "advisory" | "ask_every" | "trusted_low_risk";
 export type Theme = "raven" | "forest" | "arctic" | "hc";
@@ -154,13 +156,14 @@ interface Schema extends DBSchema {
   roadmapMilestones: { key: string; value: RoadmapMilestone; indexes: { projectId: string; updatedAt: number } };
   decisions: { key: string; value: DecisionRecord; indexes: { projectId: string; updatedAt: number } };
   decisionVersions: { key: string; value: DecisionVersion; indexes: { decisionId: string; createdAt: number } };
+  focusSessions: { key: string; value: FocusSession; indexes: { projectId: string; createdAt: number; status: string } };
 }
 
 let dbp: Promise<IDBPDatabase<Schema>> | null = null;
 export function getDB() {
   if (typeof indexedDB === "undefined") throw new Error("IndexedDB unavailable");
   if (!dbp) {
-    dbp = openDB<Schema>("rah-listen-key", 5, {
+    dbp = openDB<Schema>("rah-listen-key", 6, {
       upgrade(db, oldVersion) {
         if (oldVersion < 1) {
           const p = db.createObjectStore("projects", { keyPath: "id" });
@@ -207,6 +210,12 @@ export function getDB() {
           const dv = db.createObjectStore("decisionVersions", { keyPath: "id" });
           dv.createIndex("decisionId", "decisionId");
           dv.createIndex("createdAt", "createdAt");
+        }
+        if (oldVersion < 6) {
+          const fs = db.createObjectStore("focusSessions", { keyPath: "id" });
+          fs.createIndex("projectId", "projectId");
+          fs.createIndex("createdAt", "createdAt");
+          fs.createIndex("status", "status");
         }
       },
     });
@@ -271,7 +280,7 @@ export async function savePrefs(p: Preferences) {
 
 export async function exportAll(): Promise<Blob> {
   const db = await getDB();
-  const [projects, commands, memory, approvals, prefs, files, projectMemory, workflows, workflowRuns, deviceHistory, roadmapMilestones, decisions, decisionVersions] = await Promise.all([
+  const [projects, commands, memory, approvals, prefs, files, projectMemory, workflows, workflowRuns, deviceHistory, roadmapMilestones, decisions, decisionVersions, focusSessions] = await Promise.all([
     db.getAll("projects"),
     db.getAll("commands"),
     db.getAll("memory"),
@@ -285,6 +294,7 @@ export async function exportAll(): Promise<Blob> {
     db.getAll("roadmapMilestones"),
     db.getAll("decisions"),
     db.getAll("decisionVersions"),
+    db.getAll("focusSessions"),
   ]);
   const payload = {
     exportedAt: new Date().toISOString(),
@@ -301,13 +311,14 @@ export async function exportAll(): Promise<Blob> {
     roadmapMilestones,
     decisions,
     decisionVersions,
+    focusSessions,
   };
   return new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
 }
 
 export async function wipeAll() {
   const db = await getDB();
-  for (const store of ["projects", "commands", "memory", "files", "approvals", "prefs", "projectMemory", "workflows", "workflowRuns", "deviceHistory", "roadmapMilestones", "decisions", "decisionVersions"] as const) {
+  for (const store of ["projects", "commands", "memory", "files", "approvals", "prefs", "projectMemory", "workflows", "workflowRuns", "deviceHistory", "roadmapMilestones", "decisions", "decisionVersions", "focusSessions"] as const) {
     await db.clear(store);
   }
 }

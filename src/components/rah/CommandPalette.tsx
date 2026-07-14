@@ -84,6 +84,22 @@ export function CommandPalette() {
         toast.success(next ? "Focus mode on" : "Focus mode off");
         break;
       }
+      case "focus_start":
+      case "focus_pause":
+      case "focus_resume":
+      case "focus_complete":
+      case "focus_cancel":
+      case "focus_interrupt": {
+        setOpen(false);
+        const ev = action === "focus_resume" ? "rah:focus:pause" : "rah:focus:" + action.replace(/^focus_/, "");
+        await nav({ to: "/" });
+        setTimeout(() => window.dispatchEvent(new CustomEvent(ev)), 40);
+        break;
+      }
+      case "shortcut_help":
+        setOpen(false);
+        window.dispatchEvent(new CustomEvent("rah:shortcut-help-toggle"));
+        break;
       default:
         toast.error("Unknown action: " + action);
     }
