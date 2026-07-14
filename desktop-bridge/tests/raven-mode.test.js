@@ -33,7 +33,7 @@ test("derivePriority — pinned live is critical; archived beats pinned", () => 
   assert.equal(derivePriority(rec({ type: "note" })), "supporting");
 });
 
-test("Fast Mode excludes supporting; Deep Mode includes it", () => {
+test("Fast Mode keeps critical+active first and admits a bounded amount of recent Supporting", () => {
   const list = [
     rec({ id: "a", pinned: true, updatedAt: NOW }),
     rec({ id: "b", type: "blocker", updatedAt: NOW - day }),
@@ -41,8 +41,24 @@ test("Fast Mode excludes supporting; Deep Mode includes it", () => {
   ];
   const fast = selectContextForMode(list, { mode: "fast", now: NOW });
   const deep = selectContextForMode(list, { mode: "deep", now: NOW });
-  assert.deepEqual(fast.map((x) => x.rec.id), ["a", "b"]);
+  const fastIds = fast.map((x) => x.rec.id);
+  // Fast: primary tier first, then a recent supporting note may follow.
+  assert.deepEqual(fastIds.slice(0, 2), ["a", "b"]);
+  assert.ok(fastIds.length >= 2 && fastIds.length <= 3);
+  // Deep always includes supporting.
   assert.deepEqual(deep.map((x) => x.rec.id).sort(), ["a", "b", "c"]);
+});
+
+test("Fast Mode drops stale/low-score supporting via fastSupportingMinScore", () => {
+  const list = [
+    rec({ id: "a", pinned: true, updatedAt: NOW }),
+    // 400 days old -> recency component ~ 0, priorityWeight 25 < 30 threshold
+    rec({ id: "old", type: "note", updatedAt: NOW - 400 * day }),
+  ];
+  const fast = selectContextForMode(list, { mode: "fast", now: NOW });
+  const ids = fast.map((x) => x.rec.id);
+  assert.ok(ids.includes("a"));
+  assert.ok(!ids.includes("old"), "stale supporting should be filtered out in Fast Mode");
 });
 
 test("forced pin overrides supporting exclusion in Fast Mode", () => {
