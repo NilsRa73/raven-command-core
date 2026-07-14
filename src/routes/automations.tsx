@@ -385,6 +385,22 @@ function AutomationsPage() {
                 </ol>
               </div>
 
+              {packetPreview && (
+                <div className="glass-panel p-4 space-y-2">
+                  <h2 className="font-semibold flex items-center gap-2">
+                    <FlaskConical className="h-4 w-4" /> Context packet preview ({packetPreview.mode})
+                  </h2>
+                  <div className="text-xs text-muted-foreground flex flex-wrap gap-x-3">
+                    <span>selected: {packetPreview.selectedIds.length}</span>
+                    <span>~tokens: {packetPreview.approxTokens}</span>
+                    <span>parity: {packetPreview.parityId}</span>
+                    <span>hash: {packetPreview.packetHash}</span>
+                  </div>
+                  <pre className="text-[11px] bg-black/40 rounded p-2 max-h-40 overflow-auto whitespace-pre-wrap">{packetPreview.text}</pre>
+                  <p className="text-[10px] text-muted-foreground">This is the exact context block the executor will build when this workflow runs. Project name/goals are prepended when a project is selected.</p>
+                </div>
+              )}
+
               {dryRunPlan && (
                 <div className="glass-panel p-4 space-y-2">
                   <h2 className="font-semibold flex items-center gap-2"><FlaskConical className="h-4 w-4" /> Dry Run Plan</h2>
