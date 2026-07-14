@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import {
   createWorkflow, createStep, validateWorkflow, planDryRun, STEP_CATALOG,
 } from "../../src/lib/rah/workflow.js";
-import { runWorkflow, _internals } from "../../src/lib/rah/workflowExecutor.js";
+import { runWorkflow, resumeAfterApproval, _internals } from "../../src/lib/rah/workflowExecutor.js";
 import { buildContextPacket, selectContextForMode } from "../../src/lib/rah/ravenMode.js";
 
 test("Copy File step: label is 'Copy File (Bridge)' and capability is files.copy", () => {
@@ -79,7 +79,13 @@ test("executor refuses Copy File with identical source and destination", async (
     now: () => 1, rng: () => "aaaa",
   };
   await runWorkflow(run.runId, deps);
-  const finished = runs.get(run.runId);
+  let cur = runs.get(run.runId);
+  if (cur.status === "awaiting_approval") {
+    const approvalId = Object.values(cur.stepApprovals)[0];
+    await resumeAfterApproval(run.runId, approvalId, deps);
+    cur = runs.get(run.runId);
+  }
+  const finished = cur;
   assert.equal(finished.status, "failed");
   assert.match(String(finished.failureReason || ""), /source and destination must differ/i);
 });
