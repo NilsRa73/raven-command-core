@@ -485,6 +485,8 @@ export function RahProvider({ children }: { children: ReactNode }) {
     memory, reloadMemory, addMemory, deleteMemory,
     projectMemory, reloadProjectMemory, createProjectMemory, updateProjectMemory, deleteProjectMemory,
     togglePinProjectMemory, toggleArchiveProjectMemory,
+    roadmapMilestones, reloadRoadmap, saveRoadmap,
+    decisions, decisionVersions, reloadDecisions, saveDecisionVersion, archiveDecision,
     buildProjectMemoryContext: () => {
       const picked = selectRelevantForPrompt(projectMemory, {
         projectId: activeProject?.id ?? null,
