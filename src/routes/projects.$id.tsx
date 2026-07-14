@@ -116,6 +116,11 @@ function ProjectDetail() {
           <Button variant="secondary" onClick={() => addMemoryQuick("milestone", "Add milestone:")}><Flag className="h-4 w-4" /> Milestone</Button>
           <Button variant="secondary" onClick={() => addMemoryQuick("decision", "Add decision:")}><CheckCircle2 className="h-4 w-4" /> Decision</Button>
           <Link to="/files" className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm hover:bg-accent"><FolderOpen className="h-4 w-4" /> Open files</Link>
+          <Link
+            to="/chronicle"
+            search={{ projectId: project.id, week: "", view: "timeline" }}
+            className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm hover:bg-accent"
+          >Chronicle</Link>
           <Button variant="ghost" onClick={() => {
             void (async () => {
               if (!isActive) await rah.setActiveProject(project.id);
