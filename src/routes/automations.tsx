@@ -51,6 +51,7 @@ function AutomationsPage() {
 
   useEffect(() => { void reloadAll(); }, [reloadAll]);
   useEffect(() => {
+    if (isDraftUnsaved) return; // don't clobber an in-memory new-workflow draft
     if (selectedId) {
       // If switching from an unsaved new draft to an existing workflow,
       // this effect runs; guard against clobbering handled in click handler.
@@ -65,7 +66,7 @@ function AutomationsPage() {
       setDraft(null);
       setIsDraftUnsaved(false);
     }
-  }, [selectedId, workflows]);
+  }, [selectedId, workflows, isDraftUnsaved]);
 
   // Fetch real capabilities from bridge for honest dry-run gating.
   useEffect(() => {
