@@ -366,8 +366,11 @@ export function RahProvider({ children }: { children: ReactNode }) {
     // reason recorded. cancelRun persists BEFORE aborting in-flight AI.
     const runs = await db.getAll("workflowRuns");
     const deps = buildExecutorDeps({ requestApproval, reloadApprovals, projectMemory, projects, ravenState: getRavenModeState() });
+    // Include every non-terminal state where the state machine permits
+    // cancellation: draft, queued, awaiting_approval, running, paused.
     for (const r of runs) {
-      if (r.status === "queued" || r.status === "running" || r.status === "awaiting_approval" || r.status === "paused") {
+      if (r.status === "draft" || r.status === "queued" || r.status === "running"
+          || r.status === "awaiting_approval" || r.status === "paused") {
         await executorCancelRun(r.runId, deps, { reason: "emergency_stop" });
       }
     }
