@@ -16,8 +16,9 @@ progress, or telemetry.
 - Local AI: LM Studio / Ollama on the user's PC, proxied through the
   authenticated RAH Desktop Bridge (v0.2.1) at `127.0.0.1:47824`.
 - Cloud AI: Lovable AI Gateway as a manual fallback.
-- Storage: IndexedDB v2 (commands, memory, files, approvals) + localStorage
-  for lightweight settings (devices, focus mode, engine).
+- Storage: IndexedDB v3 with stores for commands, memory, files, approvals,
+  workflows, and workflowRuns; plus localStorage for lightweight settings
+  (devices, focus mode, engine).
 - Native companion: `desktop-bridge-native/` (Tauri 2 + Node SEA sidecar).
 - Bridge protocol: HTTPS/loopback, HMAC-signed, one-time approval tokens,
   Private Network Access, path containment, feature manifest.
@@ -54,7 +55,9 @@ progress, or telemetry.
 - `bridge_read_file` uses `files.readText`; `bridge_write_file` uses
   `files.copy` and is surfaced in the UI as **Copy File (Bridge)** with
   explicit Source and Destination fields; validation rejects missing or
-  identical source/dest (backward-compatible: legacy `path` is accepted as
+  identical source/dest (backward-compatible: legacy `path` is interpreted as
+  the destination `dest` when `dest` is absent; a distinct `source` is still
+  mandatory);
   source when `source` is absent, but a distinct `dest` is still required);
   `bridge_launch_url` requires `https://`; `bridge_launch_app` uses
   `launch.program`. Executor asserts paired-online status and capability
@@ -69,7 +72,7 @@ progress, or telemetry.
   `resolveApproval` dispatches to the executor exactly once.
 - `exportAll` includes `projectMemory`, `workflows`, and `workflowRuns`.
 
-## Alpha 0.3 — Fast/Deep + Hardening (shipped)
+## Alpha 0.2 — Fast/Deep + Hardening (complete)
 
 - Fast/Deep mode with deterministic packet builder in `ravenMode.js`.
   Fast Mode is bounded, not empty: it always includes pinned + task-scoped
@@ -77,7 +80,9 @@ progress, or telemetry.
   (default cap 2, min relevance 30) so short answers still have context.
 - Every AI step (chat + workflow) receives the exact packet used at run
   time. The returned `packet` object carries `mode`, `selectedIds`,
-  `estimatedTokens`, `generatedAt`, `packetHash` (FNV-1a) and `parityId`;
+  `estimatedTokens`, `generatedAt`, `packetHash` (SHA-256 via `sha256HexSync`)
+  and `parityId`; the hash is a parity/identity check over the exact packet
+  text, while the event chain uses WebCrypto SHA-256.
   workflow step results persist those metadata without duplicating memory
   contents.
 - Workflow AI context prepends real project name + goals when the run has
@@ -118,7 +123,7 @@ progress, or telemetry.
 6. Visual identity: matte black, deep charcoal glass panels, restrained
    gold accents, subtle motion, strong contrast, generous spacing.
 
-## Current sprint — Raven One Alpha 0.1
+## Current sprint — Raven One Alpha 0.2 hardening
 
 - [x] Raven Home as landing page with mission, status, devices, chronicle
       preview, agent team, quick actions, readiness score.
@@ -167,12 +172,12 @@ progress, or telemetry.
 - [x] Tests: `desktop-bridge/tests/workflow.test.js` (11 new tests,
       total 236 passing at that milestone). `bunx tsgo --noEmit` clean.
 
-## Alpha 0.2 hardening — Workflow Engine + Fast/Deep (current)
+## Alpha 0.2 hardening — Workflow Engine + Fast/Deep (complete)
 
 - [x] `bridge_write_file` is exposed as **Copy File (Bridge)** with explicit
       Source and Destination inputs; validation requires both and rejects
-      identical source/dest. Backward-safe: legacy `path` is accepted as
-      source when `source` is absent, but a distinct `dest` is still
+      identical source/dest. Backward-safe: legacy `path` is interpreted as the
+      destination `dest` when `dest` is absent, but a distinct `source` is
       mandatory. Implemented via bridge `files.copy` — arbitrary write-text
       is not supported and is not silently emulated.
 - [x] Emergency Stop cancels every non-terminal run — `draft`, `queued`,
@@ -185,7 +190,9 @@ progress, or telemetry.
 - [x] Fast/Deep context packet parity: executor and chat consume the exact
       object returned by `buildContextPacket`; workflow step results persist
       `mode`, `selectedIds`, `estimatedTokens`, `generatedAt`, `packetHash`
-      (FNV-1a) and `parityId` — no duplicated memory content.
+      (SHA-256 via `sha256HexSync`) and `parityId` — no duplicated memory
+      content; the hash is a parity/identity check over the exact packet text,
+      while the event chain uses WebCrypto SHA-256.
 - [x] `planDryRun` fails **closed** on missing / unknown / empty bridge
       capability manifests; Automations feeds it the authenticated
       `/v1/capabilities` manifest filtered to enabled entries.
@@ -200,8 +207,9 @@ progress, or telemetry.
       step and % progress, full event metadata, Verify Chain, Export Run
       JSON, and Context Packet Preview before Run.
 - [x] Tests: `hardening-batch.test.js`, `copy-file-and-fast-supporting.test.js`,
-      and `draft-guard.test.js` added. Current verified total is reported
-      by the run command below; typecheck and production build are clean.
+      and `draft-guard.test.js` added. Current verified total: **294/294 tests
+      pass**, `bunx tsgo --noEmit` is clean, and the production build
+      succeeds.
 
 - Device Center v0.2: role-based dashboards, hardware history charts.
 - Chronicle v0.2: per-project chronicle views, weekly summary drafts.
