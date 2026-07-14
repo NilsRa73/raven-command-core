@@ -793,35 +793,289 @@ function downloadBlob(name: string, body: string, type: string) {
 /* ─── Roadmap ─── */
 
 function RoadmapTab({ project, rah }: { project: any; rah: ReturnType<typeof useRah> }) {
-  const rm = useMemo(
-    () => deriveRoadmap({ memory: rah.projectMemory, projectId: project.id }),
-    [rah.projectMemory, project.id],
+  const persisted = useMemo(
+    () => rah.roadmapMilestones.filter((m) => m.projectId === project.id).map((m) => normalizeMilestone(m)),
+    [rah.roadmapMilestones, project.id],
   );
-  const Bucket = ({ title, items, hint }: { title: string; items: {id:string;title:string;source:string}[]; hint: string | null }) => (
-    <div className="glass-panel p-3 space-y-2">
-      <h3 className="display text-sm gold-text">{title}</h3>
-      {items.length === 0
-        ? <div className="text-xs text-muted-foreground">{hint}</div>
-        : (
-          <ul className="text-sm space-y-1">
-            {items.map((i) => (
-              <li key={i.source + i.id} className="flex items-start gap-2">
-                <span className="text-[10px] uppercase tracking-widest text-primary min-w-[70px]">{i.source.replace("memory:", "")}</span>
-                <span>{i.title}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-    </div>
-  );
+  const [draft, setDraft] = useState<RoadmapMilestone[]>(persisted);
+  const [showEditor, setShowEditor] = useState<RoadmapMilestone | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [dragId, setDragId] = useState<string | null>(null);
+
+  useEffect(() => { setDraft(persisted); /* re-sync when store changes */ }, [persisted.length]);
+
+  const dirty = useMemo(() => isRoadmapDirty(persisted, draft), [persisted, draft]);
+  const validation = useMemo(() => validateRoadmap(draft), [draft]);
+  const grouped = useMemo(() => groupByColumn(draft), [draft]);
+
+  function moveTo(id: string, column: RoadmapColumn, index?: number) {
+    setDraft((prev) => moveMilestone(prev, { id, targetColumn: column, targetIndex: index }));
+  }
+  function reorder(id: string, direction: "up" | "down") {
+    setDraft((prev) => reorderWithinColumn(prev, { id, direction }));
+  }
+  function remove(id: string) {
+    if (!window.confirm("Remove milestone from roadmap draft? Save Roadmap to persist.")) return;
+    setDraft((prev) => prev.filter((m) => m.id !== id));
+  }
+  function resetDraft() {
+    if (!dirty || window.confirm("Discard unsaved roadmap changes?")) setDraft(persisted);
+  }
+  async function save() {
+    if (!validation.ok) { toast.error(validation.errors[0]?.message ?? "Fix validation errors"); return; }
+    await rah.saveRoadmap(project.id, draft);
+    toast.success("Roadmap saved.");
+  }
+  function exportMd() {
+    downloadBlob(`raven-roadmap-${project.id}.md`, exportRoadmapMarkdown({ project, milestones: draft, validation }), "text/markdown");
+  }
+  function exportJson() {
+    downloadBlob(
+      `raven-roadmap-${project.id}.json`,
+      JSON.stringify(exportRoadmapJson({ project, milestones: draft, validation }), null, 2),
+      "application/json",
+    );
+  }
+
   return (
     <div className="space-y-3">
-      <p className="text-xs text-muted-foreground">Derived only from your memory records. No fake roadmap items are ever inserted.</p>
-      <div className="grid gap-3 md:grid-cols-3">
-        <Bucket title="Now"   items={rm.now}   hint={rm.guidance.now} />
-        <Bucket title="Next"  items={rm.next}  hint={rm.guidance.next} />
-        <Bucket title="Later" items={rm.later} hint={rm.guidance.later} />
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="display text-lg gold-text">Roadmap</h2>
+        <span className="text-xs text-muted-foreground">
+          {dirty ? "Unsaved changes" : "Saved"} · {draft.length} milestone{draft.length === 1 ? "" : "s"}
+        </span>
+        <div className="ml-auto flex flex-wrap gap-2">
+          <Button size="sm" variant="ghost" onClick={exportMd}>Export MD</Button>
+          <Button size="sm" variant="ghost" onClick={exportJson}>Export JSON</Button>
+          <Button size="sm" variant="ghost" onClick={resetDraft} disabled={!dirty}>Reset to saved</Button>
+          <Button size="sm" onClick={() => void save()} disabled={!dirty || !validation.ok}>Save roadmap</Button>
+          <Button size="sm" onClick={() => { setCreating(true); setShowEditor(null); }}>
+            <Plus className="h-4 w-4" /> Add milestone
+          </Button>
+        </div>
       </div>
+
+      {!validation.ok && (
+        <div className="rounded border border-destructive/50 bg-destructive/10 p-2 text-xs space-y-0.5">
+          <div className="font-medium text-destructive">Fix before saving:</div>
+          {validation.errors.map((e, i) => (
+            <div key={i} className="text-destructive/90">• {e.message}</div>
+          ))}
+        </div>
+      )}
+
+      {creating && (
+        <MilestoneEditor
+          all={draft}
+          onCancel={() => setCreating(false)}
+          onSave={(m) => { setDraft((prev) => [...prev, m]); setCreating(false); }}
+        />
+      )}
+      {showEditor && (
+        <MilestoneEditor
+          initial={showEditor}
+          all={draft}
+          onCancel={() => setShowEditor(null)}
+          onSave={(m) => { setDraft((prev) => prev.map((x) => x.id === m.id ? m : x)); setShowEditor(null); }}
+        />
+      )}
+
+      <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+        {ROADMAP_COLUMNS.map((col) => (
+          <RoadmapColumnView
+            key={col}
+            column={col}
+            items={grouped[col] ?? []}
+            dragId={dragId}
+            onDragStart={(id) => setDragId(id)}
+            onDragEnd={() => setDragId(null)}
+            onDropOnColumn={(id) => { moveTo(id, col); setDragId(null); }}
+            onDropOnItem={(id, targetIndex) => { moveTo(id, col, targetIndex); setDragId(null); }}
+            onEdit={(m) => { setShowEditor(m); setCreating(false); }}
+            onMoveUp={(id) => reorder(id, "up")}
+            onMoveDown={(id) => reorder(id, "down")}
+            onMoveToColumn={(id, target) => moveTo(id, target)}
+            onRemove={remove}
+          />
+        ))}
+      </div>
+      <p className="text-[10px] text-muted-foreground">
+        Drag-and-drop and keyboard Move Up/Down affect the in-memory draft only. Click Save roadmap to persist.
+      </p>
+    </div>
+  );
+}
+
+function RoadmapColumnView({
+  column, items, dragId, onDragStart, onDragEnd, onDropOnColumn, onDropOnItem,
+  onEdit, onMoveUp, onMoveDown, onMoveToColumn, onRemove,
+}: {
+  column: RoadmapColumn;
+  items: RoadmapMilestone[];
+  dragId: string | null;
+  onDragStart: (id: string) => void;
+  onDragEnd: () => void;
+  onDropOnColumn: (id: string) => void;
+  onDropOnItem: (id: string, targetIndex: number) => void;
+  onEdit: (m: RoadmapMilestone) => void;
+  onMoveUp: (id: string) => void;
+  onMoveDown: (id: string) => void;
+  onMoveToColumn: (id: string, column: RoadmapColumn) => void;
+  onRemove: (id: string) => void;
+}) {
+  const label = column === UNASSIGNED_COLUMN ? "Unassigned" : ROADMAP_STATUS_LABEL[column as RoadmapStatus];
+  return (
+    <div
+      className="glass-panel p-2 space-y-2 min-h-[120px]"
+      onDragOver={(e) => { if (dragId) e.preventDefault(); }}
+      onDrop={(e) => { e.preventDefault(); if (dragId) onDropOnColumn(dragId); }}
+      aria-label={`${label} column`}
+    >
+      <div className="flex items-center justify-between px-1">
+        <h3 className="display text-xs gold-text uppercase tracking-widest">{label}</h3>
+        <span className="text-[10px] text-muted-foreground">{items.length}</span>
+      </div>
+      {items.length === 0 && (
+        <div className="text-[11px] text-muted-foreground px-1">
+          {column === UNASSIGNED_COLUMN ? "Only used for unknown legacy statuses." : "Drop a milestone here."}
+        </div>
+      )}
+      <ul className="space-y-1.5">
+        {items.map((m, idx) => (
+          <li
+            key={m.id}
+            draggable
+            onDragStart={() => onDragStart(m.id)}
+            onDragEnd={onDragEnd}
+            onDragOver={(e) => { if (dragId) e.preventDefault(); }}
+            onDrop={(e) => { e.preventDefault(); if (dragId && dragId !== m.id) onDropOnItem(dragId, idx); }}
+            className="rounded border border-border/60 bg-card/60 p-2 text-xs space-y-1"
+          >
+            <div className="flex items-start gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="font-medium truncate" title={m.title}>{m.title || "(untitled)"}</div>
+                <div className="text-[10px] text-muted-foreground">
+                  {m.priority} · target: {m.targetDate ?? "—"} · owner: {m.owner ?? "—"}
+                </div>
+                {m.description && <div className="text-[11px] text-muted-foreground truncate mt-0.5">{m.description}</div>}
+                {m.dependencies.length > 0 && (
+                  <div className="text-[10px] text-muted-foreground">deps: {m.dependencies.join(", ")}</div>
+                )}
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-1">
+              <Button size="sm" variant="ghost" onClick={() => onMoveUp(m.id)} aria-label="Move up">↑</Button>
+              <Button size="sm" variant="ghost" onClick={() => onMoveDown(m.id)} aria-label="Move down">↓</Button>
+              <Select value={column} onValueChange={(v) => onMoveToColumn(m.id, v as RoadmapColumn)}>
+                <SelectTrigger className="h-7 text-[11px] px-2"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {ROADMAP_COLUMNS.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {c === UNASSIGNED_COLUMN ? "Unassigned" : ROADMAP_STATUS_LABEL[c as RoadmapStatus]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button size="sm" variant="ghost" onClick={() => onEdit(m)}><Pencil className="h-3 w-3" /></Button>
+              <Button size="sm" variant="ghost" onClick={() => onRemove(m.id)}><Trash2 className="h-3 w-3" /></Button>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function MilestoneEditor({
+  initial, all, onCancel, onSave,
+}: {
+  initial?: RoadmapMilestone;
+  all: RoadmapMilestone[];
+  onCancel: () => void;
+  onSave: (m: RoadmapMilestone) => void;
+}) {
+  const [title, setTitle] = useState(initial?.title ?? "");
+  const [description, setDescription] = useState(initial?.description ?? "");
+  const [status, setStatus] = useState<RoadmapStatus>(
+    (ROADMAP_STATUSES.includes(initial?.status as RoadmapStatus) ? initial?.status : "backlog") as RoadmapStatus,
+  );
+  const [priority, setPriority] = useState(initial?.priority ?? "normal");
+  const [targetDate, setTargetDate] = useState(initial?.targetDate ?? "");
+  const [owner, setOwner] = useState(initial?.owner ?? "");
+  const [deps, setDeps] = useState((initial?.dependencies ?? []).join(", "));
+  const [evidence, setEvidence] = useState((initial?.evidenceIds ?? []).join(", "));
+
+  function save() {
+    if (!title.trim()) { toast.error("Title required"); return; }
+    const now = Date.now();
+    const m: RoadmapMilestone = normalizeMilestone({
+      id: initial?.id ?? uid(),
+      title: title.trim(),
+      description: description.trim(),
+      status,
+      priority,
+      targetDate: targetDate || null,
+      owner: owner.trim() || null,
+      dependencies: parseCsv(deps),
+      evidenceIds: parseCsv(evidence),
+      order: initial?.order ?? all.filter((x) => x.status === status).length,
+      createdAt: initial?.createdAt ?? now,
+      updatedAt: now,
+    });
+    onSave(m);
+  }
+
+  return (
+    <div className="glass-panel gold-border p-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="display text-sm">{initial ? "Edit milestone (draft)" : "New milestone (draft)"}</div>
+        <Button variant="ghost" size="sm" onClick={onCancel}><X className="h-4 w-4" /></Button>
+      </div>
+      <Input placeholder="Milestone title" value={title} onChange={(e) => setTitle(e.target.value)} />
+      <Textarea rows={2} placeholder="Description (optional)" value={description} onChange={(e) => setDescription(e.target.value)} />
+      <div className="grid gap-2 md:grid-cols-3">
+        <label className="text-xs">
+          <span className="text-muted-foreground">Status</span>
+          <Select value={status} onValueChange={(v) => setStatus(v as RoadmapStatus)}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {ROADMAP_STATUSES.map((s) => <SelectItem key={s} value={s}>{ROADMAP_STATUS_LABEL[s]}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </label>
+        <label className="text-xs">
+          <span className="text-muted-foreground">Priority</span>
+          <Select value={priority} onValueChange={(v) => setPriority(v)}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {ROADMAP_PRIORITIES.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </label>
+        <label className="text-xs">
+          <span className="text-muted-foreground">Target date (YYYY-MM-DD)</span>
+          <Input value={targetDate} onChange={(e) => setTargetDate(e.target.value)} placeholder="—" />
+        </label>
+        <label className="text-xs">
+          <span className="text-muted-foreground">Owner</span>
+          <Input value={owner} onChange={(e) => setOwner(e.target.value)} placeholder="—" />
+        </label>
+        <label className="text-xs">
+          <span className="text-muted-foreground">Dependencies (milestone IDs, comma separated)</span>
+          <Input value={deps} onChange={(e) => setDeps(e.target.value)} placeholder="(optional)" />
+        </label>
+        <label className="text-xs">
+          <span className="text-muted-foreground">Evidence IDs (comma separated)</span>
+          <Input value={evidence} onChange={(e) => setEvidence(e.target.value)} placeholder="(optional)" />
+        </label>
+      </div>
+      <div className="flex justify-end gap-2">
+        <Button variant="ghost" onClick={onCancel}>Cancel</Button>
+        <Button onClick={save}>Apply to draft</Button>
+      </div>
+      <p className="text-[10px] text-muted-foreground">
+        Applies to in-memory draft. Click Save roadmap above to persist.
+      </p>
     </div>
   );
 }
