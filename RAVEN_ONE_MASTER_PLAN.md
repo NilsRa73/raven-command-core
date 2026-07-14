@@ -260,11 +260,50 @@ time-normalized SVG lines, not full charts. No cross-device aggregation
 charts yet — role dashboard shows counts only.
 
 - Chronicle v0.2: per-project chronicle views, weekly summary drafts.
-- Project DNA v0.2: roadmap milestone drag-and-drop, decisions changelog.
 - Raven Home v0.2: mission timer, "focus block" workflow, keyboard-first
   command palette.
 - Native companion v0.3: auto-update via Tauri updater, signed installer.
 - Voice v0.2: per-project voice profiles, wake-phrase tuning.
+
+## Project DNA v0.2 — Roadmap DnD + Decisions changelog (shipped)
+
+- Deterministic pure helpers under `src/lib/rah/roadmap.js` and
+  `src/lib/rah/decisions.js`. React renders helper results; no business
+  logic in components.
+- Roadmap columns: **Backlog, Planned, In Progress, Blocked, Done**, plus
+  **Unassigned** for unknown legacy statuses (never guessed).
+- Drag-and-drop across and within columns, with keyboard-accessible Move
+  Up/Down and Move-to-column selector as full fallback. DnD updates an
+  in-memory draft only; nothing persists until explicit **Save roadmap**.
+- Discard confirmation via `shouldConfirmDiscard`; Reset-to-saved is
+  explicit. Validation blocks Save on empty title, invalid date, duplicate
+  id, self dependency, circular dependency, missing dependency, or
+  invalid status.
+- Milestone fields: title, description, status, priority, target date,
+  owner, dependencies, evidence ids, order, created/updated timestamps.
+  Missing values render as "—"; nothing fabricated.
+- Decisions are immutable-versioned: each edit creates a new
+  `decisionVersion` with monotonically increasing `versionNumber`. Prior
+  versions are preserved forever. Version timeline with deterministic
+  field-level diff between any two selected versions.
+- Duplicate-decision detection surfaces a warning based on normalized
+  title/content Jaccard similarity; save requires explicit acknowledgment.
+  Never auto-merges.
+- Archive is preferred over delete; archive preserves audit history.
+  Supersede / reverse links between decisions are explicit.
+- Markdown and JSON export for both roadmap and decisions changelog,
+  including project id/name, timestamps, ordering/status, full version
+  history, evidence ids.
+- Storage: **IndexedDB v5** adds `roadmapMilestones`, `decisions`, and
+  `decisionVersions` stores with `by-project` / `by-decision` indexes.
+- Tests: `desktop-bridge/tests/roadmap.test.js` and
+  `desktop-bridge/tests/decisions.test.js` cover status normalization,
+  grouping, cross-column move/reorder, keyboard reorder, validation
+  (including circular dependencies), draft dirty detection, immutable
+  version creation, field diffs, supersede/reverse linkage, duplicate
+  warnings, and export metadata.
+- Verified: **346/346 bridge tests pass**, `bunx tsgo --noEmit` clean,
+  production build passes.
 
 ## Definition of done (per sprint)
 

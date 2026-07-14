@@ -12,18 +12,31 @@ import { useRah } from "@/lib/rah/context";
 import { useBridgeStatus } from "@/lib/rah/bridgeStatus";
 import { getLocalAiSettings } from "@/lib/rah/localAi";
 import { streamChat } from "@/lib/rah/ai";
-import { getDB, type FileItem } from "@/lib/rah/db";
+import { getDB, uid, type FileItem, type RoadmapMilestone, type DecisionVersion } from "@/lib/rah/db";
 import {
   buildProjectOverview,
   computeProjectHealth,
   buildProjectTimeline,
-  deriveRoadmap,
   deterministicProjectProfile,
   buildProjectBriefContext,
   buildContinueProjectPreview,
   PROJECT_DNA_TABS,
 } from "@/lib/rah/projectDna";
 import { filterMemories, MEMORY_TYPES, MEMORY_TYPE_LABEL, type MemoryType, type ProjectMemoryRecord } from "@/lib/rah/projectMemory";
+import {
+  ROADMAP_STATUSES, ROADMAP_STATUS_LABEL, ROADMAP_COLUMNS, UNASSIGNED_COLUMN, ROADMAP_PRIORITIES,
+  groupByColumn, moveMilestone, reorderWithinColumn, isRoadmapDirty, validateRoadmap,
+  exportRoadmapJson, exportRoadmapMarkdown, normalizeMilestone,
+  type RoadmapColumn, type RoadmapStatus,
+} from "@/lib/rah/roadmap";
+import {
+  DECISION_STATUSES, DECISION_STATUS_LABEL,
+  makeInitialVersion, makeNextVersion, groupVersions, latestVersions,
+  diffVersions, findDuplicateCandidates, isVersionDirty,
+  exportChangelogJson, exportChangelogMarkdown,
+  type DecisionStatus,
+} from "@/lib/rah/decisions";
+import { shouldConfirmDiscard } from "@/lib/rah/draftGuard";
 
 type Tab = typeof PROJECT_DNA_TABS[number];
 
@@ -474,124 +487,599 @@ function TimelineTab({ project, rah }: { project: any; rah: ReturnType<typeof us
 /* ─── Decisions ─── */
 
 function DecisionsTab({ project, rah }: { project: any; rah: ReturnType<typeof useRah> }) {
-  const decisions = useMemo(
-    () => filterMemories(rah.projectMemory, { projectId: project.id, types: ["decision"], includeArchived: true }),
-    [rah.projectMemory, project.id],
+  const projectDecisions = useMemo(
+    () => rah.decisions.filter((d) => d.projectId === project.id),
+    [rah.decisions, project.id],
   );
-  const [showEditor, setShowEditor] = useState(false);
-  const [editing, setEditing] = useState<ProjectMemoryRecord | null>(null);
+  const versionsByDecision = useMemo(() => groupVersions(rah.decisionVersions), [rah.decisionVersions]);
+  const latestByDecision = useMemo(() => latestVersions(rah.decisionVersions), [rah.decisionVersions]);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [diff, setDiff] = useState<{ a: DecisionVersion; b: DecisionVersion } | null>(null);
+
+  function exportMd() {
+    const md = exportChangelogMarkdown({ project, decisions: projectDecisions, versions: rah.decisionVersions });
+    downloadBlob(`raven-decisions-${project.id}.md`, md, "text/markdown");
+  }
+  function exportJson() {
+    const j = exportChangelogJson({ project, decisions: projectDecisions, versions: rah.decisionVersions });
+    downloadBlob(`raven-decisions-${project.id}.json`, JSON.stringify(j, null, 2), "application/json");
+  }
 
   return (
     <section className="glass-panel p-4 space-y-3">
-      <div className="flex items-center gap-2">
-        <h2 className="display text-lg gold-text">Decisions</h2>
-        <Button size="sm" className="ml-auto" onClick={() => { setEditing(null); setShowEditor(true); }}>
-          <Plus className="h-4 w-4" /> Add decision
-        </Button>
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="display text-lg gold-text">Decisions changelog</h2>
+        <span className="text-xs text-muted-foreground">Every edit is a new immutable version. Never overwritten.</span>
+        <div className="ml-auto flex gap-2">
+          <Button size="sm" variant="ghost" onClick={exportMd}>Export MD</Button>
+          <Button size="sm" variant="ghost" onClick={exportJson}>Export JSON</Button>
+          <Button size="sm" onClick={() => { setCreating(true); setEditingId(null); }}>
+            <Plus className="h-4 w-4" /> New decision
+          </Button>
+        </div>
       </div>
-      {(showEditor || editing) && (
-        <DecisionEditor
-          initial={editing ?? undefined}
-          projectId={project.id}
-          onCancel={() => { setShowEditor(false); setEditing(null); }}
-          onSave={async (draft) => {
-            if (editing) await rah.updateProjectMemory(editing.id, draft);
-            else await rah.createProjectMemory({ ...draft, source: "decision-manual" });
-            setShowEditor(false); setEditing(null);
-            toast.success("Decision saved.");
-          }}
+
+      {creating && (
+        <DecisionVersionEditor
+          project={project}
+          rah={rah}
+          mode="new"
+          onDone={() => setCreating(false)}
+          onCancel={() => setCreating(false)}
         />
       )}
-      {decisions.length === 0 && !showEditor
-        ? <EmptyState hint='No decisions logged. First click: "Add decision" above. AI output is never saved automatically.' />
+
+      {projectDecisions.length === 0 && !creating
+        ? <EmptyState hint='No decisions yet. First click: "New decision" above. Nothing is saved until you click Save decision version.' />
         : (
           <ul className="divide-y divide-border/50">
-            {decisions.map((d) => (
-              <li key={d.id} className="py-2 flex items-start gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm">{d.title}{d.archived && <span className="text-[10px] text-muted-foreground"> · archived</span>}</div>
-                  {d.content && <div className="text-xs text-muted-foreground whitespace-pre-wrap">{d.content}</div>}
-                  <div className="text-[11px] text-muted-foreground">{new Date(d.updatedAt).toLocaleString()}</div>
-                </div>
-                <Button size="sm" variant="ghost" onClick={() => setEditing(d)}><Pencil className="h-4 w-4" /></Button>
-                <Button size="sm" variant="ghost" onClick={() => rah.toggleArchiveProjectMemory(d.id)}>{d.archived ? "Unarchive" : "Archive"}</Button>
-                <Button size="sm" variant="ghost" onClick={() => { if (confirm("Delete this decision?")) void rah.deleteProjectMemory(d.id); }}><Trash2 className="h-4 w-4" /></Button>
-              </li>
-            ))}
+            {projectDecisions
+              .slice()
+              .sort((a, b) => b.updatedAt - a.updatedAt)
+              .map((d) => {
+                const vs = versionsByDecision.get(d.id) ?? [];
+                const latest = latestByDecision.get(d.id);
+                if (!latest) return null;
+                const isEditing = editingId === d.id;
+                return (
+                  <li key={d.id} className="py-3 space-y-2">
+                    <div className="flex items-start gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm">
+                          {latest.title || "(untitled)"}
+                          <span className="ml-2 text-[10px] uppercase tracking-widest text-primary">{DECISION_STATUS_LABEL[latest.status]}</span>
+                          {d.archived && <span className="ml-2 text-[10px] text-muted-foreground">· archived</span>}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground">
+                          {vs.length} version{vs.length === 1 ? "" : "s"} · latest {new Date(latest.createdAt).toLocaleString()} · author: {latest.author ?? "—"}
+                        </div>
+                        {latest.content && <div className="text-xs text-muted-foreground whitespace-pre-wrap mt-1">{latest.content}</div>}
+                      </div>
+                      <Button size="sm" variant="ghost" onClick={() => { setEditingId(isEditing ? null : d.id); setCreating(false); }}>
+                        <Pencil className="h-4 w-4" /> {isEditing ? "Close" : "New version"}
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => void rah.archiveDecision(d.id, !d.archived)}>
+                        {d.archived ? "Unarchive" : "Archive"}
+                      </Button>
+                    </div>
+                    <VersionTimeline versions={vs} onDiff={(a, b) => setDiff({ a, b })} />
+                    {isEditing && (
+                      <DecisionVersionEditor
+                        project={project}
+                        rah={rah}
+                        mode="edit"
+                        decisionId={d.id}
+                        previousVersion={latest}
+                        onDone={() => setEditingId(null)}
+                        onCancel={() => setEditingId(null)}
+                      />
+                    )}
+                  </li>
+                );
+              })}
           </ul>
         )}
+
+      {diff && (
+        <div className="glass-panel gold-border p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="display text-sm">Diff: v{diff.a.versionNumber} → v{diff.b.versionNumber}</div>
+            <Button size="sm" variant="ghost" onClick={() => setDiff(null)}><X className="h-4 w-4" /></Button>
+          </div>
+          <table className="w-full text-xs">
+            <tbody>
+              {diffVersions(diff.a, diff.b).map((row) => (
+                <tr key={row.field} className={row.changed ? "bg-primary/5" : ""}>
+                  <td className="px-2 py-1 uppercase tracking-widest text-[10px] text-muted-foreground w-28">{row.field}</td>
+                  <td className="px-2 py-1 align-top text-muted-foreground">{formatDiffValue(row.before)}</td>
+                  <td className="px-2 py-1 align-top">{row.changed ? "→" : ""}</td>
+                  <td className="px-2 py-1 align-top">{formatDiffValue(row.after)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </section>
   );
 }
 
-function DecisionEditor({
-  initial, projectId, onCancel, onSave,
+function formatDiffValue(v: unknown) {
+  if (v == null || v === "") return <span className="text-muted-foreground">—</span>;
+  if (Array.isArray(v)) return v.length ? v.join(", ") : <span className="text-muted-foreground">—</span>;
+  return String(v);
+}
+
+function VersionTimeline({ versions, onDiff }: { versions: DecisionVersion[]; onDiff: (a: DecisionVersion, b: DecisionVersion) => void }) {
+  const [pick, setPick] = useState<DecisionVersion | null>(null);
+  if (versions.length === 0) return null;
+  return (
+    <ol className="flex flex-wrap gap-2 text-xs">
+      {versions.map((v) => (
+        <li key={v.id}>
+          <button
+            onClick={() => {
+              if (pick && pick.id !== v.id) { onDiff(pick, v); setPick(null); }
+              else setPick(v);
+            }}
+            className={
+              "rounded border px-2 py-1 " +
+              (pick?.id === v.id ? "border-primary text-primary" : "border-border/60 text-muted-foreground hover:text-foreground")
+            }
+            title={new Date(v.createdAt).toLocaleString()}
+          >
+            v{v.versionNumber} · {DECISION_STATUS_LABEL[v.status]}
+          </button>
+        </li>
+      ))}
+      {pick && <li className="text-[11px] text-muted-foreground self-center">Pick another version to diff…</li>}
+    </ol>
+  );
+}
+
+function DecisionVersionEditor({
+  project, rah, mode, decisionId, previousVersion, onDone, onCancel,
 }: {
-  initial?: ProjectMemoryRecord;
-  projectId: string;
+  project: any;
+  rah: ReturnType<typeof useRah>;
+  mode: "new" | "edit";
+  decisionId?: string;
+  previousVersion?: DecisionVersion;
+  onDone: () => void;
   onCancel: () => void;
-  onSave: (draft: Omit<ProjectMemoryRecord, "id" | "createdAt" | "updatedAt">) => Promise<void>;
 }) {
-  const [title, setTitle] = useState(initial?.title ?? "");
-  const [content, setContent] = useState(initial?.content ?? "");
-  const [tags, setTags] = useState((initial?.tags ?? []).join(", "));
+  const [title, setTitle] = useState(previousVersion?.title ?? "");
+  const [content, setContent] = useState(previousVersion?.content ?? "");
+  const [rationale, setRationale] = useState(previousVersion?.rationale ?? "");
+  const [status, setStatus] = useState<DecisionStatus>(previousVersion?.status ?? "proposed");
+  const [author, setAuthor] = useState(previousVersion?.author ?? "");
+  const [evidence, setEvidence] = useState((previousVersion?.evidenceIds ?? []).join(", "));
+  const [supersedes, setSupersedes] = useState(previousVersion?.supersedesDecisionId ?? "");
+  const [reverses, setReverses] = useState(previousVersion?.reversesDecisionId ?? "");
+  const [ackDuplicate, setAckDuplicate] = useState(false);
+
+  const dirty = mode === "new"
+    ? Boolean(title || content || rationale)
+    : isVersionDirty(previousVersion ?? null, { title, content, rationale, status, author: author || null, evidenceIds: parseCsv(evidence), supersedesDecisionId: supersedes || null, reversesDecisionId: reverses || null });
+
+  const duplicates = useMemo(
+    () => findDuplicateCandidates({
+      draft: { decisionId, title, content },
+      decisions: rah.decisions, versions: rah.decisionVersions,
+      projectId: project.id, threshold: 0.75,
+    }),
+    [decisionId, title, content, rah.decisions, rah.decisionVersions, project.id],
+  );
+
+  function tryCancel() {
+    if (shouldConfirmDiscard({ dirty, isDraftUnsaved: mode === "new" && dirty })) {
+      if (!window.confirm("Discard unsaved decision version?")) return;
+    }
+    onCancel();
+  }
+
+  async function save() {
+    if (!title.trim()) { toast.error("Title required"); return; }
+    if (!DECISION_STATUSES.includes(status)) { toast.error("Invalid status"); return; }
+    if (duplicates.length && !ackDuplicate) {
+      toast.warning("Duplicate warning — check the checkbox to acknowledge before saving.");
+      return;
+    }
+    const now = Date.now();
+    if (mode === "new") {
+      const decisionIdNew = uid();
+      const version = makeInitialVersion({
+        decisionId: decisionIdNew, title: title.trim(), content, rationale, status,
+        author: author.trim() || null, evidenceIds: parseCsv(evidence), now, versionId: uid(),
+      });
+      await rah.saveDecisionVersion({
+        decision: { id: decisionIdNew, projectId: project.id, createdAt: now, updatedAt: now, archived: false },
+        version: { ...version, supersedesDecisionId: supersedes || null, reversesDecisionId: reverses || null },
+      });
+      toast.success("Decision version saved.");
+      onDone();
+    } else {
+      if (!previousVersion || !decisionId) return;
+      const version = makeNextVersion(previousVersion, {
+        title: title.trim(), content, rationale, status,
+        author: author.trim() || null, evidenceIds: parseCsv(evidence),
+        supersedesDecisionId: supersedes || null,
+        reversesDecisionId: reverses || null,
+      }, { now, versionId: uid() });
+      await rah.saveDecisionVersion({
+        decision: { id: decisionId, projectId: project.id, createdAt: previousVersion.createdAt, updatedAt: now, archived: false },
+        version,
+      });
+      toast.success(`Saved v${version.versionNumber}.`);
+      onDone();
+    }
+  }
+
   return (
     <div className="glass-panel gold-border p-3 space-y-2">
       <div className="flex items-center justify-between">
-        <div className="display text-sm">{initial ? "Edit decision" : "New decision"}</div>
-        <Button variant="ghost" size="sm" onClick={onCancel}><X className="h-4 w-4" /></Button>
+        <div className="display text-sm">{mode === "new" ? "New decision" : "New version (previous is preserved)"}</div>
+        <Button variant="ghost" size="sm" onClick={tryCancel}><X className="h-4 w-4" /></Button>
       </div>
-      <Input placeholder="Decision title (what did you decide?)" value={title} onChange={(e) => setTitle(e.target.value)} />
-      <Textarea rows={3} placeholder="Context / rationale (optional)" value={content} onChange={(e) => setContent(e.target.value)} />
-      <Input placeholder="tags, comma separated" value={tags} onChange={(e) => setTags(e.target.value)} />
+      <Input placeholder="Decision title" value={title} onChange={(e) => setTitle(e.target.value)} />
+      <Textarea rows={3} placeholder="Content — what is being decided" value={content} onChange={(e) => setContent(e.target.value)} />
+      <Textarea rows={2} placeholder="Rationale (why)" value={rationale} onChange={(e) => setRationale(e.target.value)} />
+      <div className="grid gap-2 md:grid-cols-3">
+        <label className="text-xs">
+          <span className="text-muted-foreground">Status</span>
+          <Select value={status} onValueChange={(v) => setStatus(v as DecisionStatus)}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {DECISION_STATUSES.map((s) => <SelectItem key={s} value={s}>{DECISION_STATUS_LABEL[s]}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </label>
+        <label className="text-xs">
+          <span className="text-muted-foreground">Author / source</span>
+          <Input value={author} onChange={(e) => setAuthor(e.target.value)} placeholder="—" />
+        </label>
+        <label className="text-xs">
+          <span className="text-muted-foreground">Evidence IDs (comma separated)</span>
+          <Input value={evidence} onChange={(e) => setEvidence(e.target.value)} placeholder="cmd:abc, memory:xyz" />
+        </label>
+        <label className="text-xs">
+          <span className="text-muted-foreground">Supersedes decision id</span>
+          <Input value={supersedes} onChange={(e) => setSupersedes(e.target.value)} placeholder="(optional)" />
+        </label>
+        <label className="text-xs">
+          <span className="text-muted-foreground">Reverses decision id</span>
+          <Input value={reverses} onChange={(e) => setReverses(e.target.value)} placeholder="(optional)" />
+        </label>
+      </div>
+      {duplicates.length > 0 && (
+        <div className="rounded border border-yellow-500/40 bg-yellow-500/5 p-2 text-xs space-y-1">
+          <div className="font-medium text-yellow-500">Possible duplicate of an existing decision:</div>
+          <ul className="space-y-0.5">
+            {duplicates.slice(0, 3).map((d) => (
+              <li key={d.decisionId} className="text-muted-foreground">
+                • {d.title} <span className="opacity-60">(similarity {Math.round(d.similarity * 100)}%)</span>
+              </li>
+            ))}
+          </ul>
+          <label className="flex items-center gap-2 pt-1">
+            <input type="checkbox" checked={ackDuplicate} onChange={(e) => setAckDuplicate(e.target.checked)} />
+            <span>Save anyway — this is a distinct decision.</span>
+          </label>
+        </div>
+      )}
       <div className="flex justify-end gap-2">
-        <Button variant="ghost" onClick={onCancel}>Cancel</Button>
-        <Button onClick={() => {
-          if (!title.trim()) { toast.error("Title required"); return; }
-          void onSave({
-            projectId, title: title.trim(), content: content.trim(), type: "decision",
-            tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
-            pinned: initial?.pinned ?? false, archived: initial?.archived ?? false,
-            source: initial?.source ?? "decision-manual",
-          });
-        }}>Save decision</Button>
+        <Button variant="ghost" onClick={tryCancel}>Cancel</Button>
+        <Button onClick={() => void save()} disabled={!dirty}>Save decision version</Button>
       </div>
+      <p className="text-[10px] text-muted-foreground">
+        Nothing is saved until you click Save. Editing an existing decision creates a new version — prior versions are preserved forever.
+      </p>
     </div>
   );
+}
+
+function parseCsv(s: string) {
+  return s.split(",").map((x) => x.trim()).filter(Boolean);
+}
+function downloadBlob(name: string, body: string, type: string) {
+  const blob = new Blob([body], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 /* ─── Roadmap ─── */
 
 function RoadmapTab({ project, rah }: { project: any; rah: ReturnType<typeof useRah> }) {
-  const rm = useMemo(
-    () => deriveRoadmap({ memory: rah.projectMemory, projectId: project.id }),
-    [rah.projectMemory, project.id],
+  const persisted = useMemo<RoadmapMilestone[]>(
+    () => rah.roadmapMilestones
+      .filter((m) => m.projectId === project.id)
+      .map((m) => normalizeMilestone(m))
+      .filter((m): m is RoadmapMilestone => !!m),
+    [rah.roadmapMilestones, project.id],
   );
-  const Bucket = ({ title, items, hint }: { title: string; items: {id:string;title:string;source:string}[]; hint: string | null }) => (
-    <div className="glass-panel p-3 space-y-2">
-      <h3 className="display text-sm gold-text">{title}</h3>
-      {items.length === 0
-        ? <div className="text-xs text-muted-foreground">{hint}</div>
-        : (
-          <ul className="text-sm space-y-1">
-            {items.map((i) => (
-              <li key={i.source + i.id} className="flex items-start gap-2">
-                <span className="text-[10px] uppercase tracking-widest text-primary min-w-[70px]">{i.source.replace("memory:", "")}</span>
-                <span>{i.title}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-    </div>
-  );
+  const [draft, setDraft] = useState<RoadmapMilestone[]>(persisted);
+  const [showEditor, setShowEditor] = useState<RoadmapMilestone | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [dragId, setDragId] = useState<string | null>(null);
+
+  useEffect(() => { setDraft(persisted); /* re-sync when store changes */ }, [persisted.length]);
+
+  const dirty = useMemo(() => isRoadmapDirty(persisted, draft), [persisted, draft]);
+  const validation = useMemo(() => validateRoadmap(draft), [draft]);
+  const grouped = useMemo(() => groupByColumn(draft), [draft]);
+
+  function moveTo(id: string, column: RoadmapColumn, index?: number) {
+    setDraft((prev) => moveMilestone(prev, id, column, index ?? Number.MAX_SAFE_INTEGER));
+  }
+  function reorder(id: string, direction: "up" | "down") {
+    setDraft((prev) => reorderWithinColumn(prev, id, direction === "up" ? -1 : 1));
+  }
+  function remove(id: string) {
+    if (!window.confirm("Remove milestone from roadmap draft? Save Roadmap to persist.")) return;
+    setDraft((prev) => prev.filter((m) => m.id !== id));
+  }
+  function resetDraft() {
+    if (!dirty || window.confirm("Discard unsaved roadmap changes?")) setDraft(persisted);
+  }
+  async function save() {
+    if (!validation.valid) { toast.error(validation.errors[0]?.message ?? "Fix validation errors"); return; }
+    await rah.saveRoadmap(project.id, draft);
+    toast.success("Roadmap saved.");
+  }
+  function exportMd() {
+    downloadBlob(`raven-roadmap-${project.id}.md`, exportRoadmapMarkdown({ project, milestones: draft }), "text/markdown");
+  }
+  function exportJson() {
+    downloadBlob(
+      `raven-roadmap-${project.id}.json`,
+      JSON.stringify(exportRoadmapJson({ project, milestones: draft }), null, 2),
+      "application/json",
+    );
+  }
+
   return (
     <div className="space-y-3">
-      <p className="text-xs text-muted-foreground">Derived only from your memory records. No fake roadmap items are ever inserted.</p>
-      <div className="grid gap-3 md:grid-cols-3">
-        <Bucket title="Now"   items={rm.now}   hint={rm.guidance.now} />
-        <Bucket title="Next"  items={rm.next}  hint={rm.guidance.next} />
-        <Bucket title="Later" items={rm.later} hint={rm.guidance.later} />
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="display text-lg gold-text">Roadmap</h2>
+        <span className="text-xs text-muted-foreground">
+          {dirty ? "Unsaved changes" : "Saved"} · {draft.length} milestone{draft.length === 1 ? "" : "s"}
+        </span>
+        <div className="ml-auto flex flex-wrap gap-2">
+          <Button size="sm" variant="ghost" onClick={exportMd}>Export MD</Button>
+          <Button size="sm" variant="ghost" onClick={exportJson}>Export JSON</Button>
+          <Button size="sm" variant="ghost" onClick={resetDraft} disabled={!dirty}>Reset to saved</Button>
+          <Button size="sm" onClick={() => void save()} disabled={!dirty || !validation.valid}>Save roadmap</Button>
+          <Button size="sm" onClick={() => { setCreating(true); setShowEditor(null); }}>
+            <Plus className="h-4 w-4" /> Add milestone
+          </Button>
+        </div>
       </div>
+
+      {!validation.valid && (
+        <div className="rounded border border-destructive/50 bg-destructive/10 p-2 text-xs space-y-0.5">
+          <div className="font-medium text-destructive">Fix before saving:</div>
+          {validation.errors.map((e, i) => (
+            <div key={i} className="text-destructive/90">• {e.message}</div>
+          ))}
+        </div>
+      )}
+
+      {creating && (
+        <MilestoneEditor
+          all={draft}
+          onCancel={() => setCreating(false)}
+          onSave={(m) => { setDraft((prev) => [...prev, m]); setCreating(false); }}
+        />
+      )}
+      {showEditor && (
+        <MilestoneEditor
+          initial={showEditor}
+          all={draft}
+          onCancel={() => setShowEditor(null)}
+          onSave={(m) => { setDraft((prev) => prev.map((x) => x.id === m.id ? m : x)); setShowEditor(null); }}
+        />
+      )}
+
+      <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+        {ROADMAP_COLUMNS.map((col) => (
+          <RoadmapColumnView
+            key={col}
+            column={col}
+            items={grouped[col] ?? []}
+            dragId={dragId}
+            onDragStart={(id) => setDragId(id)}
+            onDragEnd={() => setDragId(null)}
+            onDropOnColumn={(id) => { moveTo(id, col); setDragId(null); }}
+            onDropOnItem={(id, targetIndex) => { moveTo(id, col, targetIndex); setDragId(null); }}
+            onEdit={(m) => { setShowEditor(m); setCreating(false); }}
+            onMoveUp={(id) => reorder(id, "up")}
+            onMoveDown={(id) => reorder(id, "down")}
+            onMoveToColumn={(id, target) => moveTo(id, target)}
+            onRemove={remove}
+          />
+        ))}
+      </div>
+      <p className="text-[10px] text-muted-foreground">
+        Drag-and-drop and keyboard Move Up/Down affect the in-memory draft only. Click Save roadmap to persist.
+      </p>
+    </div>
+  );
+}
+
+function RoadmapColumnView({
+  column, items, dragId, onDragStart, onDragEnd, onDropOnColumn, onDropOnItem,
+  onEdit, onMoveUp, onMoveDown, onMoveToColumn, onRemove,
+}: {
+  column: RoadmapColumn;
+  items: RoadmapMilestone[];
+  dragId: string | null;
+  onDragStart: (id: string) => void;
+  onDragEnd: () => void;
+  onDropOnColumn: (id: string) => void;
+  onDropOnItem: (id: string, targetIndex: number) => void;
+  onEdit: (m: RoadmapMilestone) => void;
+  onMoveUp: (id: string) => void;
+  onMoveDown: (id: string) => void;
+  onMoveToColumn: (id: string, column: RoadmapColumn) => void;
+  onRemove: (id: string) => void;
+}) {
+  const label = column === UNASSIGNED_COLUMN ? "Unassigned" : ROADMAP_STATUS_LABEL[column as RoadmapStatus];
+  return (
+    <div
+      className="glass-panel p-2 space-y-2 min-h-[120px]"
+      onDragOver={(e) => { if (dragId) e.preventDefault(); }}
+      onDrop={(e) => { e.preventDefault(); if (dragId) onDropOnColumn(dragId); }}
+      aria-label={`${label} column`}
+    >
+      <div className="flex items-center justify-between px-1">
+        <h3 className="display text-xs gold-text uppercase tracking-widest">{label}</h3>
+        <span className="text-[10px] text-muted-foreground">{items.length}</span>
+      </div>
+      {items.length === 0 && (
+        <div className="text-[11px] text-muted-foreground px-1">
+          {column === UNASSIGNED_COLUMN ? "Only used for unknown legacy statuses." : "Drop a milestone here."}
+        </div>
+      )}
+      <ul className="space-y-1.5">
+        {items.map((m, idx) => (
+          <li
+            key={m.id}
+            draggable
+            onDragStart={() => onDragStart(m.id)}
+            onDragEnd={onDragEnd}
+            onDragOver={(e) => { if (dragId) e.preventDefault(); }}
+            onDrop={(e) => { e.preventDefault(); if (dragId && dragId !== m.id) onDropOnItem(dragId, idx); }}
+            className="rounded border border-border/60 bg-card/60 p-2 text-xs space-y-1"
+          >
+            <div className="flex items-start gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="font-medium truncate" title={m.title}>{m.title || "(untitled)"}</div>
+                <div className="text-[10px] text-muted-foreground">
+                  {m.priority} · target: {m.targetDate ?? "—"} · owner: {m.owner ?? "—"}
+                </div>
+                {m.description && <div className="text-[11px] text-muted-foreground truncate mt-0.5">{m.description}</div>}
+                {m.dependencies.length > 0 && (
+                  <div className="text-[10px] text-muted-foreground">deps: {m.dependencies.join(", ")}</div>
+                )}
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-1">
+              <Button size="sm" variant="ghost" onClick={() => onMoveUp(m.id)} aria-label="Move up">↑</Button>
+              <Button size="sm" variant="ghost" onClick={() => onMoveDown(m.id)} aria-label="Move down">↓</Button>
+              <Select value={column} onValueChange={(v) => onMoveToColumn(m.id, v as RoadmapColumn)}>
+                <SelectTrigger className="h-7 text-[11px] px-2"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {ROADMAP_COLUMNS.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {c === UNASSIGNED_COLUMN ? "Unassigned" : ROADMAP_STATUS_LABEL[c as RoadmapStatus]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button size="sm" variant="ghost" onClick={() => onEdit(m)}><Pencil className="h-3 w-3" /></Button>
+              <Button size="sm" variant="ghost" onClick={() => onRemove(m.id)}><Trash2 className="h-3 w-3" /></Button>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function MilestoneEditor({
+  initial, all, onCancel, onSave,
+}: {
+  initial?: RoadmapMilestone;
+  all: RoadmapMilestone[];
+  onCancel: () => void;
+  onSave: (m: RoadmapMilestone) => void;
+}) {
+  const [title, setTitle] = useState(initial?.title ?? "");
+  const [description, setDescription] = useState(initial?.description ?? "");
+  const [status, setStatus] = useState<RoadmapStatus>(
+    (ROADMAP_STATUSES.includes(initial?.status as RoadmapStatus) ? initial?.status : "backlog") as RoadmapStatus,
+  );
+  const [priority, setPriority] = useState(initial?.priority ?? "normal");
+  const [targetDate, setTargetDate] = useState(initial?.targetDate ?? "");
+  const [owner, setOwner] = useState(initial?.owner ?? "");
+  const [deps, setDeps] = useState((initial?.dependencies ?? []).join(", "));
+  const [evidence, setEvidence] = useState((initial?.evidenceIds ?? []).join(", "));
+
+  function save() {
+    if (!title.trim()) { toast.error("Title required"); return; }
+    const now = Date.now();
+    const m = normalizeMilestone({
+      id: initial?.id ?? uid(),
+      title: title.trim(),
+      description: description.trim(),
+      status,
+      priority,
+      targetDate: targetDate || null,
+      owner: owner.trim() || null,
+      dependencies: parseCsv(deps),
+      evidenceIds: parseCsv(evidence),
+      order: initial?.order ?? all.filter((x) => x.status === status).length,
+      createdAt: initial?.createdAt ?? now,
+      updatedAt: now,
+    });
+    if (!m) { toast.error("Invalid milestone"); return; }
+    onSave(m);
+  }
+
+  return (
+    <div className="glass-panel gold-border p-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="display text-sm">{initial ? "Edit milestone (draft)" : "New milestone (draft)"}</div>
+        <Button variant="ghost" size="sm" onClick={onCancel}><X className="h-4 w-4" /></Button>
+      </div>
+      <Input placeholder="Milestone title" value={title} onChange={(e) => setTitle(e.target.value)} />
+      <Textarea rows={2} placeholder="Description (optional)" value={description} onChange={(e) => setDescription(e.target.value)} />
+      <div className="grid gap-2 md:grid-cols-3">
+        <label className="text-xs">
+          <span className="text-muted-foreground">Status</span>
+          <Select value={status} onValueChange={(v) => setStatus(v as RoadmapStatus)}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {ROADMAP_STATUSES.map((s) => <SelectItem key={s} value={s}>{ROADMAP_STATUS_LABEL[s]}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </label>
+        <label className="text-xs">
+          <span className="text-muted-foreground">Priority</span>
+          <Select value={priority} onValueChange={(v) => setPriority(v as typeof priority)}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {ROADMAP_PRIORITIES.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </label>
+        <label className="text-xs">
+          <span className="text-muted-foreground">Target date (YYYY-MM-DD)</span>
+          <Input value={targetDate} onChange={(e) => setTargetDate(e.target.value)} placeholder="—" />
+        </label>
+        <label className="text-xs">
+          <span className="text-muted-foreground">Owner</span>
+          <Input value={owner} onChange={(e) => setOwner(e.target.value)} placeholder="—" />
+        </label>
+        <label className="text-xs">
+          <span className="text-muted-foreground">Dependencies (milestone IDs, comma separated)</span>
+          <Input value={deps} onChange={(e) => setDeps(e.target.value)} placeholder="(optional)" />
+        </label>
+        <label className="text-xs">
+          <span className="text-muted-foreground">Evidence IDs (comma separated)</span>
+          <Input value={evidence} onChange={(e) => setEvidence(e.target.value)} placeholder="(optional)" />
+        </label>
+      </div>
+      <div className="flex justify-end gap-2">
+        <Button variant="ghost" onClick={onCancel}>Cancel</Button>
+        <Button onClick={save}>Apply to draft</Button>
+      </div>
+      <p className="text-[10px] text-muted-foreground">
+        Applies to in-memory draft. Click Save roadmap above to persist.
+      </p>
     </div>
   );
 }
