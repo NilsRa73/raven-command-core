@@ -320,6 +320,50 @@ function VisionPage() {
   const [savedEvidenceId, setSavedEvidenceId] = useState<string | null>(null);
   const [regionDraft, setRegionDraft] = useState<{ x: string; y: string; w: string; h: string; label: string }>({ x: "", y: "", w: "", h: "", label: "" });
 
+  // Vision Session lifecycle state (explicit start/end/cancel).
+  const [projects, setProjects] = useState<Project[]>([]);
+  // undefined = not chosen; null = explicitly "no project"; string = project id.
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null | undefined>(undefined);
+  const [sessionTitle, setSessionTitle] = useState<string>("");
+  const [sessionMode, setSessionMode] = useState<"fast" | "deep">("fast");
+  const [activeSession, setActiveSession] = useState<LifecycleSession | null>(null);
+
+  // Immutable Result Review state.
+  const [savedResults, setSavedResults] = useState<VisionResult[]>([]);
+  const [resultDraftText, setResultDraftText] = useState<string>("");
+  const [resultDraftDirty, setResultDraftDirty] = useState<boolean>(false);
+  const [savedResultId, setSavedResultId] = useState<string | null>(null);
+  const [saveReceipt, setSaveReceipt] = useState<{ destination: string; id: string | null; at: number } | null>(null);
+
+  // Confirm Vision Action state.
+  type ProposalKind = "vision_safe_action" | "vision_workflow_handoff";
+  interface Proposal {
+    id: string;
+    kind: ProposalKind;
+    sideEffectClass: "ui_only" | "workflow_handoff" | "denied";
+    intentId?: string;
+    title?: string;
+    steps?: unknown[];
+    projectId?: string | null;
+    params?: Record<string, unknown>;
+    confidence?: number;
+    question?: string;
+  }
+  const [proposal, setProposal] = useState<Proposal | null>(null);
+  const [proposalIntentId, setProposalIntentId] = useState<string>(VISION_ACTION_CATALOG[0]?.id || "show_guidance");
+  const [dispatchReceipt, setDispatchReceipt] = useState<{ destination: string; id: string | null; at: number } | null>(null);
+
+  // Load projects once (used by session start selector).
+  useEffect(() => {
+    (async () => {
+      try {
+        const db = await getDB();
+        const list = await db.getAll("projects");
+        setProjects((list as Project[]).slice().sort((a, b) => (a.name || "").localeCompare(b.name || "")));
+      } catch { /* IndexedDB unavailable in this environment */ }
+    })();
+  }, []);
+
   // Pointer/keyboard reducer state for drag-to-redact overlay.
   const [pointer, setPointer] = useState(() => createPointerState([]));
   const overlayRef = useRef<HTMLDivElement | null>(null);
