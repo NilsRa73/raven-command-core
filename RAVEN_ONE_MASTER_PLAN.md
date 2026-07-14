@@ -1,6 +1,6 @@
 # Raven One — Master Plan
 
-Version: Alpha 0.3 (hardening batch 3)
+Version: Raven One · Alpha 0.2 — Workflow Engine + Fast/Deep Memory hardening
 Owner: Nils (RAH AI Studios)
 Status: Living document — single source of truth for the Raven One product line.
 
@@ -101,9 +101,9 @@ progress, or telemetry.
   signed. The local IndexedDB can still be replaced or wiped externally.
   UI copy consistently says "append-only, hash-chained, tamper-evident
   local log".
-- Bridge `writeFile` is still implemented via `files.copy` — an atomic
-  `files.writeText` is planned but not shipped, which is why the step is
-  labelled Copy File in the UI.
+- The bridge exposes `files.copy`, not `files.writeText`. That is why the
+  workflow step is labelled Copy File; arbitrary text writes are
+  intentionally unavailable, not silently emulated.
 - Native companion auto-update / signed installer are still planned, not
   shipped.
 
@@ -147,7 +147,7 @@ progress, or telemetry.
       foundation for multi-device Raven. Planned nodes stay honestly
       labelled Planned / Offline.
 - [x] Tests: `morning.test.js`, `command-palette.test.js` (10 new tests,
-      total 225 passing).
+      total 225 passing at that milestone).
 
 ## Alpha 0.2 — Workflow Engine (shipped)
 
@@ -165,7 +165,43 @@ progress, or telemetry.
       side-effecting workflows gated by one-shot `requestApproval`, run log
       viewer with chain verification.
 - [x] Tests: `desktop-bridge/tests/workflow.test.js` (11 new tests,
-      total 236 passing). `bunx tsgo --noEmit` clean.
+      total 236 passing at that milestone). `bunx tsgo --noEmit` clean.
+
+## Alpha 0.2 hardening — Workflow Engine + Fast/Deep (current)
+
+- [x] `bridge_write_file` is exposed as **Copy File (Bridge)** with explicit
+      Source and Destination inputs; validation requires both and rejects
+      identical source/dest. Backward-safe: legacy `path` is accepted as
+      source when `source` is absent, but a distinct `dest` is still
+      mandatory. Implemented via bridge `files.copy` — arbitrary write-text
+      is not supported and is not silently emulated.
+- [x] Emergency Stop cancels every non-terminal run — `draft`, `queued`,
+      `awaiting_approval`, `paused`, `running` — through one executor code
+      path with an explicit `emergency_stop` reason and exactly-once
+      terminal cancellation events.
+- [x] Fast Mode is bounded, not empty: pinned + task-scoped memories plus a
+      small cap of recent high-scoring Supporting memories
+      (`fastSupportingCap = 2`, `fastSupportingMinScore = 30`).
+- [x] Fast/Deep context packet parity: executor and chat consume the exact
+      object returned by `buildContextPacket`; workflow step results persist
+      `mode`, `selectedIds`, `estimatedTokens`, `generatedAt`, `packetHash`
+      (FNV-1a) and `parityId` — no duplicated memory content.
+- [x] `planDryRun` fails **closed** on missing / unknown / empty bridge
+      capability manifests; Automations feeds it the authenticated
+      `/v1/capabilities` manifest filtered to enabled entries.
+- [x] Unsaved-navigation guard extracted to
+      `src/lib/rah/draftGuard.js#shouldConfirmDiscard` and used by
+      Automations for create, sidebar select, import, and route/unload
+      navigation (TanStack `useBlocker` + `beforeunload`). New workflows
+      live only in memory until explicit Save.
+- [x] Run Inspector: full expandable step outputs and errors, approval
+      references and status, route/provider/model/transport/engine,
+      created/started/finished timestamps and elapsed duration, current
+      step and % progress, full event metadata, Verify Chain, Export Run
+      JSON, and Context Packet Preview before Run.
+- [x] Tests: `hardening-batch.test.js`, `copy-file-and-fast-supporting.test.js`,
+      and `draft-guard.test.js` added. Current verified total is reported
+      by the run command below; typecheck and production build are clean.
 
 - Device Center v0.2: role-based dashboards, hardware history charts.
 - Chronicle v0.2: per-project chronicle views, weekly summary drafts.

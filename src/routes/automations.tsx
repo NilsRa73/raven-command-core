@@ -2,8 +2,6 @@ import { createFileRoute, useBlocker } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { buildContextPacket } from "@/lib/rah/ravenMode";
 import { getRavenModeState } from "@/lib/rah/ravenModeStore";
-import { useRah as _useRahForProject } from "@/lib/rah/context";
-void _useRahForProject;
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -15,6 +13,7 @@ import { getDB } from "@/lib/rah/db";
 import { useRah } from "@/lib/rah/context";
 import { useBridgeStatus } from "@/lib/rah/bridgeStatus";
 import { bridgeCapabilities } from "@/lib/rah/bridge";
+import { shouldConfirmDiscard } from "@/lib/rah/draftGuard";
 import {
   STEP_CATALOG, EXECUTION_PROFILES,
   createWorkflow, createStep, createRun,
@@ -131,7 +130,10 @@ function AutomationsPage() {
   };
 
   function handleCreate() {
-    if (dirty && !confirm("Discard unsaved changes to the current workflow?")) return;
+    if (
+      shouldConfirmDiscard({ dirty, isDraftUnsaved, currentId: selectedId, targetId: null })
+      && !confirm("Discard unsaved changes to the current workflow?")
+    ) return;
     // In-memory draft only. Nothing is written to IndexedDB until the user
     // clicks Save. Enforces no-silent-save.
     const wf = createWorkflow({ name: "New workflow", steps: [createStep("ai_prompt", { prompt: "" })] });
@@ -180,7 +182,10 @@ function AutomationsPage() {
     URL.revokeObjectURL(a.href);
   }
   async function handleImport(file: File) {
-    if ((dirty || isDraftUnsaved) && !confirm("Discard unsaved changes to the current workflow?")) return;
+    if (
+      shouldConfirmDiscard({ dirty, isDraftUnsaved, currentId: selectedId, targetId: null })
+      && !confirm("Discard unsaved changes to the current workflow?")
+    ) return;
     try {
       const text = await file.text();
       const wf = importWorkflowJson(text);
@@ -216,7 +221,7 @@ function AutomationsPage() {
   // clicking a sidebar link or programmatic navigation.
   useBlocker({
     shouldBlockFn: () => {
-      if (!(dirty || isDraftUnsaved)) return false;
+      if (!shouldConfirmDiscard({ dirty, isDraftUnsaved })) return false;
       return !confirm("You have unsaved workflow changes. Leave and discard them?");
     },
     enableBeforeUnload: false,
@@ -291,7 +296,10 @@ function AutomationsPage() {
             const runCount = runs.filter((r) => r.workflowId === w.id).length;
             return (
               <button key={w.id} onClick={() => {
-                if ((dirty || isDraftUnsaved) && !confirm("Discard unsaved changes to the current workflow?")) return;
+                if (
+                  shouldConfirmDiscard({ dirty, isDraftUnsaved, currentId: selectedId, targetId: w.id })
+                  && !confirm("Discard unsaved changes to the current workflow?")
+                ) return;
                 setIsDraftUnsaved(false);
                 setDirty(false);
                 setSelectedId(w.id);
