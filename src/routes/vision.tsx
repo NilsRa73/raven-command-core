@@ -776,6 +776,10 @@ function VisionPage() {
       toast.error("Start screen sharing first.");
       return;
     }
+    if (!activeSession || !isSessionLive(activeSession)) {
+      toast.error("Start a Vision Session before capturing.");
+      return;
+    }
     setSharing("capturing");
     try {
       const method = pickCaptureMethod({
@@ -795,13 +799,16 @@ function VisionPage() {
       setRedactedDataUrl("");
       setSavedEvidenceId(null);
       setAnalysis(null);
+      // Increment capture count against the active session and persist.
+      const bumped = lifecycleIncrementCapture(activeSession);
+      if (bumped) { setActiveSession(bumped); void persistSession(bumped); }
       advanceReview("capture");
       setSharing("ready");
     } catch (err) {
       toast.error("Capture failed: " + (err instanceof Error ? err.message : String(err)));
       setSharing("ready");
     }
-  }, [sharing, imageCaptureLastOk, videoReady, advanceReview]);
+  }, [sharing, imageCaptureLastOk, videoReady, advanceReview, activeSession, persistSession]);
 
   // Send the reviewed frame to AI. Enforces the sensitive-confirmation gate.
   const analyzeReviewed = useCallback(async (opts: { forceOriginal?: boolean } = {}) => {
