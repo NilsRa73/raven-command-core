@@ -9,6 +9,16 @@ import {
   mergeDevices, DEVICE_ROLES, DEVICE_ROLE_HINTS, CONNECTION_TYPES,
   type DeviceRecord,
 } from "@/lib/rah/devices";
+import {
+  DEVICE_ROLES_V2, roleSummary, capabilityCoverage, effectiveRoleV2,
+  type DeviceRoleV2, type RoleSummaryEntry,
+} from "@/lib/rah/deviceRolesV2";
+import {
+  HISTORY_RANGES, captureFromBridge, captureDisabledReason,
+  filterByRange, sparklinePoints, exportPayload, validateImport, mergeImport,
+  latestSummary, type DeviceSnapshot, type HistoryRangeId,
+} from "@/lib/rah/deviceHistory";
+import { listSnapshots, putSnapshot, putSnapshots, deleteSnapshot } from "@/lib/rah/deviceHistoryDb";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/devices")({ component: DevicesPage });
@@ -27,6 +37,12 @@ function DevicesPage() {
   const [manual, setManual] = useState<DeviceRecord[]>(() => loadManualDevices());
   const [openId, setOpenId] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [history, setHistory] = useState<DeviceSnapshot[]>([]);
+
+  async function reloadHistory() {
+    try { setHistory(await listSnapshots()); } catch { setHistory([]); }
+  }
+  useEffect(() => { void reloadHistory(); }, []);
 
   useEffect(() => { void refreshBridgeStatus(); }, []);
   useEffect(() => {
@@ -43,6 +59,13 @@ function DevicesPage() {
   );
   const devices = useMemo(() => mergeDevices(bridgeDevice, manual), [bridgeDevice, manual]);
   const openDevice = devices.find((d) => d.id === openId) ?? null;
+  const openHistory = useMemo(
+    () => (openDevice ? history.filter((s) => s.deviceId === openDevice.id) : []),
+    [history, openDevice],
+  );
+
+  const roleSummaries = useMemo(() => roleSummary(devices), [devices]);
+  const coverage = useMemo(() => capabilityCoverage(devices), [devices]);
 
   // Cluster overview: counts by status and by role — purely derived.
   const cluster = useMemo(() => {
@@ -64,14 +87,31 @@ function DevicesPage() {
     void refresh();
   }
 
+  async function captureSnapshotFor(device: DeviceRecord) {
+    // Only meaningful for the paired bridge device today.
+    if (device.kind !== "bridge") {
+      toast.error("Live capture is only available for the paired Bridge device.");
+      return;
+    }
+    const res = captureFromBridge({ deviceId: device.id, snapshot, sys });
+    if (!res.ok) { toast.error(res.reason); return; }
+    try {
+      await putSnapshot(res.snapshot);
+      await reloadHistory();
+      toast.success("Live snapshot captured.");
+    } catch (e) {
+      toast.error("Could not save snapshot: " + (e instanceof Error ? e.message : String(e)));
+    }
+  }
+
   return (
     <div className="space-y-4">
       <header className="glass-panel gold-border p-4 flex flex-wrap items-center gap-3">
         <div className="min-w-0">
-          <div className="text-[11px] uppercase tracking-widest text-muted-foreground">Raven One · Alpha 0.1</div>
+          <div className="text-[11px] uppercase tracking-widest text-muted-foreground">Raven One · Device Center v0.2</div>
           <h1 className="display text-2xl gold-text">Device Center</h1>
           <p className="text-xs text-muted-foreground mt-1">
-            One place for every machine that runs Raven. Live status comes from the paired Desktop Bridge; planned devices you add here are honest placeholders.
+            Role-based cluster view. Live telemetry comes only from the paired Desktop Bridge — planned/manual nodes are honest placeholders. Missing values render as “—”; nothing is fabricated.
           </p>
         </div>
         <div className="ml-auto flex flex-wrap gap-2">
@@ -80,6 +120,10 @@ function DevicesPage() {
           <button onClick={() => setShowAdd(true)} className="inline-flex h-8 items-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90">＋ Add device</button>
         </div>
       </header>
+
+      {devices.length > 0 && (
+        <RoleDashboard summaries={roleSummaries} coverage={coverage} onOpen={setOpenId} />
+      )}
 
       {devices.length > 0 && (
         <section className="glass-panel p-4" aria-label="Cluster overview">
@@ -153,9 +197,74 @@ function DevicesPage() {
           onClose={() => setOpenId(null)}
           onSave={(patch) => { if (openDevice.kind === "manual") persist(updateManualDevice(manual, openDevice.id, patch)); }}
           onRemove={() => { if (openDevice.kind === "manual") { persist(removeManualDevice(manual, openDevice.id)); setOpenId(null); } }}
+          history={openHistory}
+          captureDisabled={captureDisabledReason({ snapshot, sys }) ?? (openDevice.kind !== "bridge" ? "Live capture is only available for the paired Bridge device." : null)}
+          onCapture={() => void captureSnapshotFor(openDevice)}
+          onImport={async (list, mode) => {
+            const existing = openHistory;
+            const merged = mergeImport(existing, list, mode);
+            await putSnapshots(merged.list.filter((s) => !existing.find((e) => e.id === s.id) || mode === "replace"));
+            await reloadHistory();
+            toast.success(`Imported ${merged.added} new, ${merged.replaced} replaced, ${merged.skipped} skipped.`);
+          }}
+          onDeleteSnapshot={async (id) => { await deleteSnapshot(id); await reloadHistory(); }}
         />
       )}
     </div>
+  );
+}
+
+function RoleDashboard({ summaries, coverage, onOpen }: {
+  summaries: RoleSummaryEntry[];
+  coverage: { total: number; withTelemetry: number; bridgeCapable: number };
+  onOpen: (id: string) => void;
+}) {
+  return (
+    <section className="glass-panel p-4 space-y-3" aria-label="Role dashboard">
+      <div className="flex flex-wrap items-baseline gap-2">
+        <h2 className="display text-sm uppercase tracking-widest text-muted-foreground">Raven Cluster · Roles</h2>
+        <span className="text-[11px] text-muted-foreground">
+          Telemetry coverage: <span className="text-foreground">{coverage.withTelemetry}/{coverage.total}</span> ·
+          Bridge-capable: <span className="text-foreground">{coverage.bridgeCapable}</span>
+        </span>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+        {summaries.map((s) => (
+          <div key={s.role} className={"rounded-md border p-3 " + (s.total === 0 ? "border-border/40 bg-background/30" : "border-border/70 bg-background/50")}>
+            <div className="flex items-center gap-2">
+              <div className="text-[11px] uppercase tracking-widest text-muted-foreground">{s.label}</div>
+              <div className="ml-auto text-[10px] text-muted-foreground">{s.total} node{s.total === 1 ? "" : "s"}</div>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1 text-[11px]">
+              <span className="rounded-full border border-primary/40 bg-primary/5 px-2 py-0.5 text-primary">Live {s.live}</span>
+              <span className="rounded-full border border-destructive/40 bg-destructive/5 px-2 py-0.5 text-destructive">Offline {s.offline}</span>
+              <span className="rounded-full border border-yellow-500/40 bg-yellow-500/5 px-2 py-0.5 text-yellow-400">Planned {s.planned}</span>
+              {s.unknown > 0 && <span className="rounded-full border border-border/60 px-2 py-0.5 text-muted-foreground">Unknown {s.unknown}</span>}
+            </div>
+            <div className="mt-2 text-[11px] text-muted-foreground">
+              Last seen: {s.lastSeen ? new Date(s.lastSeen).toLocaleString() : "—"}
+            </div>
+            {s.blockers.length > 0 && (
+              <ul className="mt-2 space-y-0.5 text-[11px] text-yellow-400">
+                {s.blockers.map((b, i) => <li key={i}>⚠ {b}</li>)}
+              </ul>
+            )}
+            {s.devices.length > 0 && (
+              <ul className="mt-2 space-y-0.5 text-[11px]">
+                {s.devices.map((d) => (
+                  <li key={d.id}>
+                    <button onClick={() => onOpen(d.id)} className="hover:text-primary underline-offset-2 hover:underline">
+                      {d.displayName}
+                    </button>
+                    <span className="text-muted-foreground"> · {d.status}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
