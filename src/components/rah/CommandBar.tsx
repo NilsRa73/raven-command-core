@@ -248,7 +248,15 @@ export function CommandBar() {
       const memory = rah.prefs.memoryEnabled
         ? rah.memory.filter((m) => !m.disabled && (!m.projectId || m.projectId === rah.activeProject?.id)).map((m) => m.text)
         : [];
-      const projectMemoryBlock = rah.prefs.memoryEnabled ? rah.buildProjectMemoryContext().memoryBlock : "";
+      const packet = rah.prefs.memoryEnabled
+        ? buildContextPacket(rah.projectMemory, {
+            mode: ravenMode, projectId: rah.activeProject?.id ?? null,
+            pinnedIds: ravenState.pinnedIds, excludedIds: ravenState.excludedIds,
+          })
+        : null;
+      const projectMemoryBlock = packet?.text ?? "";
+      const route = classifyRoute(prompt, { mode: ravenMode, approvalMode });
+      logRavenAudit({ type: "route_decision", detail: `${route.label} (${route.target})`, source: "send", meta: { mode: ravenMode, reasons: route.reasons } });
       const cmd = await rah.addCommand({
         prompt, agents: selectedAgents, mode, fileIds: [],
         projectId: rah.activeProject?.id, inputType: listening ? "voice" : "text",
