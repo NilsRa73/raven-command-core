@@ -793,8 +793,11 @@ function downloadBlob(name: string, body: string, type: string) {
 /* ─── Roadmap ─── */
 
 function RoadmapTab({ project, rah }: { project: any; rah: ReturnType<typeof useRah> }) {
-  const persisted = useMemo(
-    () => rah.roadmapMilestones.filter((m) => m.projectId === project.id).map((m) => normalizeMilestone(m)),
+  const persisted = useMemo<RoadmapMilestone[]>(
+    () => rah.roadmapMilestones
+      .filter((m) => m.projectId === project.id)
+      .map((m) => normalizeMilestone(m))
+      .filter((m): m is RoadmapMilestone => !!m),
     [rah.roadmapMilestones, project.id],
   );
   const [draft, setDraft] = useState<RoadmapMilestone[]>(persisted);
@@ -809,10 +812,10 @@ function RoadmapTab({ project, rah }: { project: any; rah: ReturnType<typeof use
   const grouped = useMemo(() => groupByColumn(draft), [draft]);
 
   function moveTo(id: string, column: RoadmapColumn, index?: number) {
-    setDraft((prev) => moveMilestone(prev, { id, targetColumn: column, targetIndex: index }));
+    setDraft((prev) => moveMilestone(prev, id, column, index ?? Number.MAX_SAFE_INTEGER));
   }
   function reorder(id: string, direction: "up" | "down") {
-    setDraft((prev) => reorderWithinColumn(prev, { id, direction }));
+    setDraft((prev) => reorderWithinColumn(prev, id, direction === "up" ? -1 : 1));
   }
   function remove(id: string) {
     if (!window.confirm("Remove milestone from roadmap draft? Save Roadmap to persist.")) return;
@@ -827,12 +830,12 @@ function RoadmapTab({ project, rah }: { project: any; rah: ReturnType<typeof use
     toast.success("Roadmap saved.");
   }
   function exportMd() {
-    downloadBlob(`raven-roadmap-${project.id}.md`, exportRoadmapMarkdown({ project, milestones: draft, validation }), "text/markdown");
+    downloadBlob(`raven-roadmap-${project.id}.md`, exportRoadmapMarkdown({ project, milestones: draft }), "text/markdown");
   }
   function exportJson() {
     downloadBlob(
       `raven-roadmap-${project.id}.json`,
-      JSON.stringify(exportRoadmapJson({ project, milestones: draft, validation }), null, 2),
+      JSON.stringify(exportRoadmapJson({ project, milestones: draft }), null, 2),
       "application/json",
     );
   }
