@@ -1,6 +1,6 @@
 # Raven One — Master Plan
 
-Version: Raven One · Alpha 0.2 — Workflow Engine + Fast/Deep hardening + Raven Home v0.2 + Voice v0.2 + Native companion v0.3
+Version: Raven One · Alpha 0.2 — Workflow Engine + Fast/Deep hardening + Raven Home v0.2 + Voice v0.2 + Native companion v0.3 + Screen Vision v0.2
 Owner: Nils (RAH AI Studios)
 Status: Living document — single source of truth for the Raven One product line.
 
@@ -16,11 +16,13 @@ progress, or telemetry.
 - Local AI: LM Studio / Ollama on the user's PC, proxied through the
   authenticated RAH Desktop Bridge (v0.2.1) at `127.0.0.1:47824`.
 - Cloud AI: Lovable AI Gateway as a manual fallback.
-- Storage: IndexedDB v7 with stores for commands, memory, files, approvals,
+- Storage: IndexedDB v8 with stores for commands, memory, files, approvals,
   workflows, workflowRuns, deviceHistory, roadmapMilestones, decisions,
-  decisionVersions, focusSessions, voiceProfiles, voiceSessions, and
-  voiceTranscripts; plus localStorage for lightweight settings (devices,
-  focus mode, engine).
+  decisionVersions, focusSessions, voiceProfiles, voiceSessions,
+  voiceTranscripts, visionSessions, visionEvidence, visionEvidenceVersions,
+  and visionResults; plus localStorage for lightweight settings (devices,
+  focus mode, engine). v8 is an additive migration — no prior stores or
+  data are altered.
 - Native companion: `desktop-bridge-native/` (Tauri 2 + Node SEA sidecar).
 - Bridge protocol: HTTPS/loopback, HMAC-signed, one-time approval tokens,
   Private Network Access, path containment, feature manifest.
