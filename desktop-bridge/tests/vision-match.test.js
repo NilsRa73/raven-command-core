@@ -1,11 +1,6 @@
-const test = require("node:test");
-const assert = require("node:assert/strict");
-
-// ESM import from CJS test runner (Node 22 supports import()).
-let mod;
-test.before(async () => {
-  mod = await import("../../src/lib/rah/visionMatch.js");
-});
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import * as mod from "../../src/lib/rah/visionMatch.js";
 
 test("classifyMatchStrength: identical sha256 → hash", () => {
   const a = { frame: { hash: "abc", sizeBytes: 1, width: 1, height: 1, capturedAt: 5 } };
