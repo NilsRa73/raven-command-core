@@ -301,10 +301,25 @@ async function executeStep(step, wf, run, deps, signal) {
       return { text: r.text ?? "" };
     }
     case "bridge_write_file": {
+      // "bridge_write_file" is the historical step-type id; the real
+      // action is Copy File. The Bridge protocol implements files.copy,
+      // not arbitrary write-text. Source and destination are both required.
       const st = await deps.bridge.status();
       assertBridgeCapability(st, "files.copy");
-      const r = await deps.bridge.writeFile(cfg.path, cfg.source);
-      return { text: `wrote ${cfg.path} (${r?.ok ? "ok" : "?"})` };
+      const dest = cfg.dest ?? cfg.path;
+      if (!cfg.source || !String(cfg.source).trim()) {
+        throw new Error("Copy File: source path required");
+      }
+      if (!dest || !String(dest).trim()) {
+        throw new Error("Copy File: destination path required");
+      }
+      if (String(cfg.source).trim() === String(dest).trim()) {
+        throw new Error("Copy File: source and destination must differ");
+      }
+      const r = await deps.bridge.copyFile
+        ? await deps.bridge.copyFile(cfg.source, dest)
+        : await deps.bridge.writeFile(dest, cfg.source);
+      return { text: `copied ${cfg.source} → ${dest} (${r?.ok ? "ok" : "?"})` };
     }
     case "bridge_launch_url": {
       const st = await deps.bridge.status();
