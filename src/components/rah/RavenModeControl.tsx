@@ -227,7 +227,7 @@ export function RavenModeControl({ prompt = "" }: { prompt?: string }) {
           <div className="space-y-3 text-sm">
             <div>
               <div className="flex items-center gap-2 font-medium"><Zap className="h-4 w-4 text-primary" /> Fast Mode</div>
-              <p className="text-muted-foreground text-xs mt-1">Instant answers, short prompts, quick actions. Includes only Critical (pinned) and Active (blockers / next-actions) memory. Best for status checks, quick edits, one-liners.</p>
+              <p className="text-muted-foreground text-xs mt-1">Instant answers, short prompts, quick actions. Prioritizes Critical (pinned) and Active (blockers / next-actions) memory, plus a small number of the most recent and relevant Supporting notes so recent context is not lost. Best for status checks, quick edits, one-liners.</p>
             </div>
             <div>
               <div className="flex items-center gap-2 font-medium"><BrainCircuit className="h-4 w-4 text-primary" /> Deep Mode</div>
