@@ -228,7 +228,8 @@ test("shapeDownloadProgress computes pct/eta with elapsed", () => {
 test("formatBytes never fabricates for negative/NaN", () => {
   assert.equal(formatBytes(-1), "—");
   assert.equal(formatBytes(NaN), "—");
-  assert.equal(formatBytes(2048), "2 KB");
+  assert.equal(formatBytes(2048), "2.0 KB");
+  assert.equal(formatBytes(1024 * 1024 * 25), "25 MB");
 });
 
 // ── Rollback ──────────────────────────────────────────────────────────
