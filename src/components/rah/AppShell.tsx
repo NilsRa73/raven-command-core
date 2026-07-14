@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 const nav = [
   { to: "/", label: "Raven Home", icon: LayoutDashboard },
   { to: "/voice", label: "Voice Assistant", icon: Mic },
+  { to: "/voice-profiles", label: "Voice Profiles", icon: Mic },
   { to: "/vision", label: "Screen Vision", icon: MonitorPlay },
   { to: "/agents", label: "Agent Team", icon: Users },
   { to: "/projects", label: "Projects", icon: FolderKanban },
