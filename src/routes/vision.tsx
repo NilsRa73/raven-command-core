@@ -781,7 +781,7 @@ function VisionPage() {
       toast.error("Region rejected: " + res.rejected[0].reason);
       return;
     }
-    setRegions((r) => [...r, ...res.accepted]);
+    setPointer((s) => reducePointer(s, { type: "set-regions", regions: [...s.regions, ...(res.accepted as unknown as Region[])], frame: { width: pendingFrame.width, height: pendingFrame.height } }));
     setRegionDraft({ x: "", y: "", w: "", h: "", label: "" });
   }, [pendingFrame, regionDraft]);
 
@@ -1336,7 +1336,8 @@ function VisionPage() {
                       {regions.map((r, i) => (
                         <li key={r.id} className="flex items-center gap-2">
                           <span>#{i + 1} · {r.label || "region"} · {r.x},{r.y} {r.w}×{r.h}</span>
-                          <button type="button" className="text-destructive underline" onClick={() => setRegions((rs) => rs.filter((x) => x.id !== r.id))}>remove</button>
+                          <button type="button" className="text-primary underline" onClick={() => setPointer((s) => reducePointer(s, { type: "select", id: r.id }))}>select</button>
+                          <button type="button" className="text-destructive underline" onClick={() => setPointer((s) => reducePointer(s, { type: "remove", id: r.id }))}>remove</button>
                         </li>
                       ))}
                     </ul>
