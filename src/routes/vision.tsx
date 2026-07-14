@@ -24,7 +24,6 @@ import {
   type RedactionRegion,
 } from "@/lib/rah/visionSessions";
 import { hashFrameBytes } from "@/lib/rah/visionHash";
-import { shapeHashResult } from "@/lib/rah/visionLifecycle";
 import { getDB, uid } from "@/lib/rah/db";
 
 export const Route = createFileRoute("/vision")({
