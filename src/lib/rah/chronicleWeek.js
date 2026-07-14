@@ -1,296 +1,251 @@
-// Pure helpers for Chronicle v0.2 — per-project views, ISO week boundaries,
-// weekly aggregation, and deterministic weekly-summary draft generation.
-//
-// Contract:
-//   - Nothing fabricates content. If a section has no source records it is
-//     rendered as "No recorded items" (or omitted).
-//   - Every returned draft exposes the exact evidence (source record ids +
-//     timestamps + types + projects) used to build it.
-//   - Persisted summaries carry those evidence ids so they remain traceable.
-//   - Time handling uses LOCAL time consistently. ISO week label (YYYY-Www)
-//     is computed from the same local date. No silent day-shifts.
+// Deterministic weekly Chronicle helpers. No fabrication. Requires explicit
+// user save. AI polish (if used) rewrites tone only.
 
 import { filterEntries } from "./chronicle.js";
 
-/** Return start-of-day in local time for a given timestamp. */
-function startOfLocalDay(ts) {
-  const d = new Date(ts);
-  d.setHours(0, 0, 0, 0);
-  return d;
+export const CHRONICLE_SOURCES = ["command", "memory", "approval", "workflow"];
+
+/* ─────────────── Week bounds ─────────────── */
+
+function startOfLocalDay(d) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
+}
+function endOfLocalDay(d) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+}
+/** Monday of the ISO week containing `d`. */
+function mondayOf(d) {
+  const s = startOfLocalDay(d);
+  // JS: Sun=0 Mon=1 ... Sat=6. ISO: Mon=1..Sun=7. Compute offset back to Mon.
+  const dow = s.getDay(); // 0..6
+  const back = dow === 0 ? 6 : dow - 1;
+  s.setDate(s.getDate() - back);
+  return s;
 }
 
-/** End-of-day in local time (23:59:59.999). */
-function endOfLocalDay(ts) {
-  const d = new Date(ts);
-  d.setHours(23, 59, 59, 999);
-  return d;
-}
-
-/**
- * Week boundaries in LOCAL time. Week starts Monday, ends Sunday 23:59:59.999
- * (ISO 8601). Returns {startMs, endMs, startDate, endDate}.
- */
-export function weekBoundsFromDate(input, opts = {}) {
-  const weekStartsOn = Number.isInteger(opts.weekStartsOn) ? opts.weekStartsOn : 1; // Monday
-  const src = input instanceof Date ? new Date(input.getTime()) : new Date(input);
-  const startBase = startOfLocalDay(src.getTime());
-  const dow = startBase.getDay(); // 0=Sun..6=Sat
-  // days back to reach weekStartsOn
-  const delta = (dow - weekStartsOn + 7) % 7;
-  const start = new Date(startBase.getTime());
-  start.setDate(start.getDate() - delta);
-  const end = new Date(start.getTime());
+export function weekBoundsFromDate(d) {
+  const start = mondayOf(d);
+  const end = new Date(start);
   end.setDate(end.getDate() + 6);
-  const endMs = endOfLocalDay(end.getTime()).getTime();
-  return { startMs: start.getTime(), endMs, startDate: start, endDate: new Date(endMs) };
+  const endD = endOfLocalDay(end);
+  return {
+    startDate: start, endDate: endD,
+    startMs: start.getTime(), endMs: endD.getTime(),
+  };
 }
 
-/** Shift a week window by an integer delta of weeks. */
 export function shiftWeek(bounds, delta) {
-  const d = new Date(bounds.startMs);
-  d.setDate(d.getDate() + delta * 7);
-  return weekBoundsFromDate(d);
+  const s = new Date(bounds.startDate);
+  s.setDate(s.getDate() + 7 * delta);
+  return weekBoundsFromDate(s);
 }
 
-/**
- * ISO-8601 week number and year for a local date. Returns
- * { year, week, label:"YYYY-Www" }.
- * Year handling correctly assigns week 53/1 near year boundaries.
- */
-export function isoWeek(input) {
-  const src = input instanceof Date ? new Date(input.getTime()) : new Date(input);
-  // Copy date and normalize to Thursday in same week (ISO rule).
-  const d = new Date(Date.UTC(src.getFullYear(), src.getMonth(), src.getDate()));
-  const dayNum = (d.getUTCDay() + 6) % 7; // Monday=0
-  d.setUTCDate(d.getUTCDate() - dayNum + 3);
-  const firstThursday = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
-  const diff = d.getTime() - firstThursday.getTime();
-  const week = 1 + Math.round((diff / 86400000 - 3 + ((firstThursday.getUTCDay() + 6) % 7)) / 7);
-  const year = d.getUTCFullYear();
-  const label = `${year}-W${String(week).padStart(2, "0")}`;
-  return { year, week, label };
+/* ─────────────── ISO week label ─────────────── */
+
+export function isoWeek(date) {
+  // Standard ISO 8601 algorithm.
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const week = Math.ceil(((d - yearStart) / 86_400_000 + 1) / 7);
+  const label = `${d.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
+  return { year: d.getUTCFullYear(), week, label };
 }
 
-/** Locale-safe short date label for a week bound (uses local time). */
-export function formatWeekRange(bounds, locale) {
-  const opts = { month: "short", day: "numeric" };
-  try {
-    const s = new Intl.DateTimeFormat(locale, opts).format(new Date(bounds.startMs));
-    const e = new Intl.DateTimeFormat(locale, { ...opts, year: "numeric" }).format(new Date(bounds.endMs));
-    return `${s} – ${e}`;
-  } catch {
-    return `${new Date(bounds.startMs).toDateString()} – ${new Date(bounds.endMs).toDateString()}`;
-  }
+export function formatWeekRange(b) {
+  const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return `${fmt(b.startDate)} → ${fmt(b.endDate)}`;
 }
 
-/**
- * Filter chronicle entries for a given week and project scope.
- * projectScope: undefined = all, null = unassigned only, string = project id.
- */
-export function entriesInWeek(entries, bounds, projectScope) {
+/* ─────────────── Aggregation ─────────────── */
+
+export function entriesInWeek({ entries, bounds, projectScope }) {
   return filterEntries(entries, {
-    from: bounds.startMs,
-    to: bounds.endMs,
-    projectId: projectScope,
+    from: bounds.startMs, to: bounds.endMs, projectId: projectScope,
   });
 }
 
-/**
- * Project-scoped filter for a raw memory list (used because we bucket by
- * memory type below and want the full untruncated record).
- */
-function memoryInWeek(memoryList, bounds, projectScope) {
-  return (memoryList ?? []).filter((m) => {
+export function aggregateWeek({ entries, memory, bounds, projectScope }) {
+  const inWeek = entriesInWeek({ entries, bounds, projectScope });
+  const memInWeek = (memory ?? []).filter((m) => {
     if (!m || typeof m.updatedAt !== "number") return false;
     if (m.archived) return false;
     if (m.updatedAt < bounds.startMs || m.updatedAt > bounds.endMs) return false;
-    const pid = m.projectId ?? null;
-    if (projectScope === undefined) return true;
-    if (projectScope === null) return pid === null;
-    return pid === projectScope;
+    if (projectScope !== undefined) {
+      const pid = typeof m.projectId === "string" ? m.projectId : null;
+      if (projectScope === null) { if (pid) return false; }
+      else if (pid !== projectScope) return false;
+    }
+    return true;
   });
-}
 
-/**
- * Aggregate a week's records into named buckets. Every bucket is an array of
- * concrete source records (never fabricated). Missing sections stay empty.
- */
-export function aggregateWeek({ entries = [], memory = [], bounds, projectScope }) {
-  const wkEntries = entriesInWeek(entries, bounds, projectScope);
-  const wkMemory = memoryInWeek(memory, bounds, projectScope);
-  const completedCommands = wkEntries.filter((e) => e.source === "command" && e.type === "done");
-  const completedWorkflows = wkEntries.filter((e) => e.source === "workflow" && e.type === "completed");
-  const decisions = wkMemory.filter((m) => m.type === "decision");
-  const blockers = wkMemory.filter((m) => m.type === "blocker");
-  const milestones = wkMemory.filter((m) => m.type === "milestone");
-  const nextActions = wkMemory.filter((m) => m.type === "next_action");
-  const approvalsResolved = wkEntries.filter((e) => e.source === "approval");
-  const workflowActivity = wkEntries.filter((e) => e.source === "workflow");
-  const failedCommands = wkEntries.filter((e) => e.source === "command" && e.type === "error");
-  const openIssues = [...blockers, ...failedCommands.map((f) => ({
-    id: f.sourceId, projectId: f.projectId ?? null,
-    title: f.title, type: "failed_command", updatedAt: f.ts,
-  }))];
+  const completedCommands = inWeek.filter((e) => e.kind === "command" && e.type === "done");
+  const failedCommands = inWeek.filter((e) => e.kind === "command" && (e.type === "error" || e.type === "rejected"));
+  const workflowsCompleted = inWeek.filter((e) => e.kind === "workflow" && e.type === "completed");
+  const workflowsFailed = inWeek.filter((e) => e.kind === "workflow" && e.type !== "completed");
+  const approvals = inWeek.filter((e) => e.kind === "approval");
+  const decisions = memInWeek.filter((m) => m.type === "decision");
+  const blockers = memInWeek.filter((m) => m.type === "blocker");
+  const milestones = memInWeek.filter((m) => m.type === "milestone");
+  const nextSteps = memInWeek.filter((m) => m.type === "next_action");
+
   return {
-    bounds, projectScope,
-    counts: {
-      commands: wkEntries.filter((e) => e.source === "command").length,
-      completedCommands: completedCommands.length,
-      approvals: approvalsResolved.length,
-      memory: wkMemory.length,
-      milestones: milestones.length,
-      decisions: decisions.length,
-      blockers: blockers.length,
-      nextActions: nextActions.length,
-      workflowActivity: workflowActivity.length,
-      completedWorkflows: completedWorkflows.length,
-      failedCommands: failedCommands.length,
-    },
-    completedCommands, completedWorkflows, decisions, blockers, milestones,
-    nextActions, approvalsResolved, workflowActivity, failedCommands, openIssues,
+    completedCommands, failedCommands,
+    workflowsCompleted, workflowsFailed,
+    approvals, decisions, blockers, milestones, nextSteps,
+    memInWeek, allInWeek: inWeek,
   };
 }
 
-/** Truthful line printer — writes a section only when there are records. */
-function section(lines, title, items, printer) {
-  if (!items || items.length === 0) return;
-  lines.push("");
-  lines.push(`## ${title}`);
-  for (const it of items.slice(0, 12)) lines.push(`- ${printer(it)}`);
-  if (items.length > 12) lines.push(`- …and ${items.length - 12} more`);
+/* ─────────────── Draft generation ─────────────── */
+
+function projectName(project, scope) {
+  if (project && project.name) return project.name;
+  if (scope === null) return "Unassigned";
+  if (scope === undefined) return "All projects";
+  return "(project)";
 }
 
-/** Truthful section that ALWAYS renders, even when empty. */
-function sectionRequired(lines, title, items, printer) {
-  lines.push("");
-  lines.push(`## ${title}`);
-  if (!items || items.length === 0) { lines.push("- No recorded items"); return; }
-  for (const it of items.slice(0, 12)) lines.push(`- ${printer(it)}`);
-  if (items.length > 12) lines.push(`- …and ${items.length - 12} more`);
+function section(lines, heading, items, format) {
+  lines.push("", `### ${heading}`);
+  if (!items.length) { lines.push("_No recorded items._"); return; }
+  for (const it of items) lines.push(`- ${format(it)}`);
 }
 
-/**
- * Build a deterministic weekly summary draft.
- *
- * Returns { text, evidence, meta, agg }.
- *   - text: plain Markdown draft.
- *   - evidence: array of source record ids used (with kind, ts, projectId).
- *   - meta: { projectId, projectName, weekLabel, bounds, generatedAt, requiresExplicitSave: true }.
- */
-export function buildWeeklyDraft({ project, projectScope, entries = [], memory = [], bounds, now = Date.now() }) {
+export function buildWeeklyDraft({ project, projectScope, entries, memory, bounds, now }) {
+  const iso = isoWeek(new Date(bounds.startMs + 3 * 86_400_000));
   const agg = aggregateWeek({ entries, memory, bounds, projectScope });
-  const iso = isoWeek(new Date(bounds.startMs + 3 * 86400000)); // Thursday-of-week
-  const projectName = project?.name ?? (projectScope === null ? "Unassigned" : projectScope === undefined ? "All projects" : projectScope);
+  const pName = projectName(project, projectScope);
+  const genAt = typeof now === "number" ? now : Date.now();
 
   const lines = [];
-  lines.push(`# Weekly summary — ${projectName} — ${iso.label}`);
-  lines.push(`_${formatWeekRange(bounds)}_`);
-  lines.push("");
-  lines.push(`- Commands: ${agg.counts.commands} (completed ${agg.counts.completedCommands}, failed ${agg.counts.failedCommands})`);
-  lines.push(`- Workflow runs: ${agg.counts.workflowActivity} (completed ${agg.counts.completedWorkflows})`);
-  lines.push(`- Approvals resolved: ${agg.counts.approvals}`);
-  lines.push(`- Memory changes: ${agg.counts.memory} (milestones ${agg.counts.milestones}, decisions ${agg.counts.decisions}, blockers ${agg.counts.blockers}, next actions ${agg.counts.nextActions})`);
+  lines.push(`# Weekly summary — ${pName} — ${iso.label}`, "");
+  lines.push(`_Week ${formatWeekRange(bounds)}_`);
+  lines.push(`_Generated ${new Date(genAt).toISOString()} from real records only. No fabrication._`);
 
-  sectionRequired(lines, "Completed work", [...agg.completedCommands, ...agg.completedWorkflows], (e) => e.title);
-  sectionRequired(lines, "Decisions", agg.decisions, (m) => m.title);
-  sectionRequired(lines, "Blockers", agg.blockers, (m) => m.title);
-  section(lines, "Milestones", agg.milestones, (m) => m.title);
-  sectionRequired(lines, "Approvals resolved", agg.approvalsResolved, (e) => e.title);
-  section(lines, "Workflow activity", agg.workflowActivity, (e) => e.title);
-  sectionRequired(lines, "Open issues", agg.openIssues, (m) => m.title);
-  sectionRequired(lines, "Next steps", agg.nextActions, (m) => m.title);
-
-  const empty = agg.counts.commands === 0 && agg.counts.memory === 0
-    && agg.counts.approvals === 0 && agg.counts.workflowActivity === 0;
-  if (empty) { lines.push(""); lines.push("_No activity recorded for this week yet._"); }
-
-  // Evidence — every real source record used in aggregation, deduped.
-  const evidence = [];
-  const seen = new Set();
-  function push(id, kind, ts, projectId, type) {
-    const key = `${kind}:${id}`;
-    if (seen.has(key)) return;
-    seen.add(key);
-    evidence.push({ id, kind, ts, projectId: projectId ?? null, type: type ?? null });
-  }
-  for (const e of [...agg.completedCommands, ...agg.completedWorkflows, ...agg.approvalsResolved, ...agg.workflowActivity, ...agg.failedCommands]) {
-    push(e.sourceId ?? e.id, e.source ?? e.kind, e.ts, e.projectId, e.type);
-  }
-  for (const m of [...agg.decisions, ...agg.blockers, ...agg.milestones, ...agg.nextActions]) {
-    push(m.id, "memory", m.updatedAt, m.projectId ?? null, m.type);
+  section(lines, "Completed work", [
+    ...agg.completedCommands.map((e) => ({ label: e.title, src: e })),
+    ...agg.workflowsCompleted.map((e) => ({ label: e.title, src: e })),
+  ], (x) => x.label);
+  section(lines, "Decisions", agg.decisions, (m) => m.title);
+  section(lines, "Blockers", agg.blockers, (m) => m.title);
+  section(lines, "Next steps", agg.nextSteps, (m) => m.title);
+  section(lines, "Approvals resolved", agg.approvals, (e) => e.title);
+  if (agg.failedCommands.length || agg.workflowsFailed.length) {
+    section(lines, "Issues", [...agg.failedCommands, ...agg.workflowsFailed], (e) => e.title);
   }
 
-  return {
-    text: lines.join("\n"),
-    evidence,
-    agg,
-    meta: {
-      projectId: projectScope === undefined ? "__all__" : (projectScope ?? "__unassigned__"),
-      projectScope,
-      projectName,
-      weekLabel: iso.label,
-      bounds,
-      generatedAt: now,
-      requiresExplicitSave: true,
+  const totalItems = agg.completedCommands.length + agg.workflowsCompleted.length
+    + agg.decisions.length + agg.blockers.length + agg.nextSteps.length
+    + agg.approvals.length + agg.milestones.length;
+  if (totalItems === 0) {
+    lines.push("", "_No activity recorded for this scope in this week._");
+  }
+
+  // Evidence: exact ids and timestamps used to build the sections above.
+  const ev = [];
+  const push = (kind, id, ts, extra) => ev.push({ kind, id, ts, ...(extra || {}) });
+  for (const e of agg.completedCommands) push("command", e.sourceId, e.ts, { type: e.type, projectId: e.projectId ?? null });
+  for (const e of agg.failedCommands) push("command", e.sourceId, e.ts, { type: e.type, projectId: e.projectId ?? null });
+  for (const e of agg.workflowsCompleted) push("workflow", e.sourceId, e.ts, { type: e.type, projectId: e.projectId ?? null });
+  for (const e of agg.workflowsFailed) push("workflow", e.sourceId, e.ts, { type: e.type, projectId: e.projectId ?? null });
+  for (const e of agg.approvals) push("approval", e.sourceId, e.ts, { type: e.type, projectId: e.projectId ?? null });
+  for (const m of agg.decisions) push("memory", m.id, m.updatedAt, { type: m.type, projectId: m.projectId ?? null });
+  for (const m of agg.blockers) push("memory", m.id, m.updatedAt, { type: m.type, projectId: m.projectId ?? null });
+  for (const m of agg.milestones) push("memory", m.id, m.updatedAt, { type: m.type, projectId: m.projectId ?? null });
+  for (const m of agg.nextSteps) push("memory", m.id, m.updatedAt, { type: m.type, projectId: m.projectId ?? null });
+
+  const meta = {
+    projectScope, projectName: pName, weekLabel: iso.label,
+    bounds: { startIso: new Date(bounds.startMs).toISOString(), endIso: new Date(bounds.endMs).toISOString() },
+    generatedAt: genAt,
+    requiresExplicitSave: true,
+    counts: {
+      completed: agg.completedCommands.length + agg.workflowsCompleted.length,
+      decisions: agg.decisions.length,
+      blockers: agg.blockers.length,
+      nextSteps: agg.nextSteps.length,
+      approvals: agg.approvals.length,
+      workflows: agg.workflowsCompleted.length + agg.workflowsFailed.length,
+      commands: agg.completedCommands.length + agg.failedCommands.length,
+      memory: agg.decisions.length + agg.blockers.length + agg.milestones.length + agg.nextSteps.length,
     },
   };
+
+  return { text: lines.join("\n"), meta, evidence: ev };
 }
 
-/** Canonical title for a saved weekly summary — used by the duplicate guard. */
+/* ─────────────── Save & duplicate guard ─────────────── */
+
 export function weeklySummaryTitle(projectName, weekLabel) {
   return `Weekly summary — ${projectName} — ${weekLabel}`;
 }
 
-/**
- * Find an existing saved weekly summary for the given project + week.
- * Matches on the projectId + weekLabel tag pair we persist below.
- */
-export function findExistingWeeklySummary(memoryList, projectScope, weekLabel) {
-  const targetPid = projectScope ?? null;
-  return (memoryList ?? []).find((m) => {
-    if (!m || m.type !== "daily_log") return false;
-    if ((m.projectId ?? null) !== targetPid) return false;
+export function findExistingWeeklySummary(memory, projectScope, weekLabel) {
+  for (const m of memory ?? []) {
+    if (!m || m.type !== "weekly_log" || m.archived) continue;
+    const pid = typeof m.projectId === "string" ? m.projectId : null;
+    const scope = projectScope ?? null;
+    if (pid !== scope) continue;
     const tags = Array.isArray(m.tags) ? m.tags : [];
-    return tags.includes("weekly-summary") && tags.includes(weekLabel);
-  }) ?? null;
+    if (tags.includes(weekLabel) && tags.includes("weekly-summary")) return m;
+  }
+  return null;
 }
 
-/** Build the record we persist for a weekly summary (never persisted here). */
-export function buildSaveableWeeklySummary(draft, { versionSuffix = null } = {}) {
-  const title = weeklySummaryTitle(draft.meta.projectName, draft.meta.weekLabel)
-    + (versionSuffix ? ` (${versionSuffix})` : "");
+export function buildSaveableWeeklySummary(draft, opts = {}) {
+  const suffix = opts.versionSuffix ? ` (${opts.versionSuffix})` : "";
+  const title = weeklySummaryTitle(draft.meta.projectName, draft.meta.weekLabel) + suffix;
+  const evidenceIds = draft.evidence.map((e) => `${e.kind}:${e.id}`);
+  const content = [
+    draft.text, "",
+    "---",
+    "Evidence (source records used):",
+    ...evidenceIds.map((s) => `- ${s}`),
+  ].join("\n");
   return {
-    projectId: draft.meta.projectScope ?? null,
-    title,
-    content: draft.text
-      + "\n\n---\n_Evidence_: "
-      + draft.evidence.map((e) => `${e.kind}:${e.id}`).join(", "),
-    type: "daily_log",
-    tags: ["weekly-summary", draft.meta.weekLabel, ...(versionSuffix ? ["version:" + versionSuffix] : [])],
+    projectId: typeof draft.meta.projectScope === "string" ? draft.meta.projectScope : null,
+    title, content,
+    type: "weekly_log",
+    tags: ["chronicle", "weekly-summary", draft.meta.weekLabel],
     source: "chronicle-week",
-    archived: false,
-    pinned: false,
-    // Extra evidence metadata for round-trip export/import.
+    archived: false, pinned: false,
     evidence: draft.evidence,
   };
 }
 
-/** Metadata block used in exports so consumers can reconstruct the filter. */
-export function buildExportMetadata({ filter = {}, bounds = null, projectScope, projects = [] } = {}) {
-  const projectName = projectScope === undefined ? "All projects"
+/* ─────────────── Export helpers ─────────────── */
+
+function asArray(v) {
+  if (v instanceof Set) return [...v];
+  return Array.isArray(v) ? v : [];
+}
+
+export function buildExportMetadata({ filter, bounds, projectScope, projects }) {
+  const proj = typeof projectScope === "string"
+    ? (projects ?? []).find((p) => p.id === projectScope) : null;
+  const projectLabel = proj ? proj.name
     : projectScope === null ? "Unassigned"
-    : (projects.find((p) => p.id === projectScope)?.name ?? projectScope);
+    : projectScope === undefined ? "All projects"
+    : "(unknown)";
   return {
     exportedAt: new Date().toISOString(),
-    projectScope: projectScope === undefined ? "__all__" : (projectScope ?? "__unassigned__"),
-    projectName,
+    scope: projectLabel,
+    projectName: projectLabel,
+    projectScope: projectScope ?? null,
     filter: {
-      q: filter.q ?? "",
-      kinds: Array.isArray(filter.kinds) ? filter.kinds : [...(filter.kinds ?? [])],
-      sources: Array.isArray(filter.sources) ? filter.sources : [...(filter.sources ?? [])],
-      from: filter.from ?? null,
-      to: filter.to ?? null,
+      q: filter?.q ?? "",
+      kinds: asArray(filter?.kinds),
+      sources: asArray(filter?.sources),
+      from: filter?.from ? new Date(filter.from).toISOString() : null,
+      to: filter?.to ? new Date(filter.to).toISOString() : null,
     },
+    bounds: bounds ? {
+      startIso: new Date(bounds.startMs).toISOString(),
+      endIso: new Date(bounds.endMs).toISOString(),
+      label: isoWeek(new Date(bounds.startMs + 3 * 86_400_000)).label,
+    } : null,
     weekBounds: bounds ? { startMs: bounds.startMs, endMs: bounds.endMs } : null,
   };
 }
@@ -300,18 +255,16 @@ export function exportFilteredChronicleJson(entries, meta) {
 }
 
 export function exportFilteredChronicleMarkdown(entries, meta) {
-  const lines = ["# Raven Chronicle export"];
-  lines.push("");
-  lines.push(`- Project: ${meta.projectName}`);
-  if (meta.weekBounds) lines.push(`- Week: ${new Date(meta.weekBounds.startMs).toDateString()} – ${new Date(meta.weekBounds.endMs).toDateString()}`);
-  if (meta.filter.q) lines.push(`- Search: \`${meta.filter.q}\``);
-  if (meta.filter.kinds?.length) lines.push(`- Kinds: ${meta.filter.kinds.join(", ")}`);
-  if (meta.filter.sources?.length) lines.push(`- Sources: ${meta.filter.sources.join(", ")}`);
-  lines.push(`- Total entries: ${entries.length}`);
-  lines.push("");
+  const lines = ["# Raven Chronicle export", ""];
+  lines.push(`- Project: ${meta.projectName ?? meta.scope}`);
+  if (meta.bounds) lines.push(`- Week: ${meta.bounds.label} (${meta.bounds.startIso} → ${meta.bounds.endIso})`);
+  if (meta.filter?.q) lines.push(`- Search: \`${meta.filter.q}\``);
+  if (meta.filter?.kinds?.length) lines.push(`- Kinds: ${meta.filter.kinds.join(", ")}`);
+  if (meta.filter?.sources?.length) lines.push(`- Sources: ${meta.filter.sources.join(", ")}`);
+  lines.push(`- Exported: ${meta.exportedAt}`, "");
   for (const e of entries) {
-    const time = new Date(e.ts).toISOString();
-    lines.push(`- **${time}** · _${e.source ?? e.kind}${e.type ? "/" + e.type : ""}_ — ${e.title}` + (e.projectId ? ` _(project: ${e.projectId})_` : ""));
+    const t = new Date(e.ts).toISOString();
+    lines.push(`- **${t}** · _${e.kind}${e.type ? "/" + e.type : ""}_ — ${e.title}`);
     if (e.detail) lines.push(`  - ${e.detail.replace(/\n+/g, " ")}`);
   }
   return lines.join("\n");
@@ -320,18 +273,16 @@ export function exportFilteredChronicleMarkdown(entries, meta) {
 export function exportWeeklyDraftJson(draft) {
   return JSON.stringify({
     kind: "raven-weekly-summary/v1",
-    meta: draft.meta, text: draft.text, evidence: draft.evidence,
-    counts: draft.agg.counts,
+    meta: draft.meta,
+    text: draft.text,
+    evidence: draft.evidence,
   }, null, 2);
 }
 
 export function exportWeeklyDraftMarkdown(draft) {
-  const lines = [draft.text, "", "---", "### Evidence"];
-  if (draft.evidence.length === 0) lines.push("- (none)");
-  else for (const e of draft.evidence) {
-    lines.push(`- ${e.kind}:${e.id} · ${new Date(e.ts).toISOString()}${e.projectId ? ` · project:${e.projectId}` : ""}${e.type ? ` · ${e.type}` : ""}`);
+  const lines = [draft.text, "", "### Evidence", ""];
+  for (const e of draft.evidence) {
+    lines.push(`- ${e.kind}:${e.id} · ${new Date(e.ts).toISOString()}${e.type ? " · " + e.type : ""}${e.projectId ? " · project:" + e.projectId : ""}`);
   }
   return lines.join("\n");
 }
-
-export const CHRONICLE_SOURCES = ["command", "memory", "approval", "workflow"];
