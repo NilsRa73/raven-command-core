@@ -21,11 +21,16 @@ export const RAVEN_MODE_META = {
   fast: {
     label: "Fast Mode",
     icon: "⚡",
-    tagline: "Immediate action · concise · lightweight context",
+    tagline: "Critical + Active + a few recent Supporting",
     target: "Instant",
     contextLimit: 6,
     perItemChars: 220,
-    includeSupporting: false,
+    // Fast Mode prioritizes Critical + Active but keeps room for a small,
+    // bounded number of the most recent/relevant Supporting records —
+    // enough to preserve continuity without blowing the context budget.
+    includeSupporting: true,
+    fastSupportingCap: 2,
+    fastSupportingMinScore: 30, // must beat baseline "old + irrelevant"
     includeArchivedSearchable: false,
   },
   deep: {
@@ -36,6 +41,8 @@ export const RAVEN_MODE_META = {
     contextLimit: 20,
     perItemChars: 800,
     includeSupporting: true,
+    fastSupportingCap: Infinity,
+    fastSupportingMinScore: 0,
     includeArchivedSearchable: true,
   },
 };
@@ -113,23 +120,34 @@ export function selectContextForMode(list, opts = {}) {
     forcedPin: pins.has(r.id),
   }));
 
-  const eligible = scored.filter((s) => {
-    if (s.forcedPin) return true;
-    if (s.priority === "critical" || s.priority === "active") return true;
-    if (s.priority === "supporting") return meta.includeSupporting;
-    return false;
-  });
-
-  eligible.sort((a, b) => {
-    if (a.forcedPin !== b.forcedPin) return a.forcedPin ? -1 : 1;
-    const pa = PRIORITY_ORDER.indexOf(a.priority);
-    const pb = PRIORITY_ORDER.indexOf(b.priority);
-    if (pa !== pb) return pa - pb;
+  // Priority tier ordering: pins first, then critical, active, supporting.
+  const tierRank = (s) => (s.forcedPin ? -1 : PRIORITY_ORDER.indexOf(s.priority));
+  const bySalience = (a, b) => {
+    const ta = tierRank(a), tb = tierRank(b);
+    if (ta !== tb) return ta - tb;
     if (b.score !== a.score) return b.score - a.score;
     return (b.rec.updatedAt || 0) - (a.rec.updatedAt || 0);
-  });
+  };
 
-  return eligible.slice(0, meta.contextLimit);
+  // Critical + Active + pins always considered.
+  const primary = scored.filter(
+    (s) => s.forcedPin || s.priority === "critical" || s.priority === "active",
+  ).sort(bySalience);
+
+  // Supporting: in Fast Mode allow only the top-scoring, recent-relevant few
+  // (bounded by fastSupportingCap and fastSupportingMinScore). In Deep Mode
+  // include all supporting; primary priority still comes first via bySalience.
+  const supportingAll = scored
+    .filter((s) => s.priority === "supporting" && !s.forcedPin)
+    .sort(bySalience);
+  const supportingKept = meta.includeSupporting
+    ? supportingAll
+        .filter((s) => s.score >= (meta.fastSupportingMinScore ?? 0))
+        .slice(0, meta.fastSupportingCap ?? Infinity)
+    : [];
+
+  // Merge: primary first, then supporting; then cap to contextLimit.
+  return [...primary, ...supportingKept].slice(0, meta.contextLimit);
 }
 
 /** Truncate content to a per-mode character budget without breaking words hard. */
