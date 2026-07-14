@@ -685,7 +685,90 @@ function VisionPage() {
     setRedactedDataUrl("");
     setSavedEvidenceId(null);
     setReviewStage("idle");
+    setResultDraftText("");
+    setResultDraftDirty(false);
+    setSavedResultId(null);
+    setSaveReceipt(null);
+    setProposal(null);
+    setDispatchReceipt(null);
   }, []);
+
+  // ─── Explicit Vision Session lifecycle ───────────────────────────────
+  const startVisionSession = useCallback(() => {
+    if (selectedProjectId === undefined) {
+      toast.error("Choose a project (or 'No project') before starting.");
+      return;
+    }
+    if (!isCaptureReady(sharing)) {
+      toast.error("Share your screen first — the session records the actual source.");
+      return;
+    }
+    const track = trackRef.current;
+    const settings = track?.getSettings?.() ?? {};
+    const displaySurface = (settings as { displaySurface?: string }).displaySurface || null;
+    const res = lifecycleStartSession({
+      id: uid(),
+      projectId: selectedProjectId ?? null,
+      sourceLabel: sourceLabel || "selected screen source",
+      displaySurface,
+      consented: true,
+      apiLabel: "browser.getDisplayMedia",
+      mode: sessionMode,
+      question: (question || "").trim(),
+    });
+    if (!res.ok || !res.session) {
+      toast.error("Could not start session: " + (res.reason || "unknown"));
+      return;
+    }
+    // Persist immediately so the session exists in history even before capture.
+    (async () => {
+      try {
+        const db = await getDB();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await db.put("visionSessions" as any, {
+          ...res.session,
+          title: sessionTitle.trim() || "Untitled vision session",
+          presetId: null,
+          privacyMode: "standard",
+          workflowProposalIds: [],
+          schemaVersion: 1,
+          createdAt: res.session!.startedAt,
+        } as never);
+      } catch (err) {
+        toast.error("Session start failed to persist: " + (err as Error).message);
+      }
+    })();
+    setActiveSession(res.session);
+    toast.success("Vision session started");
+  }, [selectedProjectId, sharing, sourceLabel, sessionMode, question, sessionTitle]);
+
+  const persistSession = useCallback(async (s: LifecycleSession) => {
+    try {
+      const db = await getDB();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await db.put("visionSessions" as any, {
+        ...s,
+        title: sessionTitle.trim() || "Untitled vision session",
+        presetId: null,
+        privacyMode: "standard",
+        workflowProposalIds: [],
+        schemaVersion: 1,
+        createdAt: s.startedAt,
+      } as never);
+    } catch { /* ignore */ }
+  }, [sessionTitle]);
+
+  const endVisionSession = useCallback(async () => {
+    if (!activeSession) return;
+    const next = lifecycleEndSession(activeSession, { reason: "user_ended" });
+    if (next) { setActiveSession(next); await persistSession(next); toast.success("Vision session ended"); }
+  }, [activeSession, persistSession]);
+
+  const cancelVisionSession = useCallback(async () => {
+    if (!activeSession) return;
+    const next = lifecycleCancelSession(activeSession, { reason: "user_cancelled" });
+    if (next) { setActiveSession(next); await persistSession(next); toast("Vision session cancelled"); }
+  }, [activeSession, persistSession]);
 
   // Capture ONLY — no AI. This is Step 1 of the mandatory Capture Review.
   const captureNow = useCallback(async () => {
