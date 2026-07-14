@@ -1900,7 +1900,7 @@ function VisionPage() {
               </Button>
             )}
           </div>
-          {proposal && confirmationPayload && (
+          {proposal && confirmationPayload ? (
             <div className="rounded-md border border-border/60 bg-background/40 p-3 text-xs space-y-2">
               <div><strong>Side-effect class:</strong> <code>{proposal.sideEffectClass}</code></div>
               <pre className="whitespace-pre-wrap break-words text-[11px] max-h-56 overflow-auto">{String(JSON.stringify(confirmationPayload, null, 2) ?? "")}</pre>
@@ -1915,7 +1915,7 @@ function VisionPage() {
                 </div>
               )}
             </div>
-          )}
+          ) : null}
         </section>
       )}
 
