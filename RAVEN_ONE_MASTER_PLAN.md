@@ -978,6 +978,76 @@ and approvals infrastructure.
 - IndexedDB version unchanged (still v8); no schema migration.
 - Not deployed, not published.
 
+## Screen Vision v0.3 — UI mount batch (this batch)
+
+**Shipped in this batch (UI mounts over already-tested helpers):**
+
+1. **Explicit Vision Session UI** (`src/routes/vision.tsx`). New
+   "Vision Session" panel wires a project selector loaded from the
+   `projects` IndexedDB store (with explicit `— choose —` and
+   `No project` options), a session title input, a Fast/Deep mode
+   selector, and a **Start Vision Session** button. Nothing persists
+   until Start is pressed. Start invokes `startSession()` with the
+   real `displaySurface` from the live `MediaStreamTrack` and the
+   `browser.getDisplayMedia` api label, then writes the shaped record
+   to `visionSessions`. The Capture button is disabled unless
+   `isSessionLive(activeSession)` is true. Successful captures call
+   `incrementCaptureCount()` and re-persist the session. Explicit
+   **End session** / **Cancel session** call `endSession()` /
+   `cancelSession()`. Consent, `sourceLabel`, `displaySurface`,
+   `apiLabel`, and timestamps are preserved exactly; unknown values
+   render as `—`.
+2. **Immutable Vision Result Review UI** (`vision.tsx`). Raw model
+   output is shown in a read-only `<pre>`; the user's edits live in
+   a separate `<textarea>` draft. **Save Result** calls
+   `createResult()` on the first save (v1) and `createResultVersion()`
+   on subsequent saves, each producing an appended `visionResults`
+   row (no prior version is overwritten). The panel exposes
+   **Discard edits** and **Copy**, and renders a destination
+   receipt (`destination`, `id`, timestamp) via `shapeSaveReceipt`.
+3. **Confirm Vision Action UI** (`vision.tsx`). Users pick a safe
+   action from `VISION_ACTION_CATALOG`, press **Propose safe action**
+   (calls `proposeSafeAction`) or **Propose workflow (inert handoff)**
+   (calls `proposeWorkflowHandoff`). The rendered confirmation panel
+   uses `buildConfirmationPayload()` and gates dispatch through
+   `canDispatchProposal({ confirmed: true })`. UI-only actions
+   dispatch only after explicit **Confirm**; workflow proposals hand
+   off inert to `/automations` and never auto-execute. A dispatch
+   receipt is shown.
+4. **Import Preview/Apply UI** (`src/routes/vision-history.tsx`).
+   A JSON file input parses the export via `validateImportPayload`,
+   shows counts and conflicts from `planImportApply`, provides
+   per-conflict **Skip/Replace** radios (default Skip; no silent
+   overwrite), decorates evidence conflicts with a
+   `findStrongestMatch`-derived hash/metadata badge, and requires
+   an explicit **Apply** press to write. Import is metadata-only:
+   any embedded `frame.dataUrl` / `redactedFrame.dataUrl` on
+   incoming evidence is stripped before persistence, so sensitive
+   original bytes stay hidden. Also replaced `?` fallback with `—`
+   for missing provider/model on result rows.
+
+**No new stores, no schema changes.** IndexedDB stays at v8 and all
+writes target existing stores (`visionSessions`, `visionEvidence`,
+`visionResults`, `projects`).
+
+**Honest limitations:**
+- The Session panel starts sessions only when the user has already
+  granted `getDisplayMedia`; it does not initiate sharing itself.
+- Confirm Vision Action's UI-only branch dispatches a receipt but
+  the current catalog entries are inert (navigation hints);
+  no keyboard/router side effect is triggered beyond the receipt +
+  Automations handoff for the workflow branch.
+- No image bytes are re-hydratable from an imported evidence row —
+  metadata + hash only, by design.
+
+**Verification:**
+- Bridge tests: **553/553 passing** (unchanged; UI mounts reuse
+  helpers already covered by `vision-lifecycle.test.js`,
+  `vision-sessions.test.js`, `vision-match.test.js`).
+- `bunx tsgo --noEmit`: clean.
+- `bun run build`: succeeds.
+- Not deployed, not published.
+
 **Verification:**
 - Two new deterministic test files added: `vision-geometry.test.js`
   (15 cases covering transforms, drag normalization edge cases,
