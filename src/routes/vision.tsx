@@ -1903,7 +1903,7 @@ function VisionPage() {
           {proposal && confirmationPayload && (
             <div className="rounded-md border border-border/60 bg-background/40 p-3 text-xs space-y-2">
               <div><strong>Side-effect class:</strong> <code>{proposal.sideEffectClass}</code></div>
-              <pre className="whitespace-pre-wrap break-words text-[11px] max-h-56 overflow-auto">{JSON.stringify(confirmationPayload as unknown, null, 2)}</pre>
+              <pre className="whitespace-pre-wrap break-words text-[11px] max-h-56 overflow-auto">{String(JSON.stringify(confirmationPayload, null, 2) ?? "")}</pre>
               <div className="flex flex-wrap gap-2 pt-1">
                 <Button size="sm" type="button" onClick={confirmDispatch}>
                   {proposal.sideEffectClass === "workflow_handoff" ? "Confirm handoff to Automations" : "Confirm safe action"}
