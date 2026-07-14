@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { getDB, getPrefs, savePrefs, seedIfEmpty, seedProjectMemoryIfEmpty, uid, type Approval, type CommandRecord, type MemoryItem, type Preferences, type Project, type ProjectMemoryRecord } from "./db";
+import { getDB, getPrefs, savePrefs, seedIfEmpty, seedProjectMemoryIfEmpty, uid, type Approval, type CommandRecord, type MemoryItem, type Preferences, type Project, type ProjectMemoryRecord, type RoadmapMilestone, type DecisionRecord, type DecisionVersion } from "./db";
 import { streamChat } from "./ai";
 import { toast } from "sonner";
 import { applyBridgeAutoMigration } from "./localAi";
@@ -50,6 +50,16 @@ type Ctx = {
   togglePinProjectMemory: (id: string) => Promise<void>;
   toggleArchiveProjectMemory: (id: string) => Promise<void>;
   buildProjectMemoryContext: () => { memoryBlock: string; count: number };
+  // Roadmap milestones (Project DNA v0.2)
+  roadmapMilestones: RoadmapMilestone[];
+  reloadRoadmap: () => Promise<void>;
+  saveRoadmap: (projectId: string, milestones: RoadmapMilestone[]) => Promise<void>;
+  // Decisions changelog (Project DNA v0.2)
+  decisions: DecisionRecord[];
+  decisionVersions: DecisionVersion[];
+  reloadDecisions: () => Promise<void>;
+  saveDecisionVersion: (input: { decision: DecisionRecord; version: DecisionVersion }) => Promise<void>;
+  archiveDecision: (id: string, archived: boolean) => Promise<void>;
   approvals: Approval[];
   reloadApprovals: () => Promise<void>;
   requestApproval: (a: Omit<Approval, "id" | "createdAt" | "status">) => Promise<Approval>;
@@ -80,6 +90,9 @@ export function RahProvider({ children }: { children: ReactNode }) {
   const [commands, setCommands] = useState<CommandRecord[]>([]);
   const [memory, setMemory] = useState<MemoryItem[]>([]);
   const [projectMemory, setProjectMemory] = useState<ProjectMemoryRecord[]>([]);
+  const [roadmapMilestones, setRoadmapMilestones] = useState<RoadmapMilestone[]>([]);
+  const [decisions, setDecisions] = useState<DecisionRecord[]>([]);
+  const [decisionVersions, setDecisionVersions] = useState<DecisionVersion[]>([]);
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const focusRef = useRef<() => void>(() => {});
 
@@ -102,6 +115,16 @@ export function RahProvider({ children }: { children: ReactNode }) {
     const all = await db.getAll("projectMemory");
     setProjectMemory(all.sort((a, b) => b.updatedAt - a.updatedAt));
   }, []);
+  const reloadRoadmap = useCallback(async () => {
+    const db = await getDB();
+    setRoadmapMilestones(await db.getAll("roadmapMilestones"));
+  }, []);
+  const reloadDecisions = useCallback(async () => {
+    const db = await getDB();
+    const [d, v] = await Promise.all([db.getAll("decisions"), db.getAll("decisionVersions")]);
+    setDecisions(d);
+    setDecisionVersions(v);
+  }, []);
   const reloadApprovals = useCallback(async () => {
     const db = await getDB();
     setApprovals((await db.getAll("approvals")).sort((a, b) => b.createdAt - a.createdAt));
@@ -114,13 +137,13 @@ export function RahProvider({ children }: { children: ReactNode }) {
         await seedProjectMemoryIfEmpty();
         const p = await getPrefs();
         setPrefs(p);
-        await Promise.all([reloadProjects(), reloadCommands(), reloadMemory(), reloadApprovals(), reloadProjectMemory()]);
+        await Promise.all([reloadProjects(), reloadCommands(), reloadMemory(), reloadApprovals(), reloadProjectMemory(), reloadRoadmap(), reloadDecisions()]);
         void applyBridgeAutoMigration();
       } finally {
         setReady(true);
       }
     })();
-  }, [reloadProjects, reloadCommands, reloadMemory, reloadApprovals, reloadProjectMemory]);
+  }, [reloadProjects, reloadCommands, reloadMemory, reloadApprovals, reloadProjectMemory, reloadRoadmap, reloadDecisions]);
 
   // apply theme + text size + reduced motion to <html>
   useEffect(() => {
