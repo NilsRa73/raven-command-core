@@ -457,7 +457,15 @@ function buildExecutorDeps(hooks: {
         pinnedIds: hooks.ravenState.pinnedIds,
         excludedIds: hooks.ravenState.excludedIds,
       });
-      return packet.text;
+      return {
+        text: packet.text,
+        meta: {
+          mode,
+          selectedCount: packet.items?.length ?? 0,
+          selectedIds: (packet.items ?? []).map((i: { id: string }) => i.id),
+          approxTokens: packet.approxTokens ?? null,
+        },
+      };
     },
     loadRun: async (id: string) => {
       const db = await getDB();
