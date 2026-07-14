@@ -58,7 +58,6 @@ progress, or telemetry.
   identical source/dest (backward-compatible: legacy `path` is interpreted as
   the destination `dest` when `dest` is absent; a distinct `source` is still
   mandatory);
-  
   `bridge_launch_url` requires `https://`; `bridge_launch_app` uses
   `launch.program`. Executor asserts paired-online status and capability
   presence before any bridge call.
