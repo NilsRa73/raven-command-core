@@ -594,10 +594,22 @@ function buildExecutorDeps(hooks: {
         const r = await bridgeReadText(p);
         return { text: r.text, size: r.size };
       },
-      writeFile: async (p: string, source?: string) => {
-        // Uses files.copy capability (see workflow.js). Requires an
-        // approval-driven prepare/execute pair.
-        const prep = await bridgePrepare("files.copy", { source: source ?? p, dest: p });
+      writeFile: async (dest: string, source?: string) => {
+        // Legacy shim — Bridge protocol only supports files.copy. Both
+        // source and dest are required by the caller; refuse a no-op
+        // same-path copy honestly rather than silently succeeding.
+        if (!source || String(source).trim() === String(dest).trim()) {
+          throw new Error("Bridge Copy File requires distinct source and dest paths");
+        }
+        const prep = await bridgePrepare("files.copy", { source, dest });
+        await bridgeExecute(prep.job.id, prep.job.approvalId ?? "", prep.confirmationToken);
+        return { ok: true };
+      },
+      copyFile: async (source: string, dest: string) => {
+        if (!source || !dest || String(source).trim() === String(dest).trim()) {
+          throw new Error("Bridge Copy File requires distinct source and dest paths");
+        }
+        const prep = await bridgePrepare("files.copy", { source, dest });
         await bridgeExecute(prep.job.id, prep.job.approvalId ?? "", prep.confirmationToken);
         return { ok: true };
       },
@@ -623,7 +635,7 @@ function summariseStepForApproval(step: { type: string; config: Record<string, u
     case "save_memory": return `Save memory: ${c.title ?? "(untitled)"}`;
     case "chronicle_entry": return `Log chronicle: ${c.title ?? "(untitled)"}`;
     case "bridge_read_file": return `Read file: ${c.path ?? ""}`;
-    case "bridge_write_file": return `Write file: ${c.path ?? ""}`;
+    case "bridge_write_file": return `Copy file: ${c.source ?? "(source missing)"} → ${c.dest ?? c.path ?? "(destination missing)"}`;
     case "bridge_launch_url": return `Open URL: ${c.url ?? ""}`;
     case "bridge_launch_app": return `Launch: ${c.program ?? ""}`;
     default: return step.type;
