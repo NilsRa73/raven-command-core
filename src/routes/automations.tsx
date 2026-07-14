@@ -566,38 +566,7 @@ function RunsPanel({ workflow, runs, onReload }: { workflow: Workflow; runs: Wor
                   {r.failureReason && <span className="text-destructive">reason: {r.failureReason}</span>}
                 </div>
               )}
-              {selectedRun === r.runId && (
-                <div className="grid gap-2 md:grid-cols-2">
-                  <div>
-                    <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Per-step results</div>
-                    <ol className="space-y-1 text-xs bg-black/30 rounded p-2 max-h-60 overflow-auto">
-                      {r.stepResults.length === 0 && <li className="text-muted-foreground">No steps executed yet.</li>}
-                      {r.stepResults.map((sr) => {
-                        const dur = sr.finishedAt && sr.startedAt ? sr.finishedAt - sr.startedAt : null;
-                        return (
-                          <li key={sr.stepId} className="flex flex-wrap items-baseline gap-x-2">
-                            <Badge variant="outline" className="text-[9px]">{sr.status}</Badge>
-                            <span className="font-mono">{sr.stepId}</span>
-                            {dur != null && <span className="text-[10px] text-muted-foreground">{dur}ms</span>}
-                            {sr.error && <span className="text-destructive text-[10px]">{sr.error}</span>}
-                            {sr.output && <span className="text-muted-foreground truncate">→ {String(sr.output).slice(0, 80)}</span>}
-                          </li>
-                        );
-                      })}
-                    </ol>
-                  </div>
-                  <div>
-                    <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Event log ({r.events.length})</div>
-                    <ol className="space-y-1 text-xs font-mono bg-black/40 rounded p-2 max-h-60 overflow-auto">
-                      {r.events.map((e) => (
-                        <li key={e.id}>
-                          #{e.seq} {new Date(e.ts).toISOString().slice(11, 19)} {e.type} {e.prevState ?? ""}→{e.nextState ?? ""} <span className="text-muted-foreground">{e.hash.slice(0, 12)}…</span>
-                        </li>
-                      ))}
-                    </ol>
-                  </div>
-                </div>
-              )}
+              {selectedRun === r.runId && <RunDetails run={r} workflow={workflow} />}
             </li>
           );
         })}
