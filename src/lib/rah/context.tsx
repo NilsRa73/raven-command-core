@@ -283,9 +283,9 @@ export function RahProvider({ children }: { children: ReactNode }) {
     }
     // Workflow approvals: dispatch to executor.
     if (cur.workflowRunId) {
-      void executorResumeAfterApproval(cur.workflowRunId, id, buildExecutorDeps({ requestApproval, reloadApprovals }));
+      void executorResumeAfterApproval(cur.workflowRunId, id, buildExecutorDeps({ requestApproval, reloadApprovals, projectMemory, ravenState: getRavenModeState() }));
     }
-  }, [reloadApprovals]);
+  }, [reloadApprovals, requestApproval, projectMemory]);
 
   const runApprovedCommand = useCallback<Ctx["runApprovedCommand"]>(async (commandId) => {
     const db = await getDB();
