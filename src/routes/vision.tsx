@@ -21,10 +21,25 @@ import {
   classifyPrivacy, classIsSensitive, selectFrameVariant,
   validateRedactionRegions, nextReviewState, shapeEvidenceRecord,
   PRIVACY_HEURISTIC_DISCLAIMER, PRIVACY_CLASS_LABEL,
+  proposeSafeAction, proposeWorkflowHandoff, buildConfirmationPayload,
+  VISION_ACTION_CATALOG,
   type RedactionRegion,
 } from "@/lib/rah/visionSessions";
 import { hashFrameBytes } from "@/lib/rah/visionHash";
-import { getDB, uid } from "@/lib/rah/db";
+import { getDB, uid, type Project, type VisionResultRecord } from "@/lib/rah/db";
+import {
+  startSession as lifecycleStartSession,
+  incrementCaptureCount as lifecycleIncrementCapture,
+  endSession as lifecycleEndSession,
+  cancelSession as lifecycleCancelSession,
+  isSessionLive,
+  createResult as lifecycleCreateResult,
+  createResultVersion as lifecycleCreateResultVersion,
+  canDispatchProposal,
+  shapeSaveReceipt,
+  type LifecycleSession,
+  type VisionResult,
+} from "@/lib/rah/visionLifecycle";
 import {
   createPointerState, reducePointer, canUndo as canUndoState, canRedo as canRedoState,
   draftDrawRect, shortcutsAreSuppressed,
