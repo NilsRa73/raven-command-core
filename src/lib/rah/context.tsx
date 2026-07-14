@@ -11,12 +11,16 @@ import {
   cancelRun as executorCancelRun,
   reconcileOnReload as executorReconcile,
   abortRun as executorAbort,
+  resumePausedRun as executorResumePaused,
+  retryRun as executorRetry,
 } from "./workflowExecutor";
-import { STEP_CATALOG } from "./workflow";
+import { STEP_CATALOG, appendEvent, transitionRun } from "./workflow";
 import {
   bridgeStatusSnapshot,
-  bridgeReadText, bridgePrepare, bridgeExecute,
+  bridgeReadText, bridgePrepare, bridgeExecute, bridgeCapabilities,
 } from "./bridge";
+import { buildContextPacket } from "./ravenMode";
+import { getRavenModeState } from "./ravenModeStore";
 
 type Ctx = {
   ready: boolean;
@@ -56,6 +60,8 @@ type Ctx = {
   workflowRun: (runId: string) => Promise<void>;
   workflowPause: (runId: string) => Promise<void>;
   workflowCancel: (runId: string) => Promise<void>;
+  workflowResume: (runId: string) => Promise<void>;
+  workflowRetry: (runId: string) => Promise<void>;
   focusCommandBar: () => void;
   registerCommandBarFocus: (fn: () => void) => () => void;
 };
