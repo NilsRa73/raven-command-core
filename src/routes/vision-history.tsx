@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Download, Eye, EyeOff, RefreshCw, Search, ShieldAlert, Trash2 } from "lucide-react";
+import { Download, Eye, EyeOff, RefreshCw, Search, ShieldAlert, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getDB } from "@/lib/rah/db";
 import {
@@ -10,8 +10,9 @@ import {
   exportVisionHistoryMarkdown,
   classIsSensitive,
   PRIVACY_CLASS_LABEL,
+  validateImportPayload,
 } from "@/lib/rah/visionSessions";
-import { buildResultChain, filterVisionArtifacts } from "@/lib/rah/visionLifecycle";
+import { buildResultChain, filterVisionArtifacts, planImportApply } from "@/lib/rah/visionLifecycle";
 import { findStrongestMatch, matchStrengthLabel } from "@/lib/rah/visionMatch";
 
 export const Route = createFileRoute("/vision-history")({
@@ -355,7 +356,7 @@ function VisionHistoryPage() {
                                     return (
                                     <div key={r.id} className="rounded-sm border border-border/40 p-2 text-xs">
                                       <div className="text-muted-foreground">
-                                        {fmtTime(r.createdAt)} · {r.provider || "?"} / {r.model || "?"}{typeof r.latencyMs === "number" ? ` · ${(r.latencyMs / 1000).toFixed(2)}s` : ""}
+                                        {fmtTime(r.createdAt)} · {r.provider || "—"} / {r.model || "—"}{typeof r.latencyMs === "number" ? ` · ${(r.latencyMs / 1000).toFixed(2)}s` : ""}
                                         {chain.length > 1 && (
                                           <span className="ml-2 text-primary">· {chain.length} versions</span>
                                         )}
