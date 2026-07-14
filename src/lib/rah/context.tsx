@@ -358,11 +358,11 @@ export function RahProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const workflowRun = useCallback<Ctx["workflowRun"]>(async (runId) => {
-    await executorRunWorkflow(runId, buildExecutorDeps({ requestApproval, reloadApprovals }));
-  }, [requestApproval, reloadApprovals]);
+    await executorRunWorkflow(runId, buildExecutorDeps({ requestApproval, reloadApprovals, projectMemory, ravenState: getRavenModeState() }));
+  }, [requestApproval, reloadApprovals, projectMemory]);
   const workflowPause = useCallback<Ctx["workflowPause"]>(async (runId) => {
-    await executorPauseRun(runId, buildExecutorDeps({ requestApproval, reloadApprovals }));
-  }, [requestApproval, reloadApprovals]);
+    await executorPauseRun(runId, buildExecutorDeps({ requestApproval, reloadApprovals, projectMemory, ravenState: getRavenModeState() }));
+  }, [requestApproval, reloadApprovals, projectMemory]);
   const workflowCancel = useCallback<Ctx["workflowCancel"]>(async (runId) => {
     await executorCancelRun(runId, buildExecutorDeps({ requestApproval, reloadApprovals, projectMemory, ravenState: getRavenModeState() }));
   }, [requestApproval, reloadApprovals, projectMemory]);
