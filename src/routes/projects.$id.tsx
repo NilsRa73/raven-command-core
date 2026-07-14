@@ -822,7 +822,7 @@ function RoadmapTab({ project, rah }: { project: any; rah: ReturnType<typeof use
     if (!dirty || window.confirm("Discard unsaved roadmap changes?")) setDraft(persisted);
   }
   async function save() {
-    if (!validation.ok) { toast.error(validation.errors[0]?.message ?? "Fix validation errors"); return; }
+    if (!validation.valid) { toast.error(validation.errors[0]?.message ?? "Fix validation errors"); return; }
     await rah.saveRoadmap(project.id, draft);
     toast.success("Roadmap saved.");
   }
@@ -848,14 +848,14 @@ function RoadmapTab({ project, rah }: { project: any; rah: ReturnType<typeof use
           <Button size="sm" variant="ghost" onClick={exportMd}>Export MD</Button>
           <Button size="sm" variant="ghost" onClick={exportJson}>Export JSON</Button>
           <Button size="sm" variant="ghost" onClick={resetDraft} disabled={!dirty}>Reset to saved</Button>
-          <Button size="sm" onClick={() => void save()} disabled={!dirty || !validation.ok}>Save roadmap</Button>
+          <Button size="sm" onClick={() => void save()} disabled={!dirty || !validation.valid}>Save roadmap</Button>
           <Button size="sm" onClick={() => { setCreating(true); setShowEditor(null); }}>
             <Plus className="h-4 w-4" /> Add milestone
           </Button>
         </div>
       </div>
 
-      {!validation.ok && (
+      {!validation.valid && (
         <div className="rounded border border-destructive/50 bg-destructive/10 p-2 text-xs space-y-0.5">
           <div className="font-medium text-destructive">Fix before saving:</div>
           {validation.errors.map((e, i) => (
