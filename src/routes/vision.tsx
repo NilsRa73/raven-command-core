@@ -896,8 +896,8 @@ function VisionPage() {
         : { hash: null, failureReason: null };
       const rec = shapeEvidenceRecord({
         id: uid(),
-        sessionId: null,
-        projectId: null,
+        sessionId: activeSession?.id ?? null,
+        projectId: activeSession?.projectId ?? null,
         createdAt: Date.now(),
         frame: { width: pendingFrame.width, height: pendingFrame.height, sizeBytes: pendingFrame.sizeBytes, capturedAt: pendingFrame.capturedAt, mime: "image/jpeg", captureMethod: "video-canvas", hash: pendingFrame.hash },
         redactedFrame: regions.length > 0 && redactedDataUrl
@@ -920,7 +920,154 @@ function VisionPage() {
     } catch (err) {
       toast.error("Failed to save evidence: " + (err instanceof Error ? err.message : String(err)));
     }
-  }, [pendingFrame, regions, redactedDataUrl, privacy, privacyNote, sourceLabel]);
+  }, [pendingFrame, regions, redactedDataUrl, privacy, privacyNote, sourceLabel, activeSession]);
+
+  // ─── Immutable Result Review — explicit save (create v1) or version ─
+  useEffect(() => {
+    // Seed the editable draft with the raw text once analysis completes.
+    // Never mutates analysis.text. User edits do not overwrite the raw.
+    if (analysis?.state === "done" && !resultDraftDirty && !savedResultId) {
+      setResultDraftText(analysis.text || "");
+    }
+  }, [analysis?.state, analysis?.text, resultDraftDirty, savedResultId]);
+
+  const saveResult = useCallback(async () => {
+    if (!analysis || analysis.state !== "done" || !analysis.text) {
+      toast.error("No completed analysis to save.");
+      return;
+    }
+    try {
+      const db = await getDB();
+      const chosenVariant = (regions.length > 0 && previewRedacted) ? "redacted" : "original";
+      // First save → createResult; subsequent saves → createResultVersion.
+      let rec: VisionResult | null;
+      const head = savedResults.find((r) => r.id === savedResultId) || null;
+      if (!head) {
+        rec = lifecycleCreateResult({
+          id: uid(),
+          sessionId: activeSession?.id ?? null,
+          evidenceId: savedEvidenceId ?? null,
+          projectId: activeSession?.projectId ?? null,
+          question: analysis.question,
+          rawText: analysis.text,
+          provider: analysis.provider ?? null,
+          model: analysis.model ?? null,
+          transport: null,
+          engine: null,
+          latencyMs: analysis.latencyMs ?? null,
+          variantSent: chosenVariant,
+          mode: sessionMode,
+          frameHash: analysis.frame.hash,
+          frameCapturedAt: analysis.frame.capturedAt,
+        });
+      } else {
+        rec = lifecycleCreateResultVersion(head, {
+          id: uid(),
+          editedText: resultDraftText,
+          editedBy: "user",
+        });
+      }
+      if (!rec) { toast.error("Save produced no record."); return; }
+      // Persist as VisionResultRecord shape (superset of VisionResult; carry editedText forward if present).
+      const persisted: VisionResultRecord = {
+        id: rec.id,
+        sessionId: rec.sessionId,
+        evidenceId: rec.evidenceId,
+        projectId: rec.projectId,
+        createdAt: rec.createdAt,
+        question: rec.question,
+        variantSent: rec.variantSent,
+        text: rec.rawText,
+        provider: rec.provider,
+        model: rec.model,
+        transport: rec.transport,
+        engine: rec.engine,
+        latencyMs: rec.latencyMs,
+        frameHash: rec.frameHash,
+        frameCapturedAt: rec.frameCapturedAt,
+        mode: rec.mode,
+        edited: !!(rec as unknown as { editedText?: string }).editedText,
+        editedText: (rec as unknown as { editedText?: string }).editedText,
+      };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await db.put("visionResults" as any, persisted as never);
+      setSavedResults((prev) => [...prev, rec!]);
+      setSavedResultId(rec.id);
+      setResultDraftDirty(false);
+      const receipt = shapeSaveReceipt({ destination: "evidence_version", id: rec.id, at: Date.now() });
+      if (receipt.ok && receipt.receipt) setSaveReceipt({ destination: receipt.receipt.destination, id: receipt.receipt.id, at: receipt.receipt.at });
+      toast.success(head ? `Saved as version v${rec.version}` : "Result saved (v1)");
+    } catch (err) {
+      toast.error("Save result failed: " + (err as Error).message);
+    }
+  }, [analysis, regions, previewRedacted, savedResults, savedResultId, activeSession, savedEvidenceId, sessionMode, resultDraftText]);
+
+  const discardResultEdits = useCallback(() => {
+    setResultDraftText(analysis?.text || "");
+    setResultDraftDirty(false);
+  }, [analysis?.text]);
+
+  const copyResultDraft = useCallback(async () => {
+    try { await navigator.clipboard.writeText(resultDraftText); toast.success("Copied"); }
+    catch { toast.error("Copy failed"); }
+  }, [resultDraftText]);
+
+  // ─── Confirm Vision Action — inert proposals + gated dispatch ────────
+  const buildSafeActionProposal = useCallback(() => {
+    const q = (analysis?.question || question || "").trim();
+    const res = proposeSafeAction({
+      intentId: proposalIntentId,
+      params: {},
+      confidence: 0.8,
+      ambiguous: false,
+      sessionId: activeSession?.id ?? null,
+      evidenceId: savedEvidenceId ?? null,
+      question: q,
+    });
+    if (!res.ok || !res.proposal) { toast.error("Proposal rejected: " + (res.reason || "unknown")); return; }
+    setProposal(res.proposal as Proposal);
+    setDispatchReceipt(null);
+  }, [analysis?.question, question, proposalIntentId, activeSession, savedEvidenceId]);
+
+  const buildWorkflowProposal = useCallback(() => {
+    const q = (analysis?.question || question || "").trim();
+    const title = sessionTitle.trim() || `Vision follow-up · ${new Date().toLocaleString()}`;
+    const res = proposeWorkflowHandoff({
+      title,
+      steps: [{ id: "step-1", action: "review_vision_evidence", params: { evidenceId: savedEvidenceId ?? null } }],
+      sessionId: activeSession?.id ?? null,
+      evidenceId: savedEvidenceId ?? null,
+      question: q,
+      projectId: activeSession?.projectId ?? null,
+    });
+    if (!res.ok || !res.proposal) { toast.error("Workflow proposal rejected: " + (res.reason || "unknown")); return; }
+    setProposal(res.proposal as Proposal);
+    setDispatchReceipt(null);
+  }, [analysis?.question, question, sessionTitle, activeSession, savedEvidenceId]);
+
+  const confirmationPayload = useMemo(() => {
+    if (!proposal) return null;
+    const r = buildConfirmationPayload({ proposal, evidence: null, approvalStatus: "none" });
+    return r.ok ? r.payload : null;
+  }, [proposal]);
+
+  const confirmDispatch = useCallback(() => {
+    if (!proposal) return;
+    const gate = canDispatchProposal({ proposal: { sideEffectClass: proposal.sideEffectClass }, confirmed: true });
+    if (!gate.ok) { toast.error("Dispatch blocked: " + gate.reason); return; }
+    if (gate.action === "dispatch_ui_only") {
+      // UI-only action: navigate hint. We do not perform any side-effect here.
+      const dest = shapeSaveReceipt({ destination: "safe_action_proposal", id: proposal.id, at: Date.now() });
+      if (dest.ok && dest.receipt) setDispatchReceipt({ destination: dest.receipt.destination, id: dest.receipt.id, at: dest.receipt.at });
+      toast.success("Safe action dispatched (UI-only)");
+    } else if (gate.action === "handoff_inert") {
+      // Workflow handoff: route inert draft to Automations builder.
+      const dest = shapeSaveReceipt({ destination: "workflow_proposal", id: proposal.id, at: Date.now() });
+      if (dest.ok && dest.receipt) setDispatchReceipt({ destination: dest.receipt.destination, id: dest.receipt.id, at: dest.receipt.at });
+      toast("Workflow draft handed off (inert). Open Automations to review.");
+      void navigate({ to: "/automations" });
+    }
+  }, [proposal, navigate]);
 
   const addRegionFromDraft = useCallback(() => {
     if (!pendingFrame) return;
