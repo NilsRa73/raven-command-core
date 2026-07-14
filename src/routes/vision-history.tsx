@@ -11,6 +11,7 @@ import {
   classIsSensitive,
   PRIVACY_CLASS_LABEL,
 } from "@/lib/rah/visionSessions";
+import { buildResultChain, filterVisionArtifacts } from "@/lib/rah/visionLifecycle";
 
 export const Route = createFileRoute("/vision-history")({
   head: () => ({
@@ -48,6 +49,10 @@ function VisionHistoryPage() {
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [privacyFilter, setPrivacyFilter] = useState<string>("");
+  const [projectFilter, setProjectFilter] = useState<string>("");
+  const [sourceFilter, setSourceFilter] = useState<string>("");
+  const [sinceFilter, setSinceFilter] = useState<string>("");
+  const [untilFilter, setUntilFilter] = useState<string>("");
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
@@ -77,13 +82,35 @@ function VisionHistoryPage() {
   useEffect(() => { void reload(); }, []);
 
   const filtered = useMemo(() => {
+    const opts = {
+      q: q || undefined,
+      status: (statusFilter || null) as unknown as "active" | "ended" | "cancelled" | null,
+      privacyClass: (privacyFilter || null),
+      projectId: projectFilter || null,
+      source: sourceFilter || null,
+      since: sinceFilter ? Date.parse(sinceFilter) : undefined,
+      until: untilFilter ? Date.parse(untilFilter) : undefined,
+    };
+    // Use extended cross-artifact filter for consistency; return sessions view.
+    const cross = filterVisionArtifacts(
+      { sessions: sessions as unknown[], evidence: evidence as unknown[], results: results as unknown[] },
+      opts as never,
+    );
+    // Also intersect with the original filter (which understands legacy fields).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return (filterVisionHistory as any)(sessions as unknown[], {
+    const legacy = (filterVisionHistory as any)(cross.sessions as unknown[], {
       q: q || undefined,
       status: (statusFilter || null) as unknown,
       privacyClass: (privacyFilter || null) as unknown,
     }) as Session[];
-  }, [sessions, q, statusFilter, privacyFilter]);
+    return legacy;
+  }, [sessions, evidence, results, q, statusFilter, privacyFilter, projectFilter, sourceFilter, sinceFilter, untilFilter]);
+
+  const projectOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of sessions) if (s.projectId) set.add(s.projectId);
+    return Array.from(set).sort();
+  }, [sessions]);
 
   const evidenceBySession = useMemo(() => {
     const map = new Map<string, Evidence[]>();
@@ -180,6 +207,36 @@ function VisionHistoryPage() {
             <option key={k} value={k}>{v}</option>
           ))}
         </select>
+        <select
+          className="rounded-md border border-border/60 bg-transparent px-2 py-2 text-sm"
+          value={projectFilter}
+          onChange={(e) => setProjectFilter(e.target.value)}
+        >
+          <option value="">All projects</option>
+          {projectOptions.map((pid) => (
+            <option key={pid} value={pid}>{pid}</option>
+          ))}
+        </select>
+        <input
+          className="rounded-md border border-border/60 bg-transparent px-2 py-2 text-sm min-w-[120px]"
+          placeholder="source contains…"
+          value={sourceFilter}
+          onChange={(e) => setSourceFilter(e.target.value)}
+        />
+        <input
+          type="date"
+          className="rounded-md border border-border/60 bg-transparent px-2 py-2 text-sm"
+          value={sinceFilter}
+          onChange={(e) => setSinceFilter(e.target.value)}
+          aria-label="since"
+        />
+        <input
+          type="date"
+          className="rounded-md border border-border/60 bg-transparent px-2 py-2 text-sm"
+          value={untilFilter}
+          onChange={(e) => setUntilFilter(e.target.value)}
+          aria-label="until"
+        />
       </div>
 
       {loading ? (
@@ -263,15 +320,22 @@ function VisionHistoryPage() {
                               {evResults.length > 0 && (
                                 <div className="space-y-2">
                                   <div className="text-[11px] uppercase tracking-widest text-muted-foreground">Saved results</div>
-                                  {evResults.map((r) => (
+                                  {evResults.map((r) => {
+                                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                    const chain = (buildResultChain as any)(evResults as unknown[], r.id) as ResultRec[];
+                                    return (
                                     <div key={r.id} className="rounded-sm border border-border/40 p-2 text-xs">
                                       <div className="text-muted-foreground">
                                         {fmtTime(r.createdAt)} · {r.provider || "?"} / {r.model || "?"}{typeof r.latencyMs === "number" ? ` · ${(r.latencyMs / 1000).toFixed(2)}s` : ""}
+                                        {chain.length > 1 && (
+                                          <span className="ml-2 text-primary">· {chain.length} versions</span>
+                                        )}
                                       </div>
                                       {r.question && <div className="mt-1"><span className="text-muted-foreground">Q:</span> {r.question}</div>}
                                       {r.text && <div className="mt-1 whitespace-pre-wrap">{r.text}</div>}
                                     </div>
-                                  ))}
+                                    );
+                                  })}
                                 </div>
                               )}
                             </>

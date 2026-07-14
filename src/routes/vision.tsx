@@ -23,6 +23,7 @@ import {
   PRIVACY_HEURISTIC_DISCLAIMER, PRIVACY_CLASS_LABEL,
   type RedactionRegion,
 } from "@/lib/rah/visionSessions";
+import { hashFrameBytes } from "@/lib/rah/visionHash";
 import { getDB, uid } from "@/lib/rah/db";
 
 export const Route = createFileRoute("/vision")({
@@ -43,6 +44,10 @@ interface CapturedFrame {
   height: number;
   sizeBytes: number;
   capturedAt: number;
+  /** SHA-256 of the exact JPEG bytes for this frame; null on hash failure. */
+  hash: string | null;
+  /** Explicit failure reason when `hash` is null (never fabricated). */
+  hashFailureReason: string | null;
 }
 
 type ReviewStage = "idle" | "captured" | "confirming_sensitive" | "analyzing" | "reviewing_result";
@@ -192,9 +197,31 @@ async function captureViaImageCapture(
     if (isLikelyBlankFrame(stats)) return null;
     const blob = await encodeCanvasJpeg(canvas);
     const dataUrl = await blobToDataUrl(blob);
-    return { dataUrl, width, height, sizeBytes: blob.size, capturedAt: Date.now() };
+    const { hash, failureReason } = await hashBlobSafe(blob);
+    return { dataUrl, width, height, sizeBytes: blob.size, capturedAt: Date.now(), hash, hashFailureReason: failureReason };
   } finally {
     try { bmp.close(); } catch { /* older browsers */ }
+  }
+}
+
+async function hashBlobSafe(blob: Blob): Promise<{ hash: string | null; failureReason: string | null }> {
+  try {
+    const buf = await blob.arrayBuffer();
+    const { hash } = await hashFrameBytes(new Uint8Array(buf));
+    if (hash) return { hash, failureReason: null };
+    return { hash: null, failureReason: "hash_unavailable" };
+  } catch (err) {
+    return { hash: null, failureReason: (err as Error)?.message || "hash_error" };
+  }
+}
+
+async function hashDataUrlSafe(dataUrl: string): Promise<{ hash: string | null; failureReason: string | null }> {
+  try {
+    const { hash } = await hashFrameBytes(dataUrl);
+    if (hash) return { hash, failureReason: null };
+    return { hash: null, failureReason: "hash_unavailable" };
+  } catch (err) {
+    return { hash: null, failureReason: (err as Error)?.message || "hash_error" };
   }
 }
 
@@ -230,7 +257,8 @@ async function captureCurrentFrame(
   }
   const blob = await encodeCanvasJpeg(canvas);
   const dataUrl = await blobToDataUrl(blob);
-  return { dataUrl, width, height, sizeBytes: blob.size, capturedAt: Date.now() };
+  const { hash, failureReason } = await hashBlobSafe(blob);
+  return { dataUrl, width, height, sizeBytes: blob.size, capturedAt: Date.now(), hash, hashFailureReason: failureReason };
 }
 
 function VisionPage() {
@@ -620,13 +648,19 @@ function VisionPage() {
   const saveEvidence = useCallback(async () => {
     if (!pendingFrame) { toast.error("No captured frame to save."); return; }
     try {
+      // Hash the redacted derivative bytes (if any) at save time.
+      const redactedHash = regions.length > 0 && redactedDataUrl
+        ? await hashDataUrlSafe(redactedDataUrl)
+        : { hash: null, failureReason: null };
       const rec = shapeEvidenceRecord({
         id: uid(),
         sessionId: null,
         projectId: null,
         createdAt: Date.now(),
-        frame: { width: pendingFrame.width, height: pendingFrame.height, sizeBytes: pendingFrame.sizeBytes, capturedAt: pendingFrame.capturedAt, mime: "image/jpeg", captureMethod: "video-canvas", hash: null },
-        redactedFrame: regions.length > 0 && redactedDataUrl ? { width: pendingFrame.width, height: pendingFrame.height, sizeBytes: Math.round(redactedDataUrl.length * 0.75), capturedAt: pendingFrame.capturedAt, mime: "image/jpeg", captureMethod: "video-canvas", hash: null } : null,
+        frame: { width: pendingFrame.width, height: pendingFrame.height, sizeBytes: pendingFrame.sizeBytes, capturedAt: pendingFrame.capturedAt, mime: "image/jpeg", captureMethod: "video-canvas", hash: pendingFrame.hash },
+        redactedFrame: regions.length > 0 && redactedDataUrl
+          ? { width: pendingFrame.width, height: pendingFrame.height, sizeBytes: Math.round(redactedDataUrl.length * 0.75), capturedAt: pendingFrame.capturedAt, mime: "image/jpeg", captureMethod: "video-canvas", hash: redactedHash.hash }
+          : null,
         redactionRegions: regions,
         privacy: { class: privacy.class, reasons: privacy.reasons },
         notes: privacyNote,
@@ -636,7 +670,11 @@ function VisionPage() {
       const db = await getDB();
       await db.put("visionEvidence", rec);
       setSavedEvidenceId(rec.id);
-      toast.success("Evidence saved locally (append-only)");
+      // Surface hash provenance honestly.
+      const hashLabel = pendingFrame.hash
+        ? `sha256 ${pendingFrame.hash.slice(0, 16)}…`
+        : `no integrity hash (${pendingFrame.hashFailureReason || "unknown"})`;
+      toast.success(`Evidence saved (${hashLabel})`);
     } catch (err) {
       toast.error("Failed to save evidence: " + (err instanceof Error ? err.message : String(err)));
     }
@@ -663,7 +701,7 @@ function VisionPage() {
     let frame: CapturedFrame;
     setAnalysis({
       question: trimmed,
-      frame: { dataUrl: "", width: 0, height: 0, sizeBytes: 0, capturedAt: Date.now() },
+      frame: { dataUrl: "", width: 0, height: 0, sizeBytes: 0, capturedAt: Date.now(), hash: null, hashFailureReason: "not_captured" },
       state: "capturing", text: "",
       runtimeLine: buildScreenVisionRuntimeLine({ sourceLabel: sourceLabel || undefined }),
       startedAt: Date.now(),
