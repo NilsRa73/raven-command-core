@@ -260,15 +260,19 @@ async function executeStep(step, wf, run, deps, signal) {
     case "ai_prompt":
     case "final_summary": {
       if (!deps.ai) throw new Error("no AI executor available");
+      const ctx = buildContextExtra(wf, run, deps);
+      const systemExtra = typeof ctx === "string" ? ctx : (ctx?.text ?? "");
+      const packetMeta = typeof ctx === "string" ? null : (ctx?.meta ?? null);
       const res = await deps.ai({
         prompt: cfg.prompt ?? "",
-        systemExtra: buildContextExtra(wf, run, deps),
+        systemExtra,
         signal, mode: wf.executionProfile === "deep" ? "deep_project" : "fast",
       });
       return { text: res.text, route: {
         provider: res.provider ?? null, model: res.model ?? null,
         transport: res.transport ?? null, engine: res.engine ?? null,
         latencyMs: res.latencyMs ?? null,
+        packet: packetMeta,
       } };
     }
     case "save_memory": {
