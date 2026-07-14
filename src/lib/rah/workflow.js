@@ -100,7 +100,11 @@ export function planDryRun(workflow, ctx = {}) {
     let blocked = false, blockedReason = null;
     if (cat.requiresBridgeCapability) {
       if (bridge.status !== "paired_online") { blocked = true; blockedReason = `Bridge offline — ${cat.requiresBridgeCapability} unavailable`; }
-      else if (Array.isArray(bridge.capabilities) && bridge.capabilities.length && !bridge.capabilities.includes(cat.requiresBridgeCapability)) {
+      else if (!Array.isArray(bridge.capabilities) || bridge.capabilities.length === 0) {
+        // Deny-by-default. Unknown / empty capability data must never permit.
+        blocked = true;
+        blockedReason = `Bridge capability unknown — ${cat.requiresBridgeCapability} denied by default`;
+      } else if (!bridge.capabilities.includes(cat.requiresBridgeCapability)) {
         blocked = true; blockedReason = `Bridge missing capability ${cat.requiresBridgeCapability}`;
       }
     }
