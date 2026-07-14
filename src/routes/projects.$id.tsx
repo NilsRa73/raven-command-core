@@ -487,90 +487,307 @@ function TimelineTab({ project, rah }: { project: any; rah: ReturnType<typeof us
 /* ─── Decisions ─── */
 
 function DecisionsTab({ project, rah }: { project: any; rah: ReturnType<typeof useRah> }) {
-  const decisions = useMemo(
-    () => filterMemories(rah.projectMemory, { projectId: project.id, types: ["decision"], includeArchived: true }),
-    [rah.projectMemory, project.id],
+  const projectDecisions = useMemo(
+    () => rah.decisions.filter((d) => d.projectId === project.id),
+    [rah.decisions, project.id],
   );
-  const [showEditor, setShowEditor] = useState(false);
-  const [editing, setEditing] = useState<ProjectMemoryRecord | null>(null);
+  const versionsByDecision = useMemo(() => groupVersions(rah.decisionVersions), [rah.decisionVersions]);
+  const latestByDecision = useMemo(() => latestVersions(rah.decisionVersions), [rah.decisionVersions]);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [diff, setDiff] = useState<{ a: DecisionVersion; b: DecisionVersion } | null>(null);
+
+  function exportMd() {
+    const md = exportChangelogMarkdown({ project, decisions: projectDecisions, versions: rah.decisionVersions });
+    downloadBlob(`raven-decisions-${project.id}.md`, md, "text/markdown");
+  }
+  function exportJson() {
+    const j = exportChangelogJson({ project, decisions: projectDecisions, versions: rah.decisionVersions });
+    downloadBlob(`raven-decisions-${project.id}.json`, JSON.stringify(j, null, 2), "application/json");
+  }
 
   return (
     <section className="glass-panel p-4 space-y-3">
-      <div className="flex items-center gap-2">
-        <h2 className="display text-lg gold-text">Decisions</h2>
-        <Button size="sm" className="ml-auto" onClick={() => { setEditing(null); setShowEditor(true); }}>
-          <Plus className="h-4 w-4" /> Add decision
-        </Button>
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="display text-lg gold-text">Decisions changelog</h2>
+        <span className="text-xs text-muted-foreground">Every edit is a new immutable version. Never overwritten.</span>
+        <div className="ml-auto flex gap-2">
+          <Button size="sm" variant="ghost" onClick={exportMd}>Export MD</Button>
+          <Button size="sm" variant="ghost" onClick={exportJson}>Export JSON</Button>
+          <Button size="sm" onClick={() => { setCreating(true); setEditingId(null); }}>
+            <Plus className="h-4 w-4" /> New decision
+          </Button>
+        </div>
       </div>
-      {(showEditor || editing) && (
-        <DecisionEditor
-          initial={editing ?? undefined}
-          projectId={project.id}
-          onCancel={() => { setShowEditor(false); setEditing(null); }}
-          onSave={async (draft) => {
-            if (editing) await rah.updateProjectMemory(editing.id, draft);
-            else await rah.createProjectMemory({ ...draft, source: "decision-manual" });
-            setShowEditor(false); setEditing(null);
-            toast.success("Decision saved.");
-          }}
+
+      {creating && (
+        <DecisionVersionEditor
+          project={project}
+          rah={rah}
+          mode="new"
+          onDone={() => setCreating(false)}
+          onCancel={() => setCreating(false)}
         />
       )}
-      {decisions.length === 0 && !showEditor
-        ? <EmptyState hint='No decisions logged. First click: "Add decision" above. AI output is never saved automatically.' />
+
+      {projectDecisions.length === 0 && !creating
+        ? <EmptyState hint='No decisions yet. First click: "New decision" above. Nothing is saved until you click Save decision version.' />
         : (
           <ul className="divide-y divide-border/50">
-            {decisions.map((d) => (
-              <li key={d.id} className="py-2 flex items-start gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm">{d.title}{d.archived && <span className="text-[10px] text-muted-foreground"> · archived</span>}</div>
-                  {d.content && <div className="text-xs text-muted-foreground whitespace-pre-wrap">{d.content}</div>}
-                  <div className="text-[11px] text-muted-foreground">{new Date(d.updatedAt).toLocaleString()}</div>
-                </div>
-                <Button size="sm" variant="ghost" onClick={() => setEditing(d)}><Pencil className="h-4 w-4" /></Button>
-                <Button size="sm" variant="ghost" onClick={() => rah.toggleArchiveProjectMemory(d.id)}>{d.archived ? "Unarchive" : "Archive"}</Button>
-                <Button size="sm" variant="ghost" onClick={() => { if (confirm("Delete this decision?")) void rah.deleteProjectMemory(d.id); }}><Trash2 className="h-4 w-4" /></Button>
-              </li>
-            ))}
+            {projectDecisions
+              .slice()
+              .sort((a, b) => b.updatedAt - a.updatedAt)
+              .map((d) => {
+                const vs = versionsByDecision.get(d.id) ?? [];
+                const latest = latestByDecision.get(d.id);
+                if (!latest) return null;
+                const isEditing = editingId === d.id;
+                return (
+                  <li key={d.id} className="py-3 space-y-2">
+                    <div className="flex items-start gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm">
+                          {latest.title || "(untitled)"}
+                          <span className="ml-2 text-[10px] uppercase tracking-widest text-primary">{DECISION_STATUS_LABEL[latest.status]}</span>
+                          {d.archived && <span className="ml-2 text-[10px] text-muted-foreground">· archived</span>}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground">
+                          {vs.length} version{vs.length === 1 ? "" : "s"} · latest {new Date(latest.createdAt).toLocaleString()} · author: {latest.author ?? "—"}
+                        </div>
+                        {latest.content && <div className="text-xs text-muted-foreground whitespace-pre-wrap mt-1">{latest.content}</div>}
+                      </div>
+                      <Button size="sm" variant="ghost" onClick={() => { setEditingId(isEditing ? null : d.id); setCreating(false); }}>
+                        <Pencil className="h-4 w-4" /> {isEditing ? "Close" : "New version"}
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => void rah.archiveDecision(d.id, !d.archived)}>
+                        {d.archived ? "Unarchive" : "Archive"}
+                      </Button>
+                    </div>
+                    <VersionTimeline versions={vs} onDiff={(a, b) => setDiff({ a, b })} />
+                    {isEditing && (
+                      <DecisionVersionEditor
+                        project={project}
+                        rah={rah}
+                        mode="edit"
+                        decisionId={d.id}
+                        previousVersion={latest}
+                        onDone={() => setEditingId(null)}
+                        onCancel={() => setEditingId(null)}
+                      />
+                    )}
+                  </li>
+                );
+              })}
           </ul>
         )}
+
+      {diff && (
+        <div className="glass-panel gold-border p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="display text-sm">Diff: v{diff.a.versionNumber} → v{diff.b.versionNumber}</div>
+            <Button size="sm" variant="ghost" onClick={() => setDiff(null)}><X className="h-4 w-4" /></Button>
+          </div>
+          <table className="w-full text-xs">
+            <tbody>
+              {diffVersions(diff.a, diff.b).map((row) => (
+                <tr key={row.field} className={row.changed ? "bg-primary/5" : ""}>
+                  <td className="px-2 py-1 uppercase tracking-widest text-[10px] text-muted-foreground w-28">{row.field}</td>
+                  <td className="px-2 py-1 align-top text-muted-foreground">{formatDiffValue(row.before)}</td>
+                  <td className="px-2 py-1 align-top">{row.changed ? "→" : ""}</td>
+                  <td className="px-2 py-1 align-top">{formatDiffValue(row.after)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </section>
   );
 }
 
-function DecisionEditor({
-  initial, projectId, onCancel, onSave,
+function formatDiffValue(v: unknown) {
+  if (v == null || v === "") return <span className="text-muted-foreground">—</span>;
+  if (Array.isArray(v)) return v.length ? v.join(", ") : <span className="text-muted-foreground">—</span>;
+  return String(v);
+}
+
+function VersionTimeline({ versions, onDiff }: { versions: DecisionVersion[]; onDiff: (a: DecisionVersion, b: DecisionVersion) => void }) {
+  const [pick, setPick] = useState<DecisionVersion | null>(null);
+  if (versions.length === 0) return null;
+  return (
+    <ol className="flex flex-wrap gap-2 text-xs">
+      {versions.map((v) => (
+        <li key={v.id}>
+          <button
+            onClick={() => {
+              if (pick && pick.id !== v.id) { onDiff(pick, v); setPick(null); }
+              else setPick(v);
+            }}
+            className={
+              "rounded border px-2 py-1 " +
+              (pick?.id === v.id ? "border-primary text-primary" : "border-border/60 text-muted-foreground hover:text-foreground")
+            }
+            title={new Date(v.createdAt).toLocaleString()}
+          >
+            v{v.versionNumber} · {DECISION_STATUS_LABEL[v.status]}
+          </button>
+        </li>
+      ))}
+      {pick && <li className="text-[11px] text-muted-foreground self-center">Pick another version to diff…</li>}
+    </ol>
+  );
+}
+
+function DecisionVersionEditor({
+  project, rah, mode, decisionId, previousVersion, onDone, onCancel,
 }: {
-  initial?: ProjectMemoryRecord;
-  projectId: string;
+  project: any;
+  rah: ReturnType<typeof useRah>;
+  mode: "new" | "edit";
+  decisionId?: string;
+  previousVersion?: DecisionVersion;
+  onDone: () => void;
   onCancel: () => void;
-  onSave: (draft: Omit<ProjectMemoryRecord, "id" | "createdAt" | "updatedAt">) => Promise<void>;
 }) {
-  const [title, setTitle] = useState(initial?.title ?? "");
-  const [content, setContent] = useState(initial?.content ?? "");
-  const [tags, setTags] = useState((initial?.tags ?? []).join(", "));
+  const [title, setTitle] = useState(previousVersion?.title ?? "");
+  const [content, setContent] = useState(previousVersion?.content ?? "");
+  const [rationale, setRationale] = useState(previousVersion?.rationale ?? "");
+  const [status, setStatus] = useState<DecisionStatus>(previousVersion?.status ?? "proposed");
+  const [author, setAuthor] = useState(previousVersion?.author ?? "");
+  const [evidence, setEvidence] = useState((previousVersion?.evidenceIds ?? []).join(", "));
+  const [supersedes, setSupersedes] = useState(previousVersion?.supersedesDecisionId ?? "");
+  const [reverses, setReverses] = useState(previousVersion?.reversesDecisionId ?? "");
+  const [ackDuplicate, setAckDuplicate] = useState(false);
+
+  const dirty = mode === "new"
+    ? Boolean(title || content || rationale)
+    : isVersionDirty(previousVersion ?? null, { title, content, rationale, status, author: author || null, evidenceIds: parseCsv(evidence), supersedesDecisionId: supersedes || null, reversesDecisionId: reverses || null });
+
+  const duplicates = useMemo(
+    () => findDuplicateCandidates({
+      draft: { decisionId, title, content },
+      decisions: rah.decisions, versions: rah.decisionVersions,
+      projectId: project.id, threshold: 0.75,
+    }),
+    [decisionId, title, content, rah.decisions, rah.decisionVersions, project.id],
+  );
+
+  function tryCancel() {
+    if (shouldConfirmDiscard({ dirty, isDraftUnsaved: mode === "new" && dirty })) {
+      if (!window.confirm("Discard unsaved decision version?")) return;
+    }
+    onCancel();
+  }
+
+  async function save() {
+    if (!title.trim()) { toast.error("Title required"); return; }
+    if (!DECISION_STATUSES.includes(status)) { toast.error("Invalid status"); return; }
+    if (duplicates.length && !ackDuplicate) {
+      toast.warning("Duplicate warning — check the checkbox to acknowledge before saving.");
+      return;
+    }
+    const now = Date.now();
+    if (mode === "new") {
+      const decisionIdNew = uid();
+      const version = makeInitialVersion({
+        decisionId: decisionIdNew, title: title.trim(), content, rationale, status,
+        author: author.trim() || null, evidenceIds: parseCsv(evidence), now, versionId: uid(),
+      });
+      await rah.saveDecisionVersion({
+        decision: { id: decisionIdNew, projectId: project.id, createdAt: now, updatedAt: now, archived: false },
+        version: { ...version, supersedesDecisionId: supersedes || null, reversesDecisionId: reverses || null },
+      });
+      toast.success("Decision version saved.");
+      onDone();
+    } else {
+      if (!previousVersion || !decisionId) return;
+      const version = makeNextVersion(previousVersion, {
+        title: title.trim(), content, rationale, status,
+        author: author.trim() || null, evidenceIds: parseCsv(evidence),
+        supersedesDecisionId: supersedes || null,
+        reversesDecisionId: reverses || null,
+      }, { now, versionId: uid() });
+      await rah.saveDecisionVersion({
+        decision: { id: decisionId, projectId: project.id, createdAt: previousVersion.createdAt, updatedAt: now, archived: false },
+        version,
+      });
+      toast.success(`Saved v${version.versionNumber}.`);
+      onDone();
+    }
+  }
+
   return (
     <div className="glass-panel gold-border p-3 space-y-2">
       <div className="flex items-center justify-between">
-        <div className="display text-sm">{initial ? "Edit decision" : "New decision"}</div>
-        <Button variant="ghost" size="sm" onClick={onCancel}><X className="h-4 w-4" /></Button>
+        <div className="display text-sm">{mode === "new" ? "New decision" : "New version (previous is preserved)"}</div>
+        <Button variant="ghost" size="sm" onClick={tryCancel}><X className="h-4 w-4" /></Button>
       </div>
-      <Input placeholder="Decision title (what did you decide?)" value={title} onChange={(e) => setTitle(e.target.value)} />
-      <Textarea rows={3} placeholder="Context / rationale (optional)" value={content} onChange={(e) => setContent(e.target.value)} />
-      <Input placeholder="tags, comma separated" value={tags} onChange={(e) => setTags(e.target.value)} />
+      <Input placeholder="Decision title" value={title} onChange={(e) => setTitle(e.target.value)} />
+      <Textarea rows={3} placeholder="Content — what is being decided" value={content} onChange={(e) => setContent(e.target.value)} />
+      <Textarea rows={2} placeholder="Rationale (why)" value={rationale} onChange={(e) => setRationale(e.target.value)} />
+      <div className="grid gap-2 md:grid-cols-3">
+        <label className="text-xs">
+          <span className="text-muted-foreground">Status</span>
+          <Select value={status} onValueChange={(v) => setStatus(v as DecisionStatus)}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {DECISION_STATUSES.map((s) => <SelectItem key={s} value={s}>{DECISION_STATUS_LABEL[s]}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </label>
+        <label className="text-xs">
+          <span className="text-muted-foreground">Author / source</span>
+          <Input value={author} onChange={(e) => setAuthor(e.target.value)} placeholder="—" />
+        </label>
+        <label className="text-xs">
+          <span className="text-muted-foreground">Evidence IDs (comma separated)</span>
+          <Input value={evidence} onChange={(e) => setEvidence(e.target.value)} placeholder="cmd:abc, memory:xyz" />
+        </label>
+        <label className="text-xs">
+          <span className="text-muted-foreground">Supersedes decision id</span>
+          <Input value={supersedes} onChange={(e) => setSupersedes(e.target.value)} placeholder="(optional)" />
+        </label>
+        <label className="text-xs">
+          <span className="text-muted-foreground">Reverses decision id</span>
+          <Input value={reverses} onChange={(e) => setReverses(e.target.value)} placeholder="(optional)" />
+        </label>
+      </div>
+      {duplicates.length > 0 && (
+        <div className="rounded border border-yellow-500/40 bg-yellow-500/5 p-2 text-xs space-y-1">
+          <div className="font-medium text-yellow-500">Possible duplicate of an existing decision:</div>
+          <ul className="space-y-0.5">
+            {duplicates.slice(0, 3).map((d) => (
+              <li key={d.decisionId} className="text-muted-foreground">
+                • {d.title} <span className="opacity-60">(similarity {Math.round(d.similarity * 100)}%)</span>
+              </li>
+            ))}
+          </ul>
+          <label className="flex items-center gap-2 pt-1">
+            <input type="checkbox" checked={ackDuplicate} onChange={(e) => setAckDuplicate(e.target.checked)} />
+            <span>Save anyway — this is a distinct decision.</span>
+          </label>
+        </div>
+      )}
       <div className="flex justify-end gap-2">
-        <Button variant="ghost" onClick={onCancel}>Cancel</Button>
-        <Button onClick={() => {
-          if (!title.trim()) { toast.error("Title required"); return; }
-          void onSave({
-            projectId, title: title.trim(), content: content.trim(), type: "decision",
-            tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
-            pinned: initial?.pinned ?? false, archived: initial?.archived ?? false,
-            source: initial?.source ?? "decision-manual",
-          });
-        }}>Save decision</Button>
+        <Button variant="ghost" onClick={tryCancel}>Cancel</Button>
+        <Button onClick={() => void save()} disabled={!dirty}>Save decision version</Button>
       </div>
+      <p className="text-[10px] text-muted-foreground">
+        Nothing is saved until you click Save. Editing an existing decision creates a new version — prior versions are preserved forever.
+      </p>
     </div>
   );
+}
+
+function parseCsv(s: string) {
+  return s.split(",").map((x) => x.trim()).filter(Boolean);
+}
+function downloadBlob(name: string, body: string, type: string) {
+  const blob = new Blob([body], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 /* ─── Roadmap ─── */
