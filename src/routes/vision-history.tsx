@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Download, Eye, EyeOff, RefreshCw, Search, ShieldAlert, Trash2 } from "lucide-react";
+import { Download, Eye, EyeOff, RefreshCw, Search, ShieldAlert, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getDB } from "@/lib/rah/db";
 import {
@@ -10,8 +10,9 @@ import {
   exportVisionHistoryMarkdown,
   classIsSensitive,
   PRIVACY_CLASS_LABEL,
+  validateImportPayload,
 } from "@/lib/rah/visionSessions";
-import { buildResultChain, filterVisionArtifacts } from "@/lib/rah/visionLifecycle";
+import { buildResultChain, filterVisionArtifacts, planImportApply } from "@/lib/rah/visionLifecycle";
 import { findStrongestMatch, matchStrengthLabel } from "@/lib/rah/visionMatch";
 
 export const Route = createFileRoute("/vision-history")({
@@ -57,6 +58,19 @@ function VisionHistoryPage() {
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
+  // Import Preview/Apply UI state — metadata-only; no silent overwrite.
+  const importFileRef = useRef<HTMLInputElement | null>(null);
+  interface ImportPlanItem { id: string | null; action: "create" | "replace" | "skip"; reason: string | null }
+  interface ImportPreview {
+    fileName: string;
+    parsed: { schemaVersion: number; sessions: Array<{ id: string }>; evidence: Array<{ id: string; frame?: { hash?: string | null } }>; results: unknown[] } | null;
+    plan: { sessions: ImportPlanItem[]; evidence: ImportPlanItem[]; conflicts: { kind: string; id: string; reason: string }[] } | null;
+    error: string | null;
+  }
+  const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
+  const [conflictActions, setConflictActions] = useState<Record<string, "replace" | "skip">>({});
+  const [applying, setApplying] = useState(false);
+
   const reload = async () => {
     setLoading(true);
     try {
@@ -81,6 +95,93 @@ function VisionHistoryPage() {
   };
 
   useEffect(() => { void reload(); }, []);
+
+  const recomputePlan = (
+    parsed: NonNullable<ImportPreview["parsed"]>,
+    actions: Record<string, "replace" | "skip">,
+  ) => {
+    return planImportApply({
+      existing: { sessions: sessions as unknown as { id: string }[], evidence: evidence as unknown as { id: string; frame?: { hash?: string | null } }[] },
+      incoming: { sessions: parsed.sessions, evidence: parsed.evidence },
+      conflictActions: actions,
+    });
+  };
+
+  const onImportFile = async (file: File | null) => {
+    if (!file) return;
+    try {
+      const text = await file.text();
+      let raw: unknown;
+      try { raw = JSON.parse(text); } catch (e) {
+        setImportPreview({ fileName: file.name, parsed: null, plan: null, error: "Invalid JSON: " + (e as Error).message });
+        return;
+      }
+      const v = validateImportPayload(raw);
+      if (!v.ok || !v.parsed) {
+        setImportPreview({ fileName: file.name, parsed: null, plan: null, error: "Import rejected: " + (v.reason || "invalid") });
+        return;
+      }
+      const parsed = v.parsed as NonNullable<ImportPreview["parsed"]>;
+      const plan = recomputePlan(parsed, {});
+      setConflictActions({});
+      setImportPreview({ fileName: file.name, parsed, plan, error: null });
+    } catch (err) {
+      setImportPreview({ fileName: file.name, parsed: null, plan: null, error: (err as Error).message });
+    }
+  };
+
+  const setConflictAction = (id: string, action: "replace" | "skip") => {
+    const next = { ...conflictActions, [id]: action };
+    setConflictActions(next);
+    if (importPreview?.parsed) {
+      const plan = recomputePlan(importPreview.parsed, next);
+      setImportPreview({ ...importPreview, plan });
+    }
+  };
+
+  const applyImport = async () => {
+    if (!importPreview?.parsed || !importPreview.plan) return;
+    setApplying(true);
+    try {
+      const db = await getDB();
+      const { parsed, plan } = importPreview;
+      let created = 0, replaced = 0, skipped = 0;
+      const incSessById = new Map(parsed.sessions.map((s) => [s.id, s]));
+      const incEvById = new Map(parsed.evidence.map((e) => [e.id, e]));
+      for (const it of plan.sessions) {
+        if (!it.id) { skipped++; continue; }
+        if (it.action === "skip") { skipped++; continue; }
+        const rec = incSessById.get(it.id);
+        if (!rec) { skipped++; continue; }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await db.put("visionSessions" as any, rec as any);
+        if (it.action === "replace") replaced++; else created++;
+      }
+      for (const it of plan.evidence) {
+        if (!it.id) { skipped++; continue; }
+        if (it.action === "skip") { skipped++; continue; }
+        const rec = incEvById.get(it.id);
+        if (!rec) { skipped++; continue; }
+        // Metadata-only default: strip any embedded image dataUrl fields.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const clean: any = { ...(rec as any) };
+        if (clean.frame) delete clean.frame.dataUrl;
+        if (clean.redactedFrame) delete clean.redactedFrame.dataUrl;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await db.put("visionEvidence" as any, clean);
+        if (it.action === "replace") replaced++; else created++;
+      }
+      toast.success(`Import applied: ${created} created, ${replaced} replaced, ${skipped} skipped`);
+      setImportPreview(null);
+      setConflictActions({});
+      if (importFileRef.current) importFileRef.current.value = "";
+      await reload();
+    } catch (err) {
+      toast.error("Apply failed: " + (err as Error).message);
+    } finally {
+      setApplying(false);
+    }
+  };
 
   const filtered = useMemo(() => {
     const opts = {
@@ -355,7 +456,7 @@ function VisionHistoryPage() {
                                     return (
                                     <div key={r.id} className="rounded-sm border border-border/40 p-2 text-xs">
                                       <div className="text-muted-foreground">
-                                        {fmtTime(r.createdAt)} · {r.provider || "?"} / {r.model || "?"}{typeof r.latencyMs === "number" ? ` · ${(r.latencyMs / 1000).toFixed(2)}s` : ""}
+                                        {fmtTime(r.createdAt)} · {r.provider || "—"} / {r.model || "—"}{typeof r.latencyMs === "number" ? ` · ${(r.latencyMs / 1000).toFixed(2)}s` : ""}
                                         {chain.length > 1 && (
                                           <span className="ml-2 text-primary">· {chain.length} versions</span>
                                         )}
@@ -379,6 +480,96 @@ function VisionHistoryPage() {
           })}
         </ul>
       )}
+
+      <section className="rounded-lg border border-border/60 p-4 space-y-3" aria-labelledby="rah-vision-import">
+        <div className="flex items-center gap-2">
+          <Upload className="h-4 w-4 text-primary" />
+          <h2 id="rah-vision-import" className="text-sm font-semibold">Import (Preview &amp; Apply)</h2>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Select an exported <code>raven-vision-history-*.json</code> file. Nothing is written until you press <strong>Apply</strong>.
+          Metadata only — embedded image bytes (if any) are dropped. Sensitive originals stay hidden.
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            ref={importFileRef}
+            type="file"
+            accept="application/json,.json"
+            className="text-xs"
+            onChange={(e) => void onImportFile(e.target.files?.[0] || null)}
+          />
+          {importPreview && (
+            <Button size="sm" variant="ghost" onClick={() => { setImportPreview(null); setConflictActions({}); if (importFileRef.current) importFileRef.current.value = ""; }}>
+              Clear preview
+            </Button>
+          )}
+        </div>
+        {importPreview?.error && (
+          <div className="rounded-md border border-destructive/60 bg-destructive/10 p-2 text-xs text-destructive">
+            {importPreview.error}
+          </div>
+        )}
+        {importPreview?.parsed && importPreview.plan && (() => {
+          const p = importPreview.plan;
+          const sCreate = p.sessions.filter((x) => x.action === "create").length;
+          const sReplace = p.sessions.filter((x) => x.action === "replace").length;
+          const sSkip = p.sessions.filter((x) => x.action === "skip").length;
+          const eCreate = p.evidence.filter((x) => x.action === "create").length;
+          const eReplace = p.evidence.filter((x) => x.action === "replace").length;
+          const eSkip = p.evidence.filter((x) => x.action === "skip").length;
+          const incEvById = new Map(importPreview.parsed!.evidence.map((e) => [e.id, e]));
+          return (
+            <div className="space-y-3">
+              <div className="text-xs">
+                <strong>{importPreview.fileName}</strong> — schema v{importPreview.parsed!.schemaVersion} ·
+                {" "}sessions: {sCreate} create / {sReplace} replace / {sSkip} skip ·
+                {" "}evidence: {eCreate} create / {eReplace} replace / {eSkip} skip
+              </div>
+              {p.conflicts.length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-[11px] uppercase tracking-widest text-muted-foreground">Conflicts ({p.conflicts.length}) — choose per row</div>
+                  <ul className="space-y-1">
+                    {p.conflicts.map((c) => {
+                      const cur = conflictActions[c.id] || "skip";
+                      let matchBadge: string | null = null;
+                      if (c.kind === "evidence") {
+                        const inc = incEvById.get(c.id);
+                        if (inc) {
+                          const m = findStrongestMatch(inc as unknown, evidence as unknown[]);
+                          if (m.strength !== "none") matchBadge = matchStrengthLabel(m.strength);
+                        }
+                      }
+                      return (
+                        <li key={`${c.kind}:${c.id}`} className="flex flex-wrap items-center gap-2 text-xs rounded border border-border/50 p-2">
+                          <span className="rounded-full border border-border/60 px-2 py-0.5">{c.kind}</span>
+                          <code className="text-[10px]">{c.id}</code>
+                          <span className="text-muted-foreground">{c.reason}</span>
+                          {matchBadge && <span className="rounded-full border border-amber-500/40 px-2 py-0.5 text-amber-500/90">{matchBadge}</span>}
+                          <div className="ml-auto flex gap-3">
+                            <label className="flex items-center gap-1">
+                              <input type="radio" name={`ca-${c.id}`} checked={cur === "skip"} onChange={() => setConflictAction(c.id, "skip")} />
+                              Skip
+                            </label>
+                            <label className="flex items-center gap-1">
+                              <input type="radio" name={`ca-${c.id}`} checked={cur === "replace"} onChange={() => setConflictAction(c.id, "replace")} />
+                              Replace
+                            </label>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
+              <div className="flex justify-end">
+                <Button size="sm" onClick={() => void applyImport()} disabled={applying}>
+                  <Upload className="h-3.5 w-3.5 mr-1" /> {applying ? "Applying…" : "Apply import"}
+                </Button>
+              </div>
+            </div>
+          );
+        })()}
+      </section>
 
       <div className="rounded-md border border-border/50 p-3 text-xs text-muted-foreground flex items-start gap-2">
         <Trash2 className="h-3.5 w-3.5 mt-0.5" />

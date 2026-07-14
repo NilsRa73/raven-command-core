@@ -21,10 +21,25 @@ import {
   classifyPrivacy, classIsSensitive, selectFrameVariant,
   validateRedactionRegions, nextReviewState, shapeEvidenceRecord,
   PRIVACY_HEURISTIC_DISCLAIMER, PRIVACY_CLASS_LABEL,
+  proposeSafeAction, proposeWorkflowHandoff, buildConfirmationPayload,
+  VISION_ACTION_CATALOG,
   type RedactionRegion,
 } from "@/lib/rah/visionSessions";
 import { hashFrameBytes } from "@/lib/rah/visionHash";
-import { getDB, uid } from "@/lib/rah/db";
+import { getDB, uid, type Project, type VisionResultRecord } from "@/lib/rah/db";
+import {
+  startSession as lifecycleStartSession,
+  incrementCaptureCount as lifecycleIncrementCapture,
+  endSession as lifecycleEndSession,
+  cancelSession as lifecycleCancelSession,
+  isSessionLive,
+  createResult as lifecycleCreateResult,
+  createResultVersion as lifecycleCreateResultVersion,
+  canDispatchProposal,
+  shapeSaveReceipt,
+  type LifecycleSession,
+  type VisionResult,
+} from "@/lib/rah/visionLifecycle";
 import {
   createPointerState, reducePointer, canUndo as canUndoState, canRedo as canRedoState,
   draftDrawRect, shortcutsAreSuppressed,
@@ -305,6 +320,50 @@ function VisionPage() {
   const [savedEvidenceId, setSavedEvidenceId] = useState<string | null>(null);
   const [regionDraft, setRegionDraft] = useState<{ x: string; y: string; w: string; h: string; label: string }>({ x: "", y: "", w: "", h: "", label: "" });
 
+  // Vision Session lifecycle state (explicit start/end/cancel).
+  const [projects, setProjects] = useState<Project[]>([]);
+  // undefined = not chosen; null = explicitly "no project"; string = project id.
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null | undefined>(undefined);
+  const [sessionTitle, setSessionTitle] = useState<string>("");
+  const [sessionMode, setSessionMode] = useState<"fast" | "deep">("fast");
+  const [activeSession, setActiveSession] = useState<LifecycleSession | null>(null);
+
+  // Immutable Result Review state.
+  const [savedResults, setSavedResults] = useState<VisionResult[]>([]);
+  const [resultDraftText, setResultDraftText] = useState<string>("");
+  const [resultDraftDirty, setResultDraftDirty] = useState<boolean>(false);
+  const [savedResultId, setSavedResultId] = useState<string | null>(null);
+  const [saveReceipt, setSaveReceipt] = useState<{ destination: string; id: string | null; at: number } | null>(null);
+
+  // Confirm Vision Action state.
+  type ProposalKind = "vision_safe_action" | "vision_workflow_handoff";
+  interface Proposal {
+    id: string;
+    kind: ProposalKind;
+    sideEffectClass: "ui_only" | "workflow_handoff" | "denied";
+    intentId?: string;
+    title?: string;
+    steps?: unknown[];
+    projectId?: string | null;
+    params?: Record<string, unknown>;
+    confidence?: number;
+    question?: string;
+  }
+  const [proposal, setProposal] = useState<Proposal | null>(null);
+  const [proposalIntentId, setProposalIntentId] = useState<string>(VISION_ACTION_CATALOG[0]?.id || "show_guidance");
+  const [dispatchReceipt, setDispatchReceipt] = useState<{ destination: string; id: string | null; at: number } | null>(null);
+
+  // Load projects once (used by session start selector).
+  useEffect(() => {
+    (async () => {
+      try {
+        const db = await getDB();
+        const list = await db.getAll("projects");
+        setProjects((list as Project[]).slice().sort((a, b) => (a.name || "").localeCompare(b.name || "")));
+      } catch { /* IndexedDB unavailable in this environment */ }
+    })();
+  }, []);
+
   // Pointer/keyboard reducer state for drag-to-redact overlay.
   const [pointer, setPointer] = useState(() => createPointerState([]));
   const overlayRef = useRef<HTMLDivElement | null>(null);
@@ -380,7 +439,10 @@ function VisionPage() {
   // Warn on tab close / navigation while a review draft or dirty
   // redaction stack is unsaved.
   useEffect(() => {
-    const hasUnsaved = !!pendingFrame && (pointer.dirty || (privacyNote && !savedEvidenceId));
+    const hasUnsaved =
+      (!!pendingFrame && (pointer.dirty || (privacyNote && !savedEvidenceId))) ||
+      resultDraftDirty ||
+      isSessionLive(activeSession);
     if (!hasUnsaved) return;
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
       e.preventDefault();
@@ -388,7 +450,7 @@ function VisionPage() {
     };
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [pendingFrame, pointer.dirty, privacyNote, savedEvidenceId]);
+  }, [pendingFrame, pointer.dirty, privacyNote, savedEvidenceId, resultDraftDirty, activeSession]);
 
   const privacy = useMemo(() =>
     classifyPrivacy({
@@ -626,12 +688,99 @@ function VisionPage() {
     setRedactedDataUrl("");
     setSavedEvidenceId(null);
     setReviewStage("idle");
+    setResultDraftText("");
+    setResultDraftDirty(false);
+    setSavedResultId(null);
+    setSaveReceipt(null);
+    setProposal(null);
+    setDispatchReceipt(null);
   }, []);
+
+  // ─── Explicit Vision Session lifecycle ───────────────────────────────
+  const startVisionSession = useCallback(() => {
+    if (selectedProjectId === undefined) {
+      toast.error("Choose a project (or 'No project') before starting.");
+      return;
+    }
+    if (!isCaptureReady(sharing)) {
+      toast.error("Share your screen first — the session records the actual source.");
+      return;
+    }
+    const track = trackRef.current;
+    const settings = track?.getSettings?.() ?? {};
+    const displaySurface = (settings as { displaySurface?: string }).displaySurface || null;
+    const res = lifecycleStartSession({
+      id: uid(),
+      projectId: selectedProjectId ?? null,
+      sourceLabel: sourceLabel || "selected screen source",
+      displaySurface,
+      consented: true,
+      apiLabel: "browser.getDisplayMedia",
+      mode: sessionMode,
+      question: (question || "").trim(),
+    });
+    if (!res.ok || !res.session) {
+      toast.error("Could not start session: " + (res.reason || "unknown"));
+      return;
+    }
+    // Persist immediately so the session exists in history even before capture.
+    (async () => {
+      try {
+        const db = await getDB();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await db.put("visionSessions" as any, {
+          ...res.session,
+          title: sessionTitle.trim() || "Untitled vision session",
+          presetId: null,
+          privacyMode: "standard",
+          workflowProposalIds: [],
+          schemaVersion: 1,
+          createdAt: res.session!.startedAt,
+        } as never);
+      } catch (err) {
+        toast.error("Session start failed to persist: " + (err as Error).message);
+      }
+    })();
+    setActiveSession(res.session);
+    toast.success("Vision session started");
+  }, [selectedProjectId, sharing, sourceLabel, sessionMode, question, sessionTitle]);
+
+  const persistSession = useCallback(async (s: LifecycleSession) => {
+    try {
+      const db = await getDB();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await db.put("visionSessions" as any, {
+        ...s,
+        title: sessionTitle.trim() || "Untitled vision session",
+        presetId: null,
+        privacyMode: "standard",
+        workflowProposalIds: [],
+        schemaVersion: 1,
+        createdAt: s.startedAt,
+      } as never);
+    } catch { /* ignore */ }
+  }, [sessionTitle]);
+
+  const endVisionSession = useCallback(async () => {
+    if (!activeSession) return;
+    const next = lifecycleEndSession(activeSession, { reason: "user_ended" });
+    if (next) { setActiveSession(next); await persistSession(next); toast.success("Vision session ended"); }
+  }, [activeSession, persistSession]);
+
+  const cancelVisionSession = useCallback(async () => {
+    if (!activeSession) return;
+    const next = lifecycleCancelSession(activeSession, { reason: "user_cancelled" });
+    if (next) { setActiveSession(next); await persistSession(next); toast("Vision session cancelled"); }
+  }, [activeSession, persistSession]);
 
   // Capture ONLY — no AI. This is Step 1 of the mandatory Capture Review.
   const captureNow = useCallback(async () => {
     if (!isCaptureReady(sharing) || !videoRef.current) {
       toast.error("Start screen sharing first.");
+      return;
+    }
+    if (!activeSession || !isSessionLive(activeSession)) {
+      toast.error("Start a Vision Session before capturing.");
       return;
     }
     setSharing("capturing");
@@ -653,13 +802,16 @@ function VisionPage() {
       setRedactedDataUrl("");
       setSavedEvidenceId(null);
       setAnalysis(null);
+      // Increment capture count against the active session and persist.
+      const bumped = lifecycleIncrementCapture(activeSession);
+      if (bumped) { setActiveSession(bumped); void persistSession(bumped); }
       advanceReview("capture");
       setSharing("ready");
     } catch (err) {
       toast.error("Capture failed: " + (err instanceof Error ? err.message : String(err)));
       setSharing("ready");
     }
-  }, [sharing, imageCaptureLastOk, videoReady, advanceReview]);
+  }, [sharing, imageCaptureLastOk, videoReady, advanceReview, activeSession, persistSession]);
 
   // Send the reviewed frame to AI. Enforces the sensitive-confirmation gate.
   const analyzeReviewed = useCallback(async (opts: { forceOriginal?: boolean } = {}) => {
@@ -747,8 +899,8 @@ function VisionPage() {
         : { hash: null, failureReason: null };
       const rec = shapeEvidenceRecord({
         id: uid(),
-        sessionId: null,
-        projectId: null,
+        sessionId: activeSession?.id ?? null,
+        projectId: activeSession?.projectId ?? null,
         createdAt: Date.now(),
         frame: { width: pendingFrame.width, height: pendingFrame.height, sizeBytes: pendingFrame.sizeBytes, capturedAt: pendingFrame.capturedAt, mime: "image/jpeg", captureMethod: "video-canvas", hash: pendingFrame.hash },
         redactedFrame: regions.length > 0 && redactedDataUrl
@@ -771,7 +923,154 @@ function VisionPage() {
     } catch (err) {
       toast.error("Failed to save evidence: " + (err instanceof Error ? err.message : String(err)));
     }
-  }, [pendingFrame, regions, redactedDataUrl, privacy, privacyNote, sourceLabel]);
+  }, [pendingFrame, regions, redactedDataUrl, privacy, privacyNote, sourceLabel, activeSession]);
+
+  // ─── Immutable Result Review — explicit save (create v1) or version ─
+  useEffect(() => {
+    // Seed the editable draft with the raw text once analysis completes.
+    // Never mutates analysis.text. User edits do not overwrite the raw.
+    if (analysis?.state === "done" && !resultDraftDirty && !savedResultId) {
+      setResultDraftText(analysis.text || "");
+    }
+  }, [analysis?.state, analysis?.text, resultDraftDirty, savedResultId]);
+
+  const saveResult = useCallback(async () => {
+    if (!analysis || analysis.state !== "done" || !analysis.text) {
+      toast.error("No completed analysis to save.");
+      return;
+    }
+    try {
+      const db = await getDB();
+      const chosenVariant = (regions.length > 0 && previewRedacted) ? "redacted" : "original";
+      // First save → createResult; subsequent saves → createResultVersion.
+      let rec: VisionResult | null;
+      const head = savedResults.find((r) => r.id === savedResultId) || null;
+      if (!head) {
+        rec = lifecycleCreateResult({
+          id: uid(),
+          sessionId: activeSession?.id ?? null,
+          evidenceId: savedEvidenceId ?? null,
+          projectId: activeSession?.projectId ?? null,
+          question: analysis.question,
+          rawText: analysis.text,
+          provider: analysis.provider ?? null,
+          model: analysis.model ?? null,
+          transport: null,
+          engine: null,
+          latencyMs: analysis.latencyMs ?? null,
+          variantSent: chosenVariant,
+          mode: sessionMode,
+          frameHash: analysis.frame.hash,
+          frameCapturedAt: analysis.frame.capturedAt,
+        });
+      } else {
+        rec = lifecycleCreateResultVersion(head, {
+          id: uid(),
+          editedText: resultDraftText,
+          editedBy: "user",
+        });
+      }
+      if (!rec) { toast.error("Save produced no record."); return; }
+      // Persist as VisionResultRecord shape (superset of VisionResult; carry editedText forward if present).
+      const persisted: VisionResultRecord = {
+        id: rec.id,
+        sessionId: rec.sessionId,
+        evidenceId: rec.evidenceId,
+        projectId: rec.projectId,
+        createdAt: rec.createdAt,
+        question: rec.question,
+        variantSent: rec.variantSent,
+        text: rec.rawText,
+        provider: rec.provider,
+        model: rec.model,
+        transport: rec.transport,
+        engine: rec.engine,
+        latencyMs: rec.latencyMs,
+        frameHash: rec.frameHash,
+        frameCapturedAt: rec.frameCapturedAt,
+        mode: rec.mode,
+        edited: !!(rec as unknown as { editedText?: string }).editedText,
+        editedText: (rec as unknown as { editedText?: string }).editedText,
+      };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await db.put("visionResults" as any, persisted as never);
+      setSavedResults((prev) => [...prev, rec!]);
+      setSavedResultId(rec.id);
+      setResultDraftDirty(false);
+      const receipt = shapeSaveReceipt({ destination: "evidence_version", id: rec.id, at: Date.now() });
+      if (receipt.ok && receipt.receipt) setSaveReceipt({ destination: receipt.receipt.destination, id: receipt.receipt.id, at: receipt.receipt.at });
+      toast.success(head ? `Saved as version v${rec.version}` : "Result saved (v1)");
+    } catch (err) {
+      toast.error("Save result failed: " + (err as Error).message);
+    }
+  }, [analysis, regions, previewRedacted, savedResults, savedResultId, activeSession, savedEvidenceId, sessionMode, resultDraftText]);
+
+  const discardResultEdits = useCallback(() => {
+    setResultDraftText(analysis?.text || "");
+    setResultDraftDirty(false);
+  }, [analysis?.text]);
+
+  const copyResultDraft = useCallback(async () => {
+    try { await navigator.clipboard.writeText(resultDraftText); toast.success("Copied"); }
+    catch { toast.error("Copy failed"); }
+  }, [resultDraftText]);
+
+  // ─── Confirm Vision Action — inert proposals + gated dispatch ────────
+  const buildSafeActionProposal = useCallback(() => {
+    const q = (analysis?.question || question || "").trim();
+    const res = proposeSafeAction({
+      intentId: proposalIntentId,
+      params: {},
+      confidence: 0.8,
+      ambiguous: false,
+      sessionId: activeSession?.id ?? null,
+      evidenceId: savedEvidenceId ?? null,
+      question: q,
+    });
+    if (!res.ok || !res.proposal) { toast.error("Proposal rejected: " + (res.reason || "unknown")); return; }
+    setProposal(res.proposal as Proposal);
+    setDispatchReceipt(null);
+  }, [analysis?.question, question, proposalIntentId, activeSession, savedEvidenceId]);
+
+  const buildWorkflowProposal = useCallback(() => {
+    const q = (analysis?.question || question || "").trim();
+    const title = sessionTitle.trim() || `Vision follow-up · ${new Date().toLocaleString()}`;
+    const res = proposeWorkflowHandoff({
+      title,
+      steps: [{ id: "step-1", action: "review_vision_evidence", params: { evidenceId: savedEvidenceId ?? null } }],
+      sessionId: activeSession?.id ?? null,
+      evidenceId: savedEvidenceId ?? null,
+      question: q,
+      projectId: activeSession?.projectId ?? null,
+    });
+    if (!res.ok || !res.proposal) { toast.error("Workflow proposal rejected: " + (res.reason || "unknown")); return; }
+    setProposal(res.proposal as Proposal);
+    setDispatchReceipt(null);
+  }, [analysis?.question, question, sessionTitle, activeSession, savedEvidenceId]);
+
+  const confirmationPayload = useMemo(() => {
+    if (!proposal) return null;
+    const r = buildConfirmationPayload({ proposal, evidence: null, approvalStatus: "none" });
+    return r.ok ? r.payload : null;
+  }, [proposal]);
+
+  const confirmDispatch = useCallback(() => {
+    if (!proposal) return;
+    const gate = canDispatchProposal({ proposal: { sideEffectClass: proposal.sideEffectClass }, confirmed: true });
+    if (!gate.ok) { toast.error("Dispatch blocked: " + gate.reason); return; }
+    if (gate.action === "dispatch_ui_only") {
+      // UI-only action: navigate hint. We do not perform any side-effect here.
+      const dest = shapeSaveReceipt({ destination: "safe_action_proposal", id: proposal.id, at: Date.now() });
+      if (dest.ok && dest.receipt) setDispatchReceipt({ destination: dest.receipt.destination, id: dest.receipt.id, at: dest.receipt.at });
+      toast.success("Safe action dispatched (UI-only)");
+    } else if (gate.action === "handoff_inert") {
+      // Workflow handoff: route inert draft to Automations builder.
+      const dest = shapeSaveReceipt({ destination: "workflow_proposal", id: proposal.id, at: Date.now() });
+      if (dest.ok && dest.receipt) setDispatchReceipt({ destination: dest.receipt.destination, id: dest.receipt.id, at: dest.receipt.at });
+      toast("Workflow draft handed off (inert). Open Automations to review.");
+      void navigate({ to: "/automations" });
+    }
+  }, [proposal, navigate]);
 
   const addRegionFromDraft = useCallback(() => {
     if (!pendingFrame) return;
@@ -1124,7 +1423,7 @@ function VisionPage() {
               <Button
                 type="button"
                 onClick={() => void captureNow()}
-                disabled={!ready || streaming}
+                disabled={!ready || streaming || !isSessionLive(activeSession)}
                 className="min-w-40"
               >
                 <Camera className="h-4 w-4" /> Capture frame
@@ -1154,6 +1453,88 @@ function VisionPage() {
             </div>
           </div>
         </div>
+      </section>
+
+      <section className="glass-panel border border-border/60 p-4 md:p-5 space-y-3" aria-labelledby="rah-vision-session">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <h2 id="rah-vision-session" className="display text-xl">Vision Session</h2>
+          {activeSession && (
+            <span className={"text-[11px] rounded-full border px-3 py-1 " + (isSessionLive(activeSession) ? "border-primary text-primary" : "border-border/60 text-muted-foreground")}>
+              {activeSession.status} · captures {activeSession.captureCount}
+            </span>
+          )}
+        </div>
+        {!activeSession ? (
+          <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto_auto] items-end">
+            <label className="text-xs space-y-1">
+              <span className="uppercase tracking-widest text-muted-foreground">Project</span>
+              <select
+                className="w-full rounded-md border border-border/70 bg-background/40 p-2 text-sm"
+                value={selectedProjectId === undefined ? "" : (selectedProjectId ?? "__none__")}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === "") setSelectedProjectId(undefined);
+                  else if (v === "__none__") setSelectedProjectId(null);
+                  else setSelectedProjectId(v);
+                }}
+              >
+                <option value="">— choose —</option>
+                <option value="__none__">No project</option>
+                {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </label>
+            <label className="text-xs space-y-1">
+              <span className="uppercase tracking-widest text-muted-foreground">Session title</span>
+              <input
+                type="text"
+                value={sessionTitle}
+                onChange={(e) => setSessionTitle(e.target.value)}
+                placeholder="Untitled vision session"
+                className="w-full rounded-md border border-border/70 bg-background/40 p-2 text-sm"
+              />
+            </label>
+            <label className="text-xs space-y-1">
+              <span className="uppercase tracking-widest text-muted-foreground">Mode</span>
+              <select
+                className="rounded-md border border-border/70 bg-background/40 p-2 text-sm"
+                value={sessionMode}
+                onChange={(e) => setSessionMode(e.target.value === "deep" ? "deep" : "fast")}
+              >
+                <option value="fast">Fast</option>
+                <option value="deep">Deep</option>
+              </select>
+            </label>
+            <Button type="button" onClick={startVisionSession} disabled={!active || selectedProjectId === undefined}>
+              Start Vision Session
+            </Button>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="text-muted-foreground">
+              <strong className="text-foreground">{sessionTitle.trim() || "Untitled vision session"}</strong>
+              {" · "}
+              {activeSession.projectId
+                ? (projects.find((p) => p.id === activeSession.projectId)?.name || activeSession.projectId)
+                : "No project"}
+              {" · mode "}{activeSession.mode}
+            </span>
+            {isSessionLive(activeSession) ? (
+              <>
+                <Button type="button" size="sm" variant="secondary" onClick={() => void endVisionSession()}>End session</Button>
+                <Button type="button" size="sm" variant="ghost" onClick={() => void cancelVisionSession()}>Cancel session</Button>
+              </>
+            ) : (
+              <Button type="button" size="sm" variant="ghost" onClick={() => { setActiveSession(null); setSelectedProjectId(undefined); setSessionTitle(""); }}>
+                Start new session
+              </Button>
+            )}
+          </div>
+        )}
+        {!activeSession && (
+          <p className="text-[11px] text-muted-foreground">
+            Captures, evidence, and results are bound to the active session. Choose <em>No project</em> if this vision run isn't tied to a specific project.
+          </p>
+        )}
       </section>
 
       {pendingFrame && reviewStage !== "idle" && (
@@ -1439,6 +1820,102 @@ function VisionPage() {
               </div>
             </div>
           </div>
+        </section>
+      )}
+
+      {analysis?.state === "done" && analysis.text && (
+        <section className="glass-panel border border-border/60 p-4 md:p-5 space-y-3" aria-labelledby="rah-vision-result">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <h2 id="rah-vision-result" className="display text-xl">Result Review</h2>
+            <span className="text-[11px] rounded-full border border-border/60 px-3 py-1 text-muted-foreground">
+              {savedResultId ? `saved · v${savedResults.find((r) => r.id === savedResultId)?.version ?? "?"}` : "unsaved"}
+            </span>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-1">
+              <div className="text-[11px] uppercase tracking-widest text-muted-foreground">Raw model output (immutable)</div>
+              <pre className="text-xs whitespace-pre-wrap break-words bg-background/40 border border-border/60 rounded p-2 max-h-64 overflow-auto">{analysis.text}</pre>
+              <div className="text-[11px] text-muted-foreground">
+                {analysis.provider || "—"} / {analysis.model || "—"}
+                {typeof analysis.latencyMs === "number" ? ` · ${(analysis.latencyMs / 1000).toFixed(2)}s` : ""}
+              </div>
+            </div>
+            <div className="space-y-1">
+              <div className="text-[11px] uppercase tracking-widest text-muted-foreground">Your edited draft</div>
+              <textarea
+                value={resultDraftText}
+                onChange={(e) => { setResultDraftText(e.target.value); setResultDraftDirty(e.target.value !== (analysis.text || "")); }}
+                rows={8}
+                className="w-full rounded-md border border-border/70 bg-background/40 p-2 text-xs"
+              />
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" type="button" onClick={() => void saveResult()}>
+                  <Save className="h-3.5 w-3.5" /> {savedResultId ? "Save as new version" : "Save Result (v1)"}
+                </Button>
+                <Button size="sm" type="button" variant="ghost" onClick={discardResultEdits} disabled={!resultDraftDirty}>
+                  Discard edits
+                </Button>
+                <Button size="sm" type="button" variant="secondary" onClick={() => void copyResultDraft()}>
+                  <Copy className="h-3.5 w-3.5" /> Copy
+                </Button>
+              </div>
+              {saveReceipt && (
+                <div className="text-[11px] text-primary">
+                  Saved → <code>{saveReceipt.destination}</code> · id <code>{saveReceipt.id}</code> · {new Date(saveReceipt.at).toLocaleTimeString()}
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {analysis?.state === "done" && analysis.text && (
+        <section className="glass-panel border border-border/60 p-4 md:p-5 space-y-3" aria-labelledby="rah-vision-confirm">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <h2 id="rah-vision-confirm" className="display text-xl">Confirm Vision Action</h2>
+            <span className="text-[11px] rounded-full border border-border/60 px-3 py-1 text-muted-foreground">
+              Nothing runs without your explicit Confirm
+            </span>
+          </div>
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="text-xs space-y-1">
+              <span className="uppercase tracking-widest text-muted-foreground">Safe action</span>
+              <select
+                className="rounded-md border border-border/70 bg-background/40 p-2 text-sm"
+                value={proposalIntentId}
+                onChange={(e) => setProposalIntentId(e.target.value)}
+              >
+                {VISION_ACTION_CATALOG.map((e) => <option key={e.id} value={e.id}>{e.id.replace(/_/g, " ")}</option>)}
+              </select>
+            </label>
+            <Button size="sm" type="button" variant="secondary" onClick={buildSafeActionProposal}>
+              Propose safe action
+            </Button>
+            <Button size="sm" type="button" variant="secondary" onClick={buildWorkflowProposal}>
+              Propose workflow (inert handoff)
+            </Button>
+            {proposal && (
+              <Button size="sm" type="button" variant="ghost" onClick={() => { setProposal(null); setDispatchReceipt(null); }}>
+                Clear proposal
+              </Button>
+            )}
+          </div>
+          {proposal && confirmationPayload ? (
+            <div className="rounded-md border border-border/60 bg-background/40 p-3 text-xs space-y-2">
+              <div><strong>Side-effect class:</strong> <code>{proposal.sideEffectClass}</code></div>
+              <pre className="whitespace-pre-wrap break-words text-[11px] max-h-56 overflow-auto">{String(JSON.stringify(confirmationPayload, null, 2) ?? "")}</pre>
+              <div className="flex flex-wrap gap-2 pt-1">
+                <Button size="sm" type="button" onClick={confirmDispatch}>
+                  {proposal.sideEffectClass === "workflow_handoff" ? "Confirm handoff to Automations" : "Confirm safe action"}
+                </Button>
+              </div>
+              {dispatchReceipt && (
+                <div className="text-[11px] text-primary">
+                  Dispatched → <code>{dispatchReceipt.destination}</code> · id <code>{dispatchReceipt.id}</code> · {new Date(dispatchReceipt.at).toLocaleTimeString()}
+                </div>
+              )}
+            </div>
+          ) : null}
         </section>
       )}
 
