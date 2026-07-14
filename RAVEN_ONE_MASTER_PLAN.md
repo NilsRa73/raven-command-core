@@ -369,3 +369,66 @@ skew between save and restore is detected but not corrected. Focus
 history is per-device (IndexedDB); cross-device sync is not implemented.
 Completion → Chronicle is a single memory entry per session, not a
 per-interruption timeline.
+
+## Voice v0.2 — per-project profiles + approval-safe commands
+
+- [x] New pure helper `src/lib/rah/voiceProfiles.js` (+ `.d.ts`) owns
+      profile normalization, project→profile fallback, wake-phrase
+      exact/prefix/token-similarity matching with visible score +
+      threshold + reason, transcript review shaping, deterministic
+      segmentation, duplicate detection, allowlisted intent proposal
+      (`VOICE_COMMAND_CATALOG`), confirmation view-model, readiness
+      summary, session stats, history filter/export shaping, draft
+      dirty detection, import validation and merge planning, and the
+      transcript-cleanup safety prompt / suspicious-diff guard.
+- [x] New route `src/routes/voice-profiles.tsx` renders profile
+      list/editor, wake-phrase text tester (no fake mic), consent-first
+      push-to-talk capture (only after an explicit click), transcript
+      review with explicit Discard / Save to Memory / Send as prompt /
+      AI cleanup (unsaved) / Propose voice command, and a mandatory
+      Confirm Voice Command step. Global default profile is always
+      present and visibly used as fallback when no per-project profile
+      matches.
+- [x] Voice command catalog is deterministic and narrowly allowlisted:
+      navigation, focus-block controls, command-bar focus, Fast/Deep
+      toggle, and workflow proposal (`workflow.propose`). No file /
+      URL / launch actions. Workflow proposals are classified
+      `requires_approval` and MUST go through the existing Workflow
+      Engine + approvals; they are never dispatched from the voice UI.
+- [x] Ambiguous or low-confidence transcripts (STT confidence below
+      `LOW_CONFIDENCE_THRESHOLD`, or intent score below the profile
+      threshold, or multiple close matches) are refused and surfaced —
+      never dispatched silently.
+- [x] IndexedDB **v7** additive migration adds `voiceProfiles`,
+      `voiceSessions`, and `voiceTranscripts` stores. Previous data is
+      preserved. `exportAll` and `wipeAll` include the new stores.
+- [x] Unsaved-draft protection: profile edits, transcript review, and
+      pending proposals block navigation and reload via existing
+      `shouldConfirmDiscard` conventions and `beforeunload`.
+- [x] Profile JSON import validates `schemaVersion` and returns a
+      merge plan; duplicate IDs are surfaced as conflicts and require
+      explicit per-id Replace / Skip clicks (no silent overwrite).
+- [x] Tests: `desktop-bridge/tests/voice-profiles.test.js` (37 cases)
+      cover normalization, locale/wake validation, fallback,
+      exact/prefix/similarity + threshold boundaries, segmentation,
+      duplicate detection, allowlist enforcement, low-confidence and
+      no-match refusals, side-effect classification, confirmation
+      view-model, readiness levels (unsupported / not-requested /
+      denied / ready), session summary, history filter/export,
+      draft dirty detection, import schema-version rejection, merge
+      conflict semantics, and cleanup prompt / suspicious-diff guard.
+- [x] Verified: **400/400 bridge tests pass**, `bunx tsgo --noEmit`
+      clean, `bun run build` succeeds.
+
+**Known limitations (honest):** Voice v0.2 uses only the browser Web
+Speech API — no native wake-word engine and no reliable background
+listening; the wake tester is a text-input evaluator, not a live
+audio pipeline. Microphone device selection is limited to what
+`enumerateDevices()` exposes (labels appear only after the user has
+granted mic permission at least once). Transcript AI cleanup is
+opt-in and rejected when the length ratio changes drastically; it
+cannot guarantee model behaviour beyond that. Voice profiles and
+transcripts live in IndexedDB on the current device — no cross-device
+sync. The existing `/voice` route retains its Sprint 1 pipeline; the
+v0.2 workflow lives at `/voice-profiles` and shares the AI, memory,
+and approvals infrastructure.
