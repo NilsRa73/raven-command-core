@@ -58,6 +58,19 @@ function VisionHistoryPage() {
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
+  // Import Preview/Apply UI state — metadata-only; no silent overwrite.
+  const importFileRef = useRef<HTMLInputElement | null>(null);
+  interface ImportPlanItem { id: string | null; action: "create" | "replace" | "skip"; reason: string | null }
+  interface ImportPreview {
+    fileName: string;
+    parsed: { schemaVersion: number; sessions: Array<{ id: string }>; evidence: Array<{ id: string; frame?: { hash?: string | null } }>; results: unknown[] } | null;
+    plan: { sessions: ImportPlanItem[]; evidence: ImportPlanItem[]; conflicts: { kind: string; id: string; reason: string }[] } | null;
+    error: string | null;
+  }
+  const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
+  const [conflictActions, setConflictActions] = useState<Record<string, "replace" | "skip">>({});
+  const [applying, setApplying] = useState(false);
+
   const reload = async () => {
     setLoading(true);
     try {
@@ -82,6 +95,93 @@ function VisionHistoryPage() {
   };
 
   useEffect(() => { void reload(); }, []);
+
+  const recomputePlan = (
+    parsed: NonNullable<ImportPreview["parsed"]>,
+    actions: Record<string, "replace" | "skip">,
+  ) => {
+    return planImportApply({
+      existing: { sessions: sessions as unknown as { id: string }[], evidence: evidence as unknown as { id: string; frame?: { hash?: string | null } }[] },
+      incoming: { sessions: parsed.sessions, evidence: parsed.evidence },
+      conflictActions: actions,
+    });
+  };
+
+  const onImportFile = async (file: File | null) => {
+    if (!file) return;
+    try {
+      const text = await file.text();
+      let raw: unknown;
+      try { raw = JSON.parse(text); } catch (e) {
+        setImportPreview({ fileName: file.name, parsed: null, plan: null, error: "Invalid JSON: " + (e as Error).message });
+        return;
+      }
+      const v = validateImportPayload(raw);
+      if (!v.ok || !v.parsed) {
+        setImportPreview({ fileName: file.name, parsed: null, plan: null, error: "Import rejected: " + (v.reason || "invalid") });
+        return;
+      }
+      const parsed = v.parsed as NonNullable<ImportPreview["parsed"]>;
+      const plan = recomputePlan(parsed, {});
+      setConflictActions({});
+      setImportPreview({ fileName: file.name, parsed, plan, error: null });
+    } catch (err) {
+      setImportPreview({ fileName: file.name, parsed: null, plan: null, error: (err as Error).message });
+    }
+  };
+
+  const setConflictAction = (id: string, action: "replace" | "skip") => {
+    const next = { ...conflictActions, [id]: action };
+    setConflictActions(next);
+    if (importPreview?.parsed) {
+      const plan = recomputePlan(importPreview.parsed, next);
+      setImportPreview({ ...importPreview, plan });
+    }
+  };
+
+  const applyImport = async () => {
+    if (!importPreview?.parsed || !importPreview.plan) return;
+    setApplying(true);
+    try {
+      const db = await getDB();
+      const { parsed, plan } = importPreview;
+      let created = 0, replaced = 0, skipped = 0;
+      const incSessById = new Map(parsed.sessions.map((s) => [s.id, s]));
+      const incEvById = new Map(parsed.evidence.map((e) => [e.id, e]));
+      for (const it of plan.sessions) {
+        if (!it.id) { skipped++; continue; }
+        if (it.action === "skip") { skipped++; continue; }
+        const rec = incSessById.get(it.id);
+        if (!rec) { skipped++; continue; }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await db.put("visionSessions" as any, rec as any);
+        if (it.action === "replace") replaced++; else created++;
+      }
+      for (const it of plan.evidence) {
+        if (!it.id) { skipped++; continue; }
+        if (it.action === "skip") { skipped++; continue; }
+        const rec = incEvById.get(it.id);
+        if (!rec) { skipped++; continue; }
+        // Metadata-only default: strip any embedded image dataUrl fields.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const clean: any = { ...(rec as any) };
+        if (clean.frame) delete clean.frame.dataUrl;
+        if (clean.redactedFrame) delete clean.redactedFrame.dataUrl;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await db.put("visionEvidence" as any, clean);
+        if (it.action === "replace") replaced++; else created++;
+      }
+      toast.success(`Import applied: ${created} created, ${replaced} replaced, ${skipped} skipped`);
+      setImportPreview(null);
+      setConflictActions({});
+      if (importFileRef.current) importFileRef.current.value = "";
+      await reload();
+    } catch (err) {
+      toast.error("Apply failed: " + (err as Error).message);
+    } finally {
+      setApplying(false);
+    }
+  };
 
   const filtered = useMemo(() => {
     const opts = {
