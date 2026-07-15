@@ -7,7 +7,17 @@ import {
   seedSessionsIfEmpty, subscribeSessions, migrateSessionsToIdb,
   type WorkSession, type Checkpoint,
 } from "@/lib/rah/sessions";
+import { getDB, type CouncilJobRow } from "@/lib/rah/db";
+import { deriveCouncilQueue, type CouncilQueueRow } from "@/lib/rah/councilJobs";
 import { toast } from "sonner";
+
+type MergedQueueRow =
+  | { id: string; status: "queued" | "running" | "awaiting_approval" | "completed" | "failed"; title: string; createdAt: number; source: "command" | "approval" }
+  | CouncilQueueRow;
+
+const QUEUE_PRIORITY: Record<string, number> = {
+  running: 0, awaiting_approval: 1, queued: 2, failed: 3, completed: 4,
+};
 
 function useSessionsStore() {
   const sessions = useSyncExternalStore(subscribeSessions, listSessions, listSessions);
@@ -37,6 +47,30 @@ export function MissionControlPanel() {
   const navigate = useNavigate();
   const currentPath = useRouterState({ select: (s) => s.location.pathname });
   const { sessions, checkpoints } = useSessionsStore();
+  const [councilJobs, setCouncilJobs] = useState<CouncilJobRow[]>([]);
+
+  const reloadCouncil = useCallback(async () => {
+    try {
+      const db = await getDB();
+      const rows = await db.getAll("councilJobs");
+      setCouncilJobs(rows);
+    } catch {
+      /* non-fatal */
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!rah.ready) return;
+    void reloadCouncil();
+    const onFocus = () => { void reloadCouncil(); };
+    const onChanged = () => { void reloadCouncil(); };
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("rah:council-jobs-changed", onChanged);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("rah:council-jobs-changed", onChanged);
+    };
+  }, [rah.ready, reloadCouncil]);
 
   // First-run seed once projects are loaded.
   useEffect(() => {
@@ -50,10 +84,18 @@ export function MissionControlPanel() {
   }, [rah.ready, rah.projects]);
 
   const resumable = useMemo(() => findResumable(), [sessions, checkpoints]);
-  const queue = useMemo(
-    () => deriveTaskQueue({ commands: rah.commands, approvals: rah.approvals, limit: 8 }),
-    [rah.commands, rah.approvals],
-  );
+  const queue = useMemo<MergedQueueRow[]>(() => {
+    const base = deriveTaskQueue({ commands: rah.commands, approvals: rah.approvals, limit: 8 }) as MergedQueueRow[];
+    const council = deriveCouncilQueue(councilJobs, 8) as MergedQueueRow[];
+    const merged = [...base, ...council];
+    merged.sort((a, b) => {
+      const pa = QUEUE_PRIORITY[a.status] ?? 9;
+      const pb = QUEUE_PRIORITY[b.status] ?? 9;
+      if (pa !== pb) return pa - pb;
+      return (b.createdAt ?? 0) - (a.createdAt ?? 0);
+    });
+    return merged.slice(0, 8);
+  }, [rah.commands, rah.approvals, councilJobs]);
 
   const activeSession = useMemo<WorkSession | null>(() => {
     const pid = rah.activeProject?.id ?? null;
@@ -323,7 +365,11 @@ export function MissionControlPanel() {
                 <li key={r.source + ":" + r.id} className="py-1.5 text-xs">
                   <div className="flex items-center gap-2">
                     <StatusPill s={r.status} />
-                    <span className="truncate min-w-0 flex-1" title={r.title}>{r.title}</span>
+                    {r.source === "council" ? (
+                      <Link to="/council" className="truncate min-w-0 flex-1 hover:underline" title={r.title}>{r.title}</Link>
+                    ) : (
+                      <span className="truncate min-w-0 flex-1" title={r.title}>{r.title}</span>
+                    )}
                   </div>
                   <div className="mt-0.5 text-[10px] text-muted-foreground">
                     {r.source} · {r.createdAt ? new Date(r.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"}
