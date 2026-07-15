@@ -27,6 +27,7 @@ import { Route as DevicesRouteImport } from './routes/devices'
 import { Route as ConnectionsRouteImport } from './routes/connections'
 import { Route as ChronicleRouteImport } from './routes/chronicle'
 import { Route as AutomationsRouteImport } from './routes/automations'
+import { Route as AuditRouteImport } from './routes/audit'
 import { Route as ApprovalsRouteImport } from './routes/approvals'
 import { Route as ApplicationsRouteImport } from './routes/applications'
 import { Route as AgentsRouteImport } from './routes/agents'
@@ -126,6 +127,11 @@ const AutomationsRoute = AutomationsRouteImport.update({
   path: '/automations',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuditRoute = AuditRouteImport.update({
+  id: '/audit',
+  path: '/audit',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApprovalsRoute = ApprovalsRouteImport.update({
   id: '/approvals',
   path: '/approvals',
@@ -172,6 +178,7 @@ export interface FileRoutesByFullPath {
   '/agents': typeof AgentsRoute
   '/applications': typeof ApplicationsRoute
   '/approvals': typeof ApprovalsRoute
+  '/audit': typeof AuditRoute
   '/automations': typeof AutomationsRoute
   '/chronicle': typeof ChronicleRoute
   '/connections': typeof ConnectionsRoute
@@ -200,6 +207,7 @@ export interface FileRoutesByTo {
   '/agents': typeof AgentsRoute
   '/applications': typeof ApplicationsRoute
   '/approvals': typeof ApprovalsRoute
+  '/audit': typeof AuditRoute
   '/automations': typeof AutomationsRoute
   '/chronicle': typeof ChronicleRoute
   '/connections': typeof ConnectionsRoute
@@ -229,6 +237,7 @@ export interface FileRoutesById {
   '/agents': typeof AgentsRoute
   '/applications': typeof ApplicationsRoute
   '/approvals': typeof ApprovalsRoute
+  '/audit': typeof AuditRoute
   '/automations': typeof AutomationsRoute
   '/chronicle': typeof ChronicleRoute
   '/connections': typeof ConnectionsRoute
@@ -259,6 +268,7 @@ export interface FileRouteTypes {
     | '/agents'
     | '/applications'
     | '/approvals'
+    | '/audit'
     | '/automations'
     | '/chronicle'
     | '/connections'
@@ -287,6 +297,7 @@ export interface FileRouteTypes {
     | '/agents'
     | '/applications'
     | '/approvals'
+    | '/audit'
     | '/automations'
     | '/chronicle'
     | '/connections'
@@ -315,6 +326,7 @@ export interface FileRouteTypes {
     | '/agents'
     | '/applications'
     | '/approvals'
+    | '/audit'
     | '/automations'
     | '/chronicle'
     | '/connections'
@@ -344,6 +356,7 @@ export interface RootRouteChildren {
   AgentsRoute: typeof AgentsRoute
   ApplicationsRoute: typeof ApplicationsRoute
   ApprovalsRoute: typeof ApprovalsRoute
+  AuditRoute: typeof AuditRoute
   AutomationsRoute: typeof AutomationsRoute
   ChronicleRoute: typeof ChronicleRoute
   ConnectionsRoute: typeof ConnectionsRoute
@@ -495,6 +508,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AutomationsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/audit': {
+      id: '/audit'
+      path: '/audit'
+      fullPath: '/audit'
+      preLoaderRoute: typeof AuditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/approvals': {
       id: '/approvals'
       path: '/approvals'
@@ -571,6 +591,7 @@ const rootRouteChildren: RootRouteChildren = {
   AgentsRoute: AgentsRoute,
   ApplicationsRoute: ApplicationsRoute,
   ApprovalsRoute: ApprovalsRoute,
+  AuditRoute: AuditRoute,
   AutomationsRoute: AutomationsRoute,
   ChronicleRoute: ChronicleRoute,
   ConnectionsRoute: ConnectionsRoute,
