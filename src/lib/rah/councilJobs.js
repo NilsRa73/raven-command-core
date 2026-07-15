@@ -210,3 +210,211 @@ export function seedCouncilJobsIfEmpty(existing) {
   });
   return { job, steps };
 }
+
+// ── Optional local AI synthesis helpers ───────────────────────────────
+// The deterministic synthesis above is always the source of truth. The
+// helpers below let a local AI provider REPHRASE the deterministic packet
+// for clarity; they never accept fabricated facts. On any validation or
+// transport failure the caller must fall back to deterministic output.
+
+/**
+ * Build a strict, grounded prompt from the deterministic packet.
+ * The model is asked to return JSON with the same 6 role keys — no new
+ * facts, only clarified narrative from the provided text.
+ */
+export function buildCouncilPrompt(packet) {
+  const p = packet && typeof packet === "object" ? packet : {};
+  const project = p.projectName || "(no active project)";
+  const provided = {
+    orchestrator: String(p.orchestratorText ?? ""),
+    researcher:   String(p.researcherText ?? ""),
+    designer:     String(p.designerText ?? ""),
+    builder:      String(p.builderText ?? ""),
+    tester:       String(p.testerText ?? ""),
+    memory_governance: String(p.governanceText ?? ""),
+  };
+  return [
+    "You are the RAH AI Council synthesis assistant.",
+    "You will be given a DETERMINISTIC project review packet built from LOCAL Raven data only.",
+    "Your ONLY job is to improve clarity/structure of the six role sections.",
+    "STRICT RULES:",
+    "- Do NOT invent, add, or infer facts that are not present in the provided text.",
+    "- Do NOT reference external sources, the web, or your training data.",
+    "- Preserve every concrete item (task, checkpoint, decision, roadmap entry) verbatim.",
+    "- If a section is empty in the input, keep it empty in the output.",
+    "- Return STRICT JSON only. No prose before or after. No markdown fences.",
+    "Response schema:",
+    "{",
+    '  "orchestrator": string,',
+    '  "researcher": string,',
+    '  "designer": string,',
+    '  "builder": string,',
+    '  "tester": string,',
+    '  "memory_governance": string',
+    "}",
+    "",
+    "PROJECT: " + project,
+    "",
+    "PACKET (source of truth — do not contradict):",
+    JSON.stringify(provided, null, 2),
+  ].join("\n");
+}
+
+/** Extract the first balanced JSON object from a model response. */
+function extractJsonObject(text) {
+  if (typeof text !== "string") return null;
+  const t = text.trim();
+  if (!t) return null;
+  // Strip common ``` fences.
+  const fenced = t.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+  const start = fenced.indexOf("{");
+  if (start < 0) return null;
+  let depth = 0;
+  for (let i = start; i < fenced.length; i++) {
+    const ch = fenced[i];
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) return fenced.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
+const ROLE_KEYS = ["orchestrator", "researcher", "designer", "builder", "tester", "memory_governance"];
+
+/**
+ * Validate a model response. Returns
+ *   { ok: true, findings }               on success
+ *   { ok: false, reason }                on any failure
+ */
+export function parseAiSynthesisResponse(text) {
+  const raw = extractJsonObject(text);
+  if (!raw) return { ok: false, reason: "empty or unparseable response" };
+  let obj;
+  try { obj = JSON.parse(raw); }
+  catch { return { ok: false, reason: "invalid JSON" }; }
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
+    return { ok: false, reason: "response is not a JSON object" };
+  }
+  const findings = {};
+  for (const k of ROLE_KEYS) {
+    const v = obj[k];
+    if (typeof v !== "string") {
+      return { ok: false, reason: `missing or non-string field: ${k}` };
+    }
+    findings[k] = v;
+  }
+  return { ok: true, findings };
+}
+
+/**
+ * Merge AI-rephrased role narratives with the deterministic outputByStepOrder.
+ * Deterministic values are preserved when the AI output for that role is
+ * empty or missing. Never drops deterministic tasks, checks, or memory row.
+ */
+export function mergeAiSynthesis(deterministic, aiFindings) {
+  const det = (deterministic && deterministic.outputByStepOrder) || {};
+  const ai = aiFindings || {};
+  const pick = (aiText, detText) => {
+    const s = typeof aiText === "string" ? aiText.trim() : "";
+    return s ? s : detText;
+  };
+  return {
+    ...deterministic,
+    deterministic: false,
+    outputByStepOrder: {
+      1: pick(ai.orchestrator,       det[1]),
+      2: pick(ai.researcher,         det[2]),
+      3: pick(ai.designer,           det[3]),
+      4: pick(ai.builder,            det[4]),
+      5: pick(ai.tester,             det[5]),
+      6: pick(ai.memory_governance,  det[6]),
+    },
+  };
+}
+
+/** Approval descriptor for the governance step — passed to requestApproval. */
+export function councilApprovalDescriptor(job) {
+  const name = (job && job.objective) || "AI Council project review";
+  return {
+    title: "Save AI Council result to Project Memory",
+    reason: `Governance step for council job "${name}". Saves a structured Project Memory entry and one resumable checkpoint.`,
+    tools: ["projectMemory.write", "checkpoints.write"],
+    dataShared: ["local project state", "council job output"],
+    expectedResult: "One Project Memory entry (with findings, builder tasks, tester criteria) and one checkpoint linked to this job.",
+    risk: "low",
+    category: "council_governance",
+    undo: "Delete the created Project Memory entry from Memory, and the checkpoint from Sessions.",
+  };
+}
+
+/**
+ * Build the structured Project Memory payload written on approval.
+ * Contains provider label, findings, builder tasks, tester criteria and
+ * a stable source key (`council:<jobId>`) so writes are idempotent.
+ */
+export function buildCouncilMemoryPayload(job, synth, providerLabel) {
+  const findings = (synth && synth.findings) || {};
+  const builder = findings.builder || {};
+  const tester = findings.tester || {};
+  const projName = (synth && synth.findings && synth.findings.memory_governance && synth.findings.memory_governance.summary)
+    || `Council: ${job?.objective ?? "review"}`;
+  const body = [
+    `Provider: ${providerLabel}`,
+    "",
+    "Orchestrator:",
+    Array.isArray(findings.orchestrator) ? findings.orchestrator.join("\n") : String(findings.orchestrator ?? ""),
+    "",
+    "Researcher:",
+    Array.isArray(findings.researcher) ? findings.researcher.join("\n") : String(findings.researcher ?? ""),
+    "",
+    "Designer:",
+    Array.isArray(findings.designer) ? findings.designer.join("\n") : String(findings.designer ?? ""),
+    "",
+    "Builder tasks:",
+    ...(Array.isArray(builder.tasks) ? builder.tasks.map((t) => `- ${t}`) : []),
+    `Risk: ${builder.risk ?? "unknown"}`,
+    "",
+    "Tester acceptance:",
+    ...(Array.isArray(tester.acceptance) ? tester.acceptance.map((t) => `- ${t}`) : []),
+    "",
+    `Source job: ${job?.id ?? "(unknown)"}`,
+  ].join("\n");
+  return {
+    projectId: job?.projectId ?? null,
+    title: projName,
+    content: body,
+    type: "decision",
+    tags: ["council", "project-review"],
+    source: `council:${job?.id ?? "unknown"}`,
+    pinned: false,
+    archived: false,
+  };
+}
+
+/**
+ * Idempotency-safe finalization decision for the governance approval.
+ *
+ * @param opts.job                current CouncilJob row
+ * @param opts.approval           the linked Approval row (or null)
+ * @param opts.memoryAlreadyExists true if a projectMemory row with the job's
+ *                                source key is already in the store
+ * @returns "complete" | "reject" | "noop"
+ */
+export function decideFinalization(opts) {
+  const job = opts?.job;
+  const approval = opts?.approval;
+  const memoryExists = !!opts?.memoryAlreadyExists;
+  if (!job || job.status === "completed" || job.status === "failed" || job.status === "cancelled") {
+    return "noop";
+  }
+  if (job.status !== "awaiting_approval") return "noop";
+  if (!approval) return "noop";
+  if (approval.status === "pending") return "noop";
+  if (approval.status === "approved") {
+    return memoryExists ? "noop" : "complete";
+  }
+  if (approval.status === "rejected" || approval.status === "cancelled") return "reject";
+  return "noop";
+}
