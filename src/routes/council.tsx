@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useRah } from "@/lib/rah/context";
@@ -7,14 +7,36 @@ import {
   createJob, transitionJob, transitionStep, canTransition,
   synthesizeProjectReview, seedCouncilJobsIfEmpty,
   COUNCIL_ROLES,
+  buildCouncilPrompt, parseAiSynthesisResponse, mergeAiSynthesis,
+  councilApprovalDescriptor, buildCouncilMemoryPayload, decideFinalization,
 } from "@/lib/rah/councilJobs";
 import { listSessions, listCheckpoints, saveCheckpoint } from "@/lib/rah/sessions";
+import {
+  getLocalAiSettings, isLocalEngine, engineLabel,
+  streamLmStudio, streamOllama, checkLocalHealth,
+} from "@/lib/rah/localAi";
+import { logRavenAudit } from "@/lib/rah/ravenAudit";
 import { toast } from "sonner";
 
 function emitCouncilChanged() {
   try { window.dispatchEvent(new Event("rah:council-jobs-changed")); } catch { /* SSR */ }
 }
-import { Play, Pause, RotateCcw, XCircle, ShieldAlert, ChevronRight, Cpu, Sparkles } from "lucide-react";
+import { Play, Pause, RotateCcw, XCircle, ShieldAlert, ChevronRight, Cpu, Sparkles, ExternalLink } from "lucide-react";
+
+const AI_SYNTH_TOGGLE_KEY = "rah:council:aiSynth:v1";
+function readAiSynthToggle(): boolean {
+  try {
+    const raw = typeof window !== "undefined" ? window.localStorage.getItem(AI_SYNTH_TOGGLE_KEY) : null;
+    if (raw === "1") return true;
+    if (raw === "0") return false;
+  } catch { /* */ }
+  // Fallback: default OFF, but honor an existing explicit local-engine
+  // preference from prior migration if user already chose local AI.
+  return false;
+}
+function writeAiSynthToggle(v: boolean) {
+  try { window.localStorage.setItem(AI_SYNTH_TOGGLE_KEY, v ? "1" : "0"); } catch { /* */ }
+}
 
 export const Route = createFileRoute("/council")({
   head: () => ({
