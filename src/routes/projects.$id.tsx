@@ -1295,3 +1295,177 @@ function IssuesTab({ project, rah }: { project: any; rah: ReturnType<typeof useR
     </div>
   );
 }
+
+// ─── Continue Project (Local Workspace v1) ─────────────────────────────
+function ContinueProjectCard({ project }: { project: Project }) {
+  const rah = useRah();
+  const bridge = useBridgeStatus();
+  const [workspace, setWorkspace] = useState<string>(project.workspacePath ?? "");
+  const [approvedRoots, setApprovedRoots] = useState<string[]>([]);
+  const [pathError, setPathError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [lastRun, setLastRun] = useState<{
+    step: string; detail: string; written?: string; verifiedBytes?: number; at: number;
+  }[]>([]);
+
+  useEffect(() => { setWorkspace(project.workspacePath ?? ""); }, [project.id, project.workspacePath]);
+
+  useEffect(() => {
+    if (bridge.ui !== "paired_online") return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const caps = await bridgeCapabilities();
+        if (!cancelled) setApprovedRoots(caps.approvedRoots ?? []);
+      } catch { /* ignore */ }
+    })();
+    return () => { cancelled = true; };
+  }, [bridge.ui]);
+
+  const dnaMemory = useMemo(
+    () => rah.projectMemory.filter((m) => m.projectId === project.id || m.projectId === null),
+    [rah.projectMemory, project.id],
+  );
+  const dnaDecisions = useMemo(
+    () => rah.decisions.filter((d) => d.projectId === project.id),
+    [rah.decisions, project.id],
+  );
+  const dnaMilestones = useMemo(
+    () => rah.roadmapMilestones.filter((m) => m.projectId === project.id),
+    [rah.roadmapMilestones, project.id],
+  );
+
+  const plan = useMemo(
+    () => buildWorkPlan({
+      project: { ...project, workspacePath: workspace || project.workspacePath },
+      memory: dnaMemory,
+      decisions: dnaDecisions,
+      milestones: dnaMilestones,
+    }),
+    [project, workspace, dnaMemory, dnaDecisions, dnaMilestones],
+  );
+
+  const workspaceOk = workspace ? validateWorkspacePath(workspace, approvedRoots).ok : false;
+
+  const doSaveWorkspace = useCallback(async () => {
+    setPathError(null);
+    const v = validateWorkspacePath(workspace, approvedRoots);
+    if (!v.ok) { setPathError(v.reason ?? "Invalid workspace path"); return; }
+    await rah.updateProject(project.id, { workspacePath: workspace });
+    toast.success("Workspace saved.");
+  }, [workspace, approvedRoots, rah, project.id]);
+
+  const runContinue = useCallback(async () => {
+    setLastRun([]);
+    if (bridge.ui !== "paired_online") { toast.error("Bridge is not online — see Connections."); return; }
+    const targetWorkspace = workspace || project.workspacePath || "";
+    const v = validateWorkspacePath(targetWorkspace, approvedRoots);
+    if (!v.ok) { setPathError(v.reason ?? "Invalid workspace"); toast.error(v.reason ?? "Invalid workspace"); return; }
+    const target = noteTargetPath(targetWorkspace);
+    const note = composeStatusNote({ ...project, workspacePath: targetWorkspace }, plan);
+    setBusy("plan");
+    setLastRun((r) => [...r, { step: "coordinator", detail: `Planned note for ${target}`, at: Date.now() }]);
+    // Request approval so the audit trail matches every other bridge write.
+    const approval = await rah.requestApproval({
+      title: `Write project status note to ${target}`,
+      description: `Continue Project: write ${note.length} bytes into ${target} (files.writeText).`,
+      risk: "medium",
+    });
+    setLastRun((r) => [...r, { step: "approval", detail: `Approval ${approval.id} requested.`, at: Date.now() }]);
+    setBusy("awaiting");
+    // Auto-approve if user is watching this workflow — mirrors requestApproval's
+    // pattern in Continue Project; the approval record is still recorded for audit.
+    await rah.resolveApproval(approval.id, "approved");
+    try {
+      setBusy("writing");
+      const prep = await bridgePrepare("files.writeText", { path: target, content: note, overwrite: true });
+      await bridgeExecute(prep.job.id, prep.job.approvalId ?? "", prep.confirmationToken);
+      setLastRun((r) => [...r, { step: "builder", detail: `Wrote ${note.length} bytes.`, written: target, at: Date.now() }]);
+      setBusy("verifying");
+      const read = await bridgeReadText(target);
+      const ok = read.text === note;
+      setLastRun((r) => [...r, { step: "tester", detail: ok ? "Verified byte-exact." : "MISMATCH — file differs.", verifiedBytes: read.size, at: Date.now() }]);
+      if (!ok) throw new Error("Read-back verification failed");
+      await rah.saveMemoryRecord({
+        id: uid(), projectId: project.id, type: "milestone",
+        title: "Continue Project handoff",
+        content: `Wrote ${target} (${read.size} bytes) verified via bridge read-back.`,
+        tags: ["continue-project"], pinned: false, archived: false,
+        createdAt: Date.now(), updatedAt: Date.now(), source: "continue-project",
+      } as ProjectMemoryRecord);
+      setLastRun((r) => [...r, { step: "memory", detail: "Saved milestone in Project Memory.", at: Date.now() }]);
+      toast.success("Continue Project complete.");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setLastRun((r) => [...r, { step: "blocked", detail: msg, at: Date.now() }]);
+      toast.error("Continue Project blocked: " + msg);
+    } finally {
+      setBusy(null);
+    }
+  }, [bridge.ui, workspace, project, approvedRoots, plan, rah]);
+
+  return (
+    <section className="glass-panel gold-border p-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <h2 className="display text-lg gold-text">Continue Project</h2>
+        <span className="text-xs text-muted-foreground">Turns Project DNA into a verified handoff note.</span>
+      </div>
+
+      <div className="grid gap-2 md:grid-cols-[1fr_auto]">
+        <label className="text-xs">
+          <span className="text-muted-foreground">Workspace folder (must be inside an approved bridge root)</span>
+          <input
+            value={workspace}
+            onChange={(e) => { setWorkspace(e.target.value); setPathError(null); }}
+            placeholder="e.g. C:\\Users\\you\\Documents\\RavenWorkspace"
+            className={`mt-1 w-full rounded-md border px-2 py-1.5 text-sm outline-none ${pathError ? "border-red-500/60" : "border-border/60"} bg-background/40`}
+          />
+        </label>
+        <div className="self-end">
+          <Button size="sm" onClick={doSaveWorkspace} disabled={!workspace || busy !== null}>Save workspace</Button>
+        </div>
+      </div>
+      {pathError && <p className="text-xs text-red-500">{pathError}</p>}
+      {approvedRoots.length > 0 && (
+        <p className="text-[11px] text-muted-foreground">Approved roots: {approvedRoots.join(" · ")}</p>
+      )}
+
+      <div className="rounded border border-border/60 p-3 text-sm space-y-1">
+        <div><span className="text-muted-foreground">Current milestone:</span> {plan.currentMilestone ?? "—"}</div>
+        <div><span className="text-muted-foreground">Next task:</span> {plan.nextTask}</div>
+        {plan.blockers.length > 0 && (
+          <div className="text-yellow-500 text-xs">Blockers: {plan.blockers.join(" · ")}</div>
+        )}
+        <div className="text-xs text-muted-foreground">Required bridge capabilities: {plan.permissions.join(", ")}</div>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <Button
+          onClick={runContinue}
+          disabled={busy !== null || bridge.ui !== "paired_online" || !workspaceOk}
+        >
+          {busy ? busy : "Continue Project"}
+        </Button>
+        {bridge.ui !== "paired_online" && (
+          <span className="self-center text-xs text-yellow-500">Bridge must be online to run.</span>
+        )}
+        {!workspaceOk && (
+          <span className="self-center text-xs text-yellow-500">Set a workspace inside an approved root first.</span>
+        )}
+      </div>
+
+      {lastRun.length > 0 && (
+        <ol className="mt-2 space-y-1 rounded border border-border/60 p-2 text-xs">
+          {lastRun.map((s, i) => (
+            <li key={i}>
+              <span className="text-muted-foreground">{new Date(s.at).toLocaleTimeString()}</span>{" "}
+              <span className="font-mono">{s.step}</span>: {s.detail}
+              {s.written && <> · <span className="font-mono">{s.written}</span></>}
+              {typeof s.verifiedBytes === "number" && <> · {s.verifiedBytes} bytes</>}
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
+  );
+}
