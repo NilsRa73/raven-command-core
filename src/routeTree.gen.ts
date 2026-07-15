@@ -14,6 +14,7 @@ import { Route as VoiceRouteImport } from './routes/voice'
 import { Route as VisionHistoryRouteImport } from './routes/vision-history'
 import { Route as VisionRouteImport } from './routes/vision'
 import { Route as TasksRouteImport } from './routes/tasks'
+import { Route as SystemCheckRouteImport } from './routes/system-check'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as RethinkRouteImport } from './routes/rethink'
@@ -61,6 +62,11 @@ const VisionRoute = VisionRouteImport.update({
 const TasksRoute = TasksRouteImport.update({
   id: '/tasks',
   path: '/tasks',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SystemCheckRoute = SystemCheckRouteImport.update({
+  id: '/system-check',
+  path: '/system-check',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
@@ -199,6 +205,7 @@ export interface FileRoutesByFullPath {
   '/rethink': typeof RethinkRoute
   '/settings': typeof SettingsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/system-check': typeof SystemCheckRoute
   '/tasks': typeof TasksRoute
   '/vision': typeof VisionRoute
   '/vision-history': typeof VisionHistoryRoute
@@ -229,6 +236,7 @@ export interface FileRoutesByTo {
   '/rethink': typeof RethinkRoute
   '/settings': typeof SettingsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/system-check': typeof SystemCheckRoute
   '/tasks': typeof TasksRoute
   '/vision': typeof VisionRoute
   '/vision-history': typeof VisionHistoryRoute
@@ -260,6 +268,7 @@ export interface FileRoutesById {
   '/rethink': typeof RethinkRoute
   '/settings': typeof SettingsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/system-check': typeof SystemCheckRoute
   '/tasks': typeof TasksRoute
   '/vision': typeof VisionRoute
   '/vision-history': typeof VisionHistoryRoute
@@ -292,6 +301,7 @@ export interface FileRouteTypes {
     | '/rethink'
     | '/settings'
     | '/sitemap.xml'
+    | '/system-check'
     | '/tasks'
     | '/vision'
     | '/vision-history'
@@ -322,6 +332,7 @@ export interface FileRouteTypes {
     | '/rethink'
     | '/settings'
     | '/sitemap.xml'
+    | '/system-check'
     | '/tasks'
     | '/vision'
     | '/vision-history'
@@ -352,6 +363,7 @@ export interface FileRouteTypes {
     | '/rethink'
     | '/settings'
     | '/sitemap.xml'
+    | '/system-check'
     | '/tasks'
     | '/vision'
     | '/vision-history'
@@ -383,6 +395,7 @@ export interface RootRouteChildren {
   RethinkRoute: typeof RethinkRoute
   SettingsRoute: typeof SettingsRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
+  SystemCheckRoute: typeof SystemCheckRoute
   TasksRoute: typeof TasksRoute
   VisionRoute: typeof VisionRoute
   VisionHistoryRoute: typeof VisionHistoryRoute
@@ -428,6 +441,13 @@ declare module '@tanstack/react-router' {
       path: '/tasks'
       fullPath: '/tasks'
       preLoaderRoute: typeof TasksRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/system-check': {
+      id: '/system-check'
+      path: '/system-check'
+      fullPath: '/system-check'
+      preLoaderRoute: typeof SystemCheckRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sitemap.xml': {
@@ -626,6 +646,7 @@ const rootRouteChildren: RootRouteChildren = {
   RethinkRoute: RethinkRoute,
   SettingsRoute: SettingsRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
+  SystemCheckRoute: SystemCheckRoute,
   TasksRoute: TasksRoute,
   VisionRoute: VisionRoute,
   VisionHistoryRoute: VisionHistoryRoute,
