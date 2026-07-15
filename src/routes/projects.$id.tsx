@@ -37,6 +37,13 @@ import {
   type DecisionStatus,
 } from "@/lib/rah/decisions";
 import { shouldConfirmDiscard } from "@/lib/rah/draftGuard";
+import {
+  buildWorkPlan, composeStatusNote, validateWorkspacePath, noteTargetPath,
+} from "@/lib/rah/continueProject";
+import {
+  bridgeCapabilities, bridgePrepare, bridgeExecute, bridgeReadText,
+} from "@/lib/rah/bridge";
+import type { Project } from "@/lib/rah/db";
 
 type Tab = typeof PROJECT_DNA_TABS[number];
 
