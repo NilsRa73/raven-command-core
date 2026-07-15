@@ -13,6 +13,7 @@ import { Route as VoiceProfilesRouteImport } from './routes/voice-profiles'
 import { Route as VoiceRouteImport } from './routes/voice'
 import { Route as VisionHistoryRouteImport } from './routes/vision-history'
 import { Route as VisionRouteImport } from './routes/vision'
+import { Route as TasksRouteImport } from './routes/tasks'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as RethinkRouteImport } from './routes/rethink'
@@ -55,6 +56,11 @@ const VisionHistoryRoute = VisionHistoryRouteImport.update({
 const VisionRoute = VisionRouteImport.update({
   id: '/vision',
   path: '/vision',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TasksRoute = TasksRouteImport.update({
+  id: '/tasks',
+  path: '/tasks',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
@@ -193,6 +199,7 @@ export interface FileRoutesByFullPath {
   '/rethink': typeof RethinkRoute
   '/settings': typeof SettingsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/tasks': typeof TasksRoute
   '/vision': typeof VisionRoute
   '/vision-history': typeof VisionHistoryRoute
   '/voice': typeof VoiceRoute
@@ -222,6 +229,7 @@ export interface FileRoutesByTo {
   '/rethink': typeof RethinkRoute
   '/settings': typeof SettingsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/tasks': typeof TasksRoute
   '/vision': typeof VisionRoute
   '/vision-history': typeof VisionHistoryRoute
   '/voice': typeof VoiceRoute
@@ -252,6 +260,7 @@ export interface FileRoutesById {
   '/rethink': typeof RethinkRoute
   '/settings': typeof SettingsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/tasks': typeof TasksRoute
   '/vision': typeof VisionRoute
   '/vision-history': typeof VisionHistoryRoute
   '/voice': typeof VoiceRoute
@@ -283,6 +292,7 @@ export interface FileRouteTypes {
     | '/rethink'
     | '/settings'
     | '/sitemap.xml'
+    | '/tasks'
     | '/vision'
     | '/vision-history'
     | '/voice'
@@ -312,6 +322,7 @@ export interface FileRouteTypes {
     | '/rethink'
     | '/settings'
     | '/sitemap.xml'
+    | '/tasks'
     | '/vision'
     | '/vision-history'
     | '/voice'
@@ -341,6 +352,7 @@ export interface FileRouteTypes {
     | '/rethink'
     | '/settings'
     | '/sitemap.xml'
+    | '/tasks'
     | '/vision'
     | '/vision-history'
     | '/voice'
@@ -371,6 +383,7 @@ export interface RootRouteChildren {
   RethinkRoute: typeof RethinkRoute
   SettingsRoute: typeof SettingsRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
+  TasksRoute: typeof TasksRoute
   VisionRoute: typeof VisionRoute
   VisionHistoryRoute: typeof VisionHistoryRoute
   VoiceRoute: typeof VoiceRoute
@@ -408,6 +421,13 @@ declare module '@tanstack/react-router' {
       path: '/vision'
       fullPath: '/vision'
       preLoaderRoute: typeof VisionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/tasks': {
+      id: '/tasks'
+      path: '/tasks'
+      fullPath: '/tasks'
+      preLoaderRoute: typeof TasksRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sitemap.xml': {
@@ -606,6 +626,7 @@ const rootRouteChildren: RootRouteChildren = {
   RethinkRoute: RethinkRoute,
   SettingsRoute: SettingsRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
+  TasksRoute: TasksRoute,
   VisionRoute: VisionRoute,
   VisionHistoryRoute: VisionHistoryRoute,
   VoiceRoute: VoiceRoute,
