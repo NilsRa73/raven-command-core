@@ -418,6 +418,27 @@ function CouncilPage() {
         </div>
       </header>
 
+      <section className="glass-panel p-3 flex flex-wrap items-center gap-3 text-xs">
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={aiSynthEnabled}
+            onChange={(e) => setAiSynthEnabled(e.target.checked)}
+            aria-label="Use local AI synthesis when available"
+          />
+          <span>Use local AI synthesis when available</span>
+        </label>
+        <span className="text-muted-foreground">
+          Provider: <b className="text-foreground">{detectedProvider || "detecting…"}</b>
+        </span>
+        {lastProviderNote && (
+          <span className="text-muted-foreground italic">{lastProviderNote}</span>
+        )}
+        <span className="text-muted-foreground ml-auto">
+          Deterministic findings are always the source of truth. AI only rephrases.
+        </span>
+      </section>
+
       {creating && (
         <section className="glass-panel gold-border p-4 space-y-2">
           <label className="text-sm font-medium">Objective</label>
