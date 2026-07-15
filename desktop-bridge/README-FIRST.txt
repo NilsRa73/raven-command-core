@@ -1,4 +1,4 @@
-RAH Desktop Bridge v0.2.2
+RAH Desktop Bridge v0.2.1
 =========================
 
 What this is
