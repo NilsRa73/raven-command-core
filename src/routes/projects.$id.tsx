@@ -1311,7 +1311,7 @@ function ContinueProjectCard({ project }: { project: Project }) {
   useEffect(() => { setWorkspace(project.workspacePath ?? ""); }, [project.id, project.workspacePath]);
 
   useEffect(() => {
-    if (bridge.ui !== "paired_online") return;
+    if (bridge.snapshot?.ui !== "paired_online") return;
     let cancelled = false;
     (async () => {
       try {
@@ -1320,7 +1320,7 @@ function ContinueProjectCard({ project }: { project: Project }) {
       } catch { /* ignore */ }
     })();
     return () => { cancelled = true; };
-  }, [bridge.ui]);
+  }, [bridge.snapshot?.ui]);
 
   const dnaMemory = useMemo(
     () => rah.projectMemory.filter((m) => m.projectId === project.id || m.projectId === null),
@@ -1357,7 +1357,7 @@ function ContinueProjectCard({ project }: { project: Project }) {
 
   const runContinue = useCallback(async () => {
     setLastRun([]);
-    if (bridge.ui !== "paired_online") { toast.error("Bridge is not online — see Connections."); return; }
+    if (bridge.snapshot?.ui !== "paired_online") { toast.error("Bridge is not online — see Connections."); return; }
     const targetWorkspace = workspace || project.workspacePath || "";
     const v = validateWorkspacePath(targetWorkspace, approvedRoots);
     if (!v.ok) { setPathError(v.reason ?? "Invalid workspace"); toast.error(v.reason ?? "Invalid workspace"); return; }
@@ -1402,7 +1402,7 @@ function ContinueProjectCard({ project }: { project: Project }) {
     } finally {
       setBusy(null);
     }
-  }, [bridge.ui, workspace, project, approvedRoots, plan, rah]);
+  }, [bridge.snapshot?.ui, workspace, project, approvedRoots, plan, rah]);
 
   return (
     <section className="glass-panel gold-border p-4 space-y-3">
@@ -1442,11 +1442,11 @@ function ContinueProjectCard({ project }: { project: Project }) {
       <div className="flex flex-wrap gap-2">
         <Button
           onClick={runContinue}
-          disabled={busy !== null || bridge.ui !== "paired_online" || !workspaceOk}
+          disabled={busy !== null || bridge.snapshot?.ui !== "paired_online" || !workspaceOk}
         >
           {busy ? busy : "Continue Project"}
         </Button>
-        {bridge.ui !== "paired_online" && (
+        {bridge.snapshot?.ui !== "paired_online" && (
           <span className="self-center text-xs text-yellow-500">Bridge must be online to run.</span>
         )}
         {!workspaceOk && (
