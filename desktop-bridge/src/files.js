@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { assertContained, isReadableTextFile } from "./paths.js";
-import { READ_TEXT_MAX_BYTES } from "./protocol.js";
+import { READ_TEXT_MAX_BYTES, WRITE_TEXT_MAX_BYTES, BLOCKED_TEXT_BASENAMES } from "./protocol.js";
 
 export function listFolder(target, approvedRoots) {
   const abs = assertContained(target, approvedRoots);
@@ -51,6 +51,72 @@ export function readTextFile(target, approvedRoots) {
   if (st.size > READ_TEXT_MAX_BYTES) throw new Error("File too large");
   const buf = fs.readFileSync(abs);
   return { path: abs, size: st.size, mtime: st.mtimeMs, text: buf.toString("utf8") };
+}
+
+// ---- v0.2.2 text-write safety ----------------------------------------
+// Enforce: text-file extension allowlist, size cap, no NUL bytes, no
+// blocked basenames (credentials/system files), no hidden dotfiles.
+// Callers must have already assertContained() the path.
+function assertWriteSafe(abs, content) {
+  if (typeof content !== "string") throw new Error("content must be a string");
+  if (content.includes("\u0000")) throw new Error("Null byte in content is not allowed");
+  const bytes = Buffer.byteLength(content, "utf8");
+  if (bytes > WRITE_TEXT_MAX_BYTES) throw new Error(`Content too large (${bytes} bytes > ${WRITE_TEXT_MAX_BYTES})`);
+  if (!isReadableTextFile(abs)) throw new Error("Extension not in text-file allowlist");
+  const base = path.basename(abs).toLowerCase();
+  if (base.startsWith(".") ) throw new Error("Hidden dotfiles are not allowed");
+  if (BLOCKED_TEXT_BASENAMES.includes(base)) throw new Error("Basename is blocked (credential/system file)");
+  return bytes;
+}
+
+/**
+ * Write a text file. `mode`:
+ *   - "createOnly": fail if target exists (no accidental overwrite)
+ *   - "overwrite" : replace existing file, but first drop a sidecar
+ *                   backup at <target>.rah-backup-<ts> so a bad write
+ *                   can be recovered by the user.
+ * Parent directory must already exist inside an approved root.
+ */
+export function writeTextFile(target, content, approvedRoots, { mode = "createOnly" } = {}) {
+  const abs = assertContained(target, approvedRoots);
+  const bytes = assertWriteSafe(abs, content);
+  const parent = path.dirname(abs);
+  if (!fs.existsSync(parent) || !fs.statSync(parent).isDirectory()) {
+    throw new Error("Parent directory does not exist");
+  }
+  const exists = fs.existsSync(abs);
+  let backupPath = null;
+  if (exists) {
+    if (mode !== "overwrite") throw new Error("File exists and mode is not 'overwrite'");
+    // Sanity: refuse to overwrite a non-file (dir/symlink target).
+    const st = fs.lstatSync(abs);
+    if (!st.isFile()) throw new Error("Refusing to overwrite non-regular file");
+    backupPath = abs + ".rah-backup-" + Date.now();
+    fs.copyFileSync(abs, backupPath);
+  }
+  // Atomic-ish write: write to temp then rename.
+  const tmp = abs + ".rah-tmp-" + process.pid + "-" + Date.now();
+  fs.writeFileSync(tmp, content, { encoding: "utf8" });
+  fs.renameSync(tmp, abs);
+  return { path: abs, bytes, mode, overwrote: exists, backupPath };
+}
+
+/**
+ * Append UTF-8 text to an existing text file inside an approved root.
+ * The file must exist; we do not create-on-append (that's writeText's job).
+ * Same safety checks as writeText.
+ */
+export function appendTextFile(target, content, approvedRoots) {
+  const abs = assertContained(target, approvedRoots);
+  const bytes = assertWriteSafe(abs, content);
+  if (!fs.existsSync(abs)) throw new Error("File does not exist (use files.writeText to create)");
+  const st = fs.lstatSync(abs);
+  if (!st.isFile()) throw new Error("Target is not a regular file");
+  // Also cap combined size to prevent unbounded growth.
+  if (st.size + bytes > WRITE_TEXT_MAX_BYTES * 4) throw new Error("File would exceed maximum size");
+  fs.appendFileSync(abs, content, { encoding: "utf8" });
+  const after = fs.statSync(abs);
+  return { path: abs, appendedBytes: bytes, totalBytes: after.size };
 }
 
 export function createFolder(target, approvedRoots) {
