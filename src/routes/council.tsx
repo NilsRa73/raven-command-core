@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useRah } from "@/lib/rah/context";
@@ -7,14 +7,36 @@ import {
   createJob, transitionJob, transitionStep, canTransition,
   synthesizeProjectReview, seedCouncilJobsIfEmpty,
   COUNCIL_ROLES,
+  buildCouncilPrompt, parseAiSynthesisResponse, mergeAiSynthesis,
+  councilApprovalDescriptor, buildCouncilMemoryPayload, decideFinalization,
 } from "@/lib/rah/councilJobs";
 import { listSessions, listCheckpoints, saveCheckpoint } from "@/lib/rah/sessions";
+import {
+  getLocalAiSettings, isLocalEngine, engineLabel,
+  streamLmStudio, streamOllama, checkLocalHealth,
+} from "@/lib/rah/localAi";
+import { logRavenAudit } from "@/lib/rah/ravenAudit";
 import { toast } from "sonner";
 
 function emitCouncilChanged() {
   try { window.dispatchEvent(new Event("rah:council-jobs-changed")); } catch { /* SSR */ }
 }
-import { Play, Pause, RotateCcw, XCircle, ShieldAlert, ChevronRight, Cpu, Sparkles } from "lucide-react";
+import { Play, Pause, RotateCcw, XCircle, ShieldAlert, ChevronRight, Cpu, Sparkles, ExternalLink } from "lucide-react";
+
+const AI_SYNTH_TOGGLE_KEY = "rah:council:aiSynth:v1";
+function readAiSynthToggle(): boolean {
+  try {
+    const raw = typeof window !== "undefined" ? window.localStorage.getItem(AI_SYNTH_TOGGLE_KEY) : null;
+    if (raw === "1") return true;
+    if (raw === "0") return false;
+  } catch { /* */ }
+  // Fallback: default OFF, but honor an existing explicit local-engine
+  // preference from prior migration if user already chose local AI.
+  return false;
+}
+function writeAiSynthToggle(v: boolean) {
+  try { window.localStorage.setItem(AI_SYNTH_TOGGLE_KEY, v ? "1" : "0"); } catch { /* */ }
+}
 
 export const Route = createFileRoute("/council")({
   head: () => ({
@@ -61,6 +83,27 @@ function CouncilPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [objective, setObjective] = useState("");
+  const [aiSynthEnabled, setAiSynthEnabledState] = useState<boolean>(() => readAiSynthToggle());
+  const setAiSynthEnabled = useCallback((v: boolean) => { writeAiSynthToggle(v); setAiSynthEnabledState(v); }, []);
+  const [detectedProvider, setDetectedProvider] = useState<string>("");
+  const [lastProviderNote, setLastProviderNote] = useState<string>("");
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const s = getLocalAiSettings();
+      if (!isLocalEngine(s.engine)) { if (!cancelled) setDetectedProvider(engineLabel(s.engine)); return; }
+      try {
+        const h = await checkLocalHealth(s);
+        if (cancelled) return;
+        if (h.ok) setDetectedProvider(`${h.provider} · ${h.model}`);
+        else setDetectedProvider(`${engineLabel(s.engine)} — not reachable`);
+      } catch {
+        if (!cancelled) setDetectedProvider(`${engineLabel(s.engine)} — not reachable`);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [aiSynthEnabled]);
 
   const reload = useCallback(async () => {
     try {
@@ -129,6 +172,7 @@ function CouncilPage() {
       if (currentJob.status === "queued") {
         currentJob = transitionJob(currentJob, "running");
         await persistJob(currentJob);
+        logRavenAudit({ type: "council", source: "council", detail: `Job ${currentJob.id} started`, meta: { jobId: currentJob.id, objective: currentJob.objective } });
       }
       // Build local context packet.
       const sessions = listSessions();
@@ -151,10 +195,68 @@ function CouncilPage() {
       const roadmap = rah.roadmapMilestones
         .filter((r) => !currentJob.projectId || r.projectId === currentJob.projectId)
         .map((r) => ({ id: r.id, title: r.title, status: r.status }));
-      const synth = synthesizeProjectReview({
+      const deterministic = synthesizeProjectReview({
         project: activeProject ? { name: activeProject.name, description: activeProject.description, status: activeProject.status, currentTask: activeProject.currentTask, nextTask: activeProject.nextTask } : null,
         sessions, checkpoints, memory: memoryRows, decisions, commands: commandRows, roadmap,
       });
+
+      // Optional local-AI rephrasing. Deterministic remains source of truth.
+      let synth = deterministic;
+      let providerTag: "deterministic" | "ai" = "deterministic";
+      let providerLabel = "deterministic";
+      if (aiSynthEnabled) {
+        const s = getLocalAiSettings();
+        if (!isLocalEngine(s.engine)) {
+          setLastProviderNote(`AI synthesis skipped: current engine (${engineLabel(s.engine)}) is not a local provider.`);
+          logRavenAudit({ type: "council", source: "council", detail: "AI synthesis skipped — non-local engine", meta: { jobId: currentJob.id } });
+        } else {
+          try {
+            const prompt = buildCouncilPrompt({
+              projectName: activeProject?.name ?? "(no active project)",
+              orchestratorText: deterministic.outputByStepOrder[1],
+              researcherText:   deterministic.outputByStepOrder[2],
+              designerText:     deterministic.outputByStepOrder[3],
+              builderText:      deterministic.outputByStepOrder[4],
+              testerText:       deterministic.outputByStepOrder[5],
+              governanceText:   deterministic.outputByStepOrder[6],
+            });
+            const started = Date.now();
+            let full = "";
+            let capturedProvider = "";
+            let capturedModel = "";
+            const cb = {
+              onStart: (p: { provider: string; model: string }) => { capturedProvider = p.provider; capturedModel = p.model; },
+              onDelta: (_d: string, running: string) => { full = running; },
+            };
+            const streamer = s.engine === "lmstudio" ? streamLmStudio : streamOllama;
+            const raw = await streamer(
+              { prompt, agents: ["brain"], mode: "fast" as const, context: {} },
+              s,
+              cb,
+            );
+            const parsed = parseAiSynthesisResponse(raw || full);
+            if (parsed.ok) {
+              synth = mergeAiSynthesis(deterministic, parsed.findings);
+              providerTag = "ai";
+              providerLabel = `${capturedProvider || engineLabel(s.engine)}${capturedModel ? " · " + capturedModel : ""}`;
+              setLastProviderNote(`AI synthesis succeeded in ${Date.now() - started}ms via ${providerLabel}.`);
+              logRavenAudit({ type: "council", source: "council", detail: "AI synthesis succeeded", meta: { jobId: currentJob.id, provider: providerLabel } });
+            } else {
+              setLastProviderNote(`AI synthesis fell back to deterministic: ${parsed.reason}.`);
+              logRavenAudit({ type: "council", source: "council", detail: `AI synthesis fallback: ${parsed.reason}`, meta: { jobId: currentJob.id } });
+            }
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            setLastProviderNote(`AI synthesis fell back to deterministic: ${msg}.`);
+            logRavenAudit({ type: "council", source: "council", detail: `AI synthesis error: ${msg}`, meta: { jobId: currentJob.id } });
+          }
+        }
+      }
+      if (currentJob.provider !== providerTag) {
+        currentJob = { ...currentJob, provider: providerTag, updatedAt: Date.now() };
+        await persistJob(currentJob);
+      }
+
       const orderedSteps = steps
         .filter((s) => s.jobId === currentJob.id)
         .sort((a, b) => a.order - b.order);
@@ -164,11 +266,24 @@ function CouncilPage() {
         if (st.requiresApproval) {
           const running = transitionStep(st, "running");
           await persistStep(running);
-          const awaiting = transitionStep(running, "awaiting_approval");
+          // Reuse an existing pending approval when re-running to keep this
+          // idempotent across reloads.
+          const existingApprovalId = (currentJob.approvalIds || []).find((id) =>
+            rah.approvals.some((a) => a.id === id && a.status === "pending"),
+          );
+          let approvalId = existingApprovalId ?? "";
+          if (!approvalId) {
+            const descriptor = councilApprovalDescriptor(currentJob);
+            const approval = await rah.requestApproval(descriptor);
+            approvalId = approval.id;
+          }
+          const awaiting = transitionStep(running, "awaiting_approval", { approvalId });
           await persistStep(awaiting);
-          currentJob = transitionJob(currentJob, "awaiting_approval", { currentStepId: st.id });
+          const mergedIds = Array.from(new Set([...(currentJob.approvalIds || []), approvalId]));
+          currentJob = transitionJob(currentJob, "awaiting_approval", { currentStepId: st.id, approvalIds: mergedIds });
           await persistJob(currentJob);
-          toast.info("Governance step requires approval. Approve below to complete the job.");
+          logRavenAudit({ type: "council", source: "council", detail: "Awaiting governance approval", meta: { jobId: currentJob.id, approvalId } });
+          toast.info("Governance step requires approval. Review it in Approvals.");
           return;
         }
         const running = transitionStep(st, "running");
@@ -183,50 +298,102 @@ function CouncilPage() {
     } catch (e) {
       toast.error("Council run failed: " + (e instanceof Error ? e.message : String(e)));
     }
-  }, [rah.activeProject, rah.projects, rah.projectMemory, rah.commands, rah.decisions, rah.roadmapMilestones, steps, persistJob, persistStep]);
+  }, [rah, aiSynthEnabled, steps, persistJob, persistStep]);
 
-  const approveGovernance = useCallback(async () => {
-    if (!selected || selected.status !== "awaiting_approval") return;
-    const step = selectedSteps.find((s) => s.id === selected.currentStepId);
-    if (!step) return;
-    if (step.status === "completed") return;
-    const done = transitionStep(step, "completed", { output: "Approved by user; memory + checkpoint saved." });
-    await persistStep(done);
-    // Save a checkpoint so Continue Yesterday can resume the review outcome.
-    try {
-      const activeSession = listSessions().find((s) => s.status === "active");
-      if (activeSession) {
-        saveCheckpoint({
-          sessionId: activeSession.id,
-          projectId: activeSession.projectId,
-          note: `Council Project Review completed: ${selected.objective}`,
-          resumeRoute: "/council",
-          nextAction: "Review Builder task list from Council job",
-        });
+  // Idempotent finalizer: reacts to the linked approval status changing in
+  // the shared approvals store. Never writes memory / checkpoint twice.
+  useEffect(() => {
+    (async () => {
+      const jobsAwaiting = jobs.filter((j) => j.status === "awaiting_approval");
+      for (const job of jobsAwaiting) {
+        const approvalId = (job.approvalIds || []).slice(-1)[0];
+        const approval = approvalId ? rah.approvals.find((a) => a.id === approvalId) : null;
+        const memoryAlreadyExists = rah.projectMemory.some((m) => m.source === `council:${job.id}`);
+        const decision = decideFinalization({ job, approval: approval ?? null, memoryAlreadyExists });
+        if (decision === "noop") continue;
+
+        const jobSteps = steps.filter((s) => s.jobId === job.id).sort((a, b) => a.order - b.order);
+        const govStep = jobSteps.find((s) => s.id === job.currentStepId) ?? jobSteps.find((s) => s.requiresApproval);
+
+        if (decision === "complete") {
+          try {
+            // Reconstruct synthesis output from the persisted steps so the
+            // memory payload matches what was shown to the user.
+            const findings = {
+              orchestrator: jobSteps[0]?.output ?? "",
+              researcher:   jobSteps[1]?.output ?? "",
+              designer:     jobSteps[2]?.output ?? "",
+              builder: { tasks: [jobSteps[3]?.output ?? ""].filter(Boolean), risk: "low" },
+              tester:  { acceptance: [jobSteps[4]?.output ?? ""].filter(Boolean) },
+              memory_governance: { summary: `Council review — ${job.objective}` },
+            };
+            const synth = {
+              findings,
+              outputByStepOrder: Object.fromEntries(jobSteps.map((s) => [s.order, s.output ?? ""])),
+              deterministic: job.provider !== "ai",
+            };
+            const payload = buildCouncilMemoryPayload(job, synth as never, job.provider === "ai" ? "AI-assisted (local)" : "deterministic");
+            if (!memoryAlreadyExists) {
+              await rah.createProjectMemory(payload as never);
+            }
+            try {
+              const activeSession = listSessions().find((s) => s.status === "active");
+              const existingCheckpoints = listCheckpoints().filter((c) => c.note && c.note.includes(`[council:${job.id}]`));
+              if (activeSession && existingCheckpoints.length === 0) {
+                saveCheckpoint({
+                  sessionId: activeSession.id,
+                  projectId: activeSession.projectId,
+                  note: `Council Project Review completed: ${job.objective} [council:${job.id}]`,
+                  resumeRoute: "/council",
+                  nextAction: "Review Builder task list from Council job",
+                });
+              }
+            } catch { /* non-fatal */ }
+            if (govStep && govStep.status !== "completed") {
+              await persistStep(transitionStep(govStep, "completed", { output: "Approved by user; memory + checkpoint saved." }));
+            }
+            await persistJob(transitionJob(job, "completed", { currentStepId: null, reason: "User approved governance step." }));
+            logRavenAudit({ type: "council", source: "council", detail: "Job approved & finalized", meta: { jobId: job.id, approvalId } });
+            toast.success("Council job completed — memory + checkpoint saved.");
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            logRavenAudit({ type: "council", source: "council", detail: `Finalization error: ${msg}`, meta: { jobId: job.id } });
+          }
+        } else if (decision === "reject") {
+          try {
+            if (govStep && govStep.status !== "failed") {
+              await persistStep(transitionStep(govStep, "failed", { reason: `Approval ${approval?.status}` }));
+            }
+            await persistJob(transitionJob(job, "blocked", { reason: `Governance approval ${approval?.status}. No memory written.` }));
+            logRavenAudit({ type: "council", source: "council", detail: `Job blocked — approval ${approval?.status}`, meta: { jobId: job.id, approvalId } });
+          } catch { /* */ }
+        }
       }
-    } catch { /* non-fatal */ }
-    const next = transitionJob(selected, "completed", { currentStepId: null, reason: "User approved governance step." });
-    await persistJob(next);
-    toast.success("Council job completed and checkpoint saved.");
-  }, [selected, selectedSteps, persistJob, persistStep]);
+    })().catch(console.error);
+    // Depend on approvals + jobs so this re-runs on any approval change.
+  }, [rah, jobs, steps, persistJob, persistStep]);
 
   const controlPause = useCallback(async () => {
     if (!selected || !canTransition(selected.status, "blocked")) return;
     await persistJob(transitionJob(selected, "blocked", { reason: "Paused by user." }));
+    logRavenAudit({ type: "council", source: "council", detail: "Paused", meta: { jobId: selected.id } });
   }, [selected, persistJob]);
   const controlResume = useCallback(async () => {
     if (!selected || !canTransition(selected.status, "running")) return;
     const resumed = transitionJob(selected, "running", { reason: "Resumed by user." });
     await persistJob(resumed);
+    logRavenAudit({ type: "council", source: "council", detail: "Resumed", meta: { jobId: resumed.id } });
     await runJob(resumed);
   }, [selected, persistJob, runJob]);
   const controlCancel = useCallback(async () => {
     if (!selected || !canTransition(selected.status, "cancelled")) return;
     await persistJob(transitionJob(selected, "cancelled", { reason: "Cancelled by user." }));
+    logRavenAudit({ type: "council", source: "council", detail: "Cancelled", meta: { jobId: selected.id } });
   }, [selected, persistJob]);
   const controlRetry = useCallback(async () => {
     if (!selected || !canTransition(selected.status, "queued")) return;
     await persistJob(transitionJob(selected, "queued", { reason: "Retried by user." }));
+    logRavenAudit({ type: "council", source: "council", detail: "Retry queued", meta: { jobId: selected.id } });
     // Reset failed steps.
     for (const st of selectedSteps) {
       if (st.status === "failed" || st.status === "blocked") {
@@ -250,6 +417,27 @@ function CouncilPage() {
           </Button>
         </div>
       </header>
+
+      <section className="glass-panel p-3 flex flex-wrap items-center gap-3 text-xs">
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={aiSynthEnabled}
+            onChange={(e) => setAiSynthEnabled(e.target.checked)}
+            aria-label="Use local AI synthesis when available"
+          />
+          <span>Use local AI synthesis when available</span>
+        </label>
+        <span className="text-muted-foreground">
+          Provider: <b className="text-foreground">{detectedProvider || "detecting…"}</b>
+        </span>
+        {lastProviderNote && (
+          <span className="text-muted-foreground italic">{lastProviderNote}</span>
+        )}
+        <span className="text-muted-foreground ml-auto">
+          Deterministic findings are always the source of truth. AI only rephrases.
+        </span>
+      </section>
 
       {creating && (
         <section className="glass-panel gold-border p-4 space-y-2">
@@ -319,8 +507,10 @@ function CouncilPage() {
                     </Button>
                   ) : null}
                   {selected.status === "awaiting_approval" && (
-                    <Button size="sm" onClick={approveGovernance}>
-                      <ShieldAlert className="h-4 w-4" /> Approve governance step
+                    <Button size="sm" asChild>
+                      <Link to="/approvals">
+                        <ShieldAlert className="h-4 w-4" /> Review in Approvals <ExternalLink className="h-3 w-3" />
+                      </Link>
                     </Button>
                   )}
                   {canTransition(selected.status, "blocked") && (

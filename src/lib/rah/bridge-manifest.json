@@ -6,18 +6,18 @@
   "webMinVersion": "0.1.0",
   "file": "rah-desktop-bridge-0.2.1.zip",
   "version": "0.2.1",
-  "sha256": "88e0de3ebe5e508b73d79251825c9c6de8dc9e0e61620250f61a946c769b45e6",
-  "bytes": 118518,
-  "builtAt": "2026-07-15T12:59:47.219Z",
+  "sha256": "fed27a0210a920e1a01a6d24c4b44f6ae616ad376a6bee3b64c46875ff037ef5",
+  "bytes": 120161,
+  "builtAt": "2026-07-15T13:10:02.216Z",
   "nodeRequired": ">=22",
   "sourcePackage": {
     "file": "rah-desktop-bridge-0.2.1.zip",
     "version": "0.2.1",
-    "sha256": "88e0de3ebe5e508b73d79251825c9c6de8dc9e0e61620250f61a946c769b45e6",
-    "bytes": 118518,
-    "builtAt": "2026-07-15T12:59:47.219Z",
+    "sha256": "fed27a0210a920e1a01a6d24c4b44f6ae616ad376a6bee3b64c46875ff037ef5",
+    "bytes": 120161,
+    "builtAt": "2026-07-15T13:10:02.216Z",
     "nodeRequired": ">=22"
   },
   "windowsInstaller": null,
-  "updatedAt": "2026-07-15T12:59:47.302Z"
+  "updatedAt": "2026-07-15T13:10:02.320Z"
 }

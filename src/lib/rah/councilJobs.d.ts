@@ -43,3 +43,51 @@ export interface CouncilQueueRow {
 }
 export function deriveCouncilQueue(jobs: CouncilJobRow[], limit?: number): CouncilQueueRow[];
 export function seedCouncilJobsIfEmpty(existing: CouncilJobRow[]): CreatedJob | null;
+
+export interface CouncilPromptPacket {
+  projectName?: string;
+  orchestratorText?: string;
+  researcherText?: string;
+  designerText?: string;
+  builderText?: string;
+  testerText?: string;
+  governanceText?: string;
+}
+export function buildCouncilPrompt(packet: CouncilPromptPacket): string;
+
+export type AiSynthResult =
+  | { ok: true; findings: Record<"orchestrator" | "researcher" | "designer" | "builder" | "tester" | "memory_governance", string> }
+  | { ok: false; reason: string };
+export function parseAiSynthesisResponse(text: string): AiSynthResult;
+
+export function mergeAiSynthesis(
+  deterministic: ProjectReviewOutput,
+  aiFindings: Record<string, string>,
+): ProjectReviewOutput;
+
+export interface CouncilApprovalDescriptor {
+  title: string; reason: string; tools: string[]; dataShared: string[];
+  expectedResult: string; risk: "low" | "medium" | "high"; category: string; undo?: string;
+}
+export function councilApprovalDescriptor(job: CouncilJobRow): CouncilApprovalDescriptor;
+
+export function buildCouncilMemoryPayload(
+  job: CouncilJobRow,
+  synth: ProjectReviewOutput,
+  providerLabel: string,
+): {
+  projectId: string | null;
+  title: string;
+  content: string;
+  type: string;
+  tags: string[];
+  source: string;
+  pinned: boolean;
+  archived: boolean;
+};
+
+export function decideFinalization(opts: {
+  job: CouncilJobRow | null | undefined;
+  approval: { status: "pending" | "approved" | "rejected" | "cancelled" } | null | undefined;
+  memoryAlreadyExists?: boolean;
+}): "complete" | "reject" | "noop";

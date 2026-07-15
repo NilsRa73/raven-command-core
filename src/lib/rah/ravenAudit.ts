@@ -11,7 +11,8 @@ export type RavenAuditType =
   | "context_include"
   | "context_reset"
   | "route_decision"
-  | "health_check";
+  | "health_check"
+  | "council";
 
 export interface RavenAuditEntry {
   id: string;
