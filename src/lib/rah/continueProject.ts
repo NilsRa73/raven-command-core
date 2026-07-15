@@ -79,7 +79,7 @@ export function buildWorkPlan(input: {
   const recentDecisions = decisions
     .filter((d) => !d.archived)
     .slice(0, 3)
-    .map((d) => `Decision: ${d.title}`);
+    .map((d) => `Decision recorded (${new Date(d.updatedAt).toISOString().slice(0, 10)})`);
 
   return {
     projectId: project.id,
