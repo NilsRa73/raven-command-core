@@ -10,6 +10,10 @@ import {
 } from "@/lib/rah/councilJobs";
 import { listSessions, listCheckpoints, saveCheckpoint } from "@/lib/rah/sessions";
 import { toast } from "sonner";
+
+function emitCouncilChanged() {
+  try { window.dispatchEvent(new Event("rah:council-jobs-changed")); } catch { /* SSR */ }
+}
 import { Play, Pause, RotateCcw, XCircle, ShieldAlert, ChevronRight, Cpu, Sparkles } from "lucide-react";
 
 export const Route = createFileRoute("/council")({
@@ -80,6 +84,7 @@ function CouncilPage() {
         await db.put("councilJobs", seeded.job);
         for (const st of seeded.steps) await db.put("councilJobSteps", st);
         await reload();
+        emitCouncilChanged();
       }
     })().catch(console.error);
   }, [reload]);
@@ -102,14 +107,15 @@ function CouncilPage() {
     for (const s of newSteps) await db.put("councilJobSteps", s);
     setObjective(""); setCreating(false); setSelectedId(job.id);
     await reload();
+    emitCouncilChanged();
     toast.success("Council job created (draft).");
   }, [rah.activeProject, objective, reload]);
 
   const persistJob = useCallback(async (patch: CouncilJobRow) => {
-    const db = await getDB(); await db.put("councilJobs", patch); await reload();
+    const db = await getDB(); await db.put("councilJobs", patch); await reload(); emitCouncilChanged();
   }, [reload]);
   const persistStep = useCallback(async (patch: CouncilJobStepRow) => {
-    const db = await getDB(); await db.put("councilJobSteps", patch); await reload();
+    const db = await getDB(); await db.put("councilJobSteps", patch); await reload(); emitCouncilChanged();
   }, [reload]);
 
   /** Deterministic Project Review runner. Advances each step in order. */
@@ -183,6 +189,7 @@ function CouncilPage() {
     if (!selected || selected.status !== "awaiting_approval") return;
     const step = selectedSteps.find((s) => s.id === selected.currentStepId);
     if (!step) return;
+    if (step.status === "completed") return;
     const done = transitionStep(step, "completed", { output: "Approved by user; memory + checkpoint saved." });
     await persistStep(done);
     // Save a checkpoint so Continue Yesterday can resume the review outcome.
@@ -209,8 +216,9 @@ function CouncilPage() {
   }, [selected, persistJob]);
   const controlResume = useCallback(async () => {
     if (!selected || !canTransition(selected.status, "running")) return;
-    await persistJob(transitionJob(selected, "running", { reason: "Resumed by user." }));
-    await runJob(transitionJob(selected, "running"));
+    const resumed = transitionJob(selected, "running", { reason: "Resumed by user." });
+    await persistJob(resumed);
+    await runJob(resumed);
   }, [selected, persistJob, runJob]);
   const controlCancel = useCallback(async () => {
     if (!selected || !canTransition(selected.status, "cancelled")) return;
