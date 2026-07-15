@@ -486,8 +486,10 @@ function CouncilPage() {
                     </Button>
                   ) : null}
                   {selected.status === "awaiting_approval" && (
-                    <Button size="sm" onClick={approveGovernance}>
-                      <ShieldAlert className="h-4 w-4" /> Approve governance step
+                    <Button size="sm" asChild>
+                      <Link to="/approvals">
+                        <ShieldAlert className="h-4 w-4" /> Review in Approvals <ExternalLink className="h-3 w-3" />
+                      </Link>
                     </Button>
                   )}
                   {canTransition(selected.status, "blocked") && (
