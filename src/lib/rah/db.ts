@@ -16,6 +16,68 @@ export type { VoiceProfile, VoiceSessionRecord, VoiceTranscriptReview } from "./
 import type { VisionSession, EvidenceRecord } from "./visionSessions";
 export type { VisionSession, EvidenceRecord } from "./visionSessions";
 
+/** Work session (unified — mirrors localStorage adapter in sessions.js). */
+export interface WorkSessionRow {
+  id: string;
+  projectId: string | null;
+  title: string;
+  objective: string;
+  createdAt: number;
+  updatedAt: number;
+  status: "active" | "paused" | "completed";
+  lastRoute?: string;
+  lastCheckpointId?: string;
+}
+export interface CheckpointRow {
+  id: string;
+  sessionId: string;
+  projectId: string | null;
+  createdAt: number;
+  note: string;
+  resumeRoute?: string;
+  module?: string;
+  nextAction?: string;
+}
+
+/** AI Council Job (Project Review & orchestrated multi-role work). */
+export type CouncilJobStatus =
+  | "draft" | "queued" | "running" | "awaiting_approval"
+  | "testing" | "completed" | "blocked" | "failed" | "cancelled";
+export type CouncilRole =
+  | "orchestrator" | "researcher" | "designer"
+  | "builder" | "tester" | "memory_governance";
+export interface CouncilJobRow {
+  id: string;
+  projectId: string | null;
+  sessionId: string | null;
+  kind: "project_review" | "custom";
+  objective: string;
+  status: CouncilJobStatus;
+  createdAt: number;
+  updatedAt: number;
+  currentStepId: string | null;
+  reason?: string;
+  provider?: "deterministic" | "ai";
+  approvalIds?: string[];
+  resumeRoute?: string;
+}
+export interface CouncilJobStepRow {
+  id: string;
+  jobId: string;
+  role: CouncilRole;
+  order: number;
+  title: string;
+  status: CouncilJobStatus;
+  createdAt: number;
+  updatedAt: number;
+  dependencies: string[];
+  requiresApproval: boolean;
+  approvalId?: string;
+  output?: string;
+  reason?: string;
+  riskLevel?: "low" | "medium" | "high";
+}
+
 /** Screen Vision v0.2 — persisted AI result linked to a session/evidence. */
 export interface VisionResultRecord {
   id: string;
@@ -192,13 +254,17 @@ interface Schema extends DBSchema {
   visionEvidence: { key: string; value: EvidenceRecord; indexes: { projectId: string; sessionId: string; createdAt: number } };
   visionEvidenceVersions: { key: string; value: EvidenceRecord; indexes: { previousVersionId: string; createdAt: number } };
   visionResults: { key: string; value: VisionResultRecord; indexes: { projectId: string; sessionId: string; createdAt: number } };
+  sessions: { key: string; value: WorkSessionRow; indexes: { projectId: string; updatedAt: number; status: string } };
+  checkpoints: { key: string; value: CheckpointRow; indexes: { sessionId: string; projectId: string; createdAt: number } };
+  councilJobs: { key: string; value: CouncilJobRow; indexes: { projectId: string; sessionId: string; status: string; updatedAt: number } };
+  councilJobSteps: { key: string; value: CouncilJobStepRow; indexes: { jobId: string; order: number; status: string } };
 }
 
 let dbp: Promise<IDBPDatabase<Schema>> | null = null;
 export function getDB() {
   if (typeof indexedDB === "undefined") throw new Error("IndexedDB unavailable");
   if (!dbp) {
-    dbp = openDB<Schema>("rah-listen-key", 8, {
+    dbp = openDB<Schema>("rah-listen-key", 9, {
       upgrade(db, oldVersion) {
         if (oldVersion < 1) {
           const p = db.createObjectStore("projects", { keyPath: "id" });
@@ -282,6 +348,25 @@ export function getDB() {
           vRes.createIndex("projectId", "projectId");
           vRes.createIndex("sessionId", "sessionId");
           vRes.createIndex("createdAt", "createdAt");
+        }
+        if (oldVersion < 9) {
+          const ss = db.createObjectStore("sessions", { keyPath: "id" });
+          ss.createIndex("projectId", "projectId");
+          ss.createIndex("updatedAt", "updatedAt");
+          ss.createIndex("status", "status");
+          const cp = db.createObjectStore("checkpoints", { keyPath: "id" });
+          cp.createIndex("sessionId", "sessionId");
+          cp.createIndex("projectId", "projectId");
+          cp.createIndex("createdAt", "createdAt");
+          const cj = db.createObjectStore("councilJobs", { keyPath: "id" });
+          cj.createIndex("projectId", "projectId");
+          cj.createIndex("sessionId", "sessionId");
+          cj.createIndex("status", "status");
+          cj.createIndex("updatedAt", "updatedAt");
+          const cjs = db.createObjectStore("councilJobSteps", { keyPath: "id" });
+          cjs.createIndex("jobId", "jobId");
+          cjs.createIndex("order", "order");
+          cjs.createIndex("status", "status");
         }
       },
     });
@@ -398,7 +483,7 @@ export async function exportAll(): Promise<Blob> {
 
 export async function wipeAll() {
   const db = await getDB();
-  for (const store of ["projects", "commands", "memory", "files", "approvals", "prefs", "projectMemory", "workflows", "workflowRuns", "deviceHistory", "roadmapMilestones", "decisions", "decisionVersions", "focusSessions", "voiceProfiles", "voiceSessions", "voiceTranscripts", "visionSessions", "visionEvidence", "visionEvidenceVersions", "visionResults"] as const) {
+  for (const store of ["projects", "commands", "memory", "files", "approvals", "prefs", "projectMemory", "workflows", "workflowRuns", "deviceHistory", "roadmapMilestones", "decisions", "decisionVersions", "focusSessions", "voiceProfiles", "voiceSessions", "voiceTranscripts", "visionSessions", "visionEvidence", "visionEvidenceVersions", "visionResults", "sessions", "checkpoints", "councilJobs", "councilJobSteps"] as const) {
     await db.clear(store);
   }
 }
