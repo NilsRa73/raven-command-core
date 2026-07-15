@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { CommandBar } from "@/components/rah/CommandBar";
 import { FocusBlockCard } from "@/components/rah/FocusBlockCard";
+import { SystemCheckWidget } from "@/components/rah/SystemCheckWidget";
 import { useRah } from "@/lib/rah/context";
 import { RavenMark } from "@/components/rah/RavenMark";
 import {
