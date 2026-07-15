@@ -15,6 +15,7 @@ import { Route as VisionHistoryRouteImport } from './routes/vision-history'
 import { Route as VisionRouteImport } from './routes/vision'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as RethinkRouteImport } from './routes/rethink'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
@@ -62,6 +63,11 @@ const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RethinkRoute = RethinkRouteImport.update({
+  id: '/rethink',
+  path: '/rethink',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProjectsRoute = ProjectsRouteImport.update({
@@ -170,6 +176,7 @@ export interface FileRoutesByFullPath {
   '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
   '/projects': typeof ProjectsRouteWithChildren
+  '/rethink': typeof RethinkRoute
   '/settings': typeof SettingsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/vision': typeof VisionRoute
@@ -196,6 +203,7 @@ export interface FileRoutesByTo {
   '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
   '/projects': typeof ProjectsRouteWithChildren
+  '/rethink': typeof RethinkRoute
   '/settings': typeof SettingsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/vision': typeof VisionRoute
@@ -223,6 +231,7 @@ export interface FileRoutesById {
   '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
   '/projects': typeof ProjectsRouteWithChildren
+  '/rethink': typeof RethinkRoute
   '/settings': typeof SettingsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/vision': typeof VisionRoute
@@ -251,6 +260,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/privacy'
     | '/projects'
+    | '/rethink'
     | '/settings'
     | '/sitemap.xml'
     | '/vision'
@@ -277,6 +287,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/privacy'
     | '/projects'
+    | '/rethink'
     | '/settings'
     | '/sitemap.xml'
     | '/vision'
@@ -303,6 +314,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/privacy'
     | '/projects'
+    | '/rethink'
     | '/settings'
     | '/sitemap.xml'
     | '/vision'
@@ -330,6 +342,7 @@ export interface RootRouteChildren {
   OnboardingRoute: typeof OnboardingRoute
   PrivacyRoute: typeof PrivacyRoute
   ProjectsRoute: typeof ProjectsRouteWithChildren
+  RethinkRoute: typeof RethinkRoute
   SettingsRoute: typeof SettingsRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   VisionRoute: typeof VisionRoute
@@ -383,6 +396,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/rethink': {
+      id: '/rethink'
+      path: '/rethink'
+      fullPath: '/rethink'
+      preLoaderRoute: typeof RethinkRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/projects': {
@@ -541,6 +561,7 @@ const rootRouteChildren: RootRouteChildren = {
   OnboardingRoute: OnboardingRoute,
   PrivacyRoute: PrivacyRoute,
   ProjectsRoute: ProjectsRouteWithChildren,
+  RethinkRoute: RethinkRoute,
   SettingsRoute: SettingsRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   VisionRoute: VisionRoute,
