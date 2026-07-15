@@ -1,17 +1,19 @@
 // MUST match desktop-bridge/src/protocol.js
-export const BRIDGE_MIN_VERSION = "0.2.1";
+export const BRIDGE_MIN_VERSION = "0.2.2";
 
 // Feature flags the web client REQUIRES. If the bridge's /v1/health does
 // not advertise all of these, the UI must show a "download and restart"
 // message instead of silently claiming the local AI is offline.
-export const REQUIRED_BRIDGE_FEATURES = ["localAiProxy"] as const;
+// v0.2.2 adds textFileWrite for safe files.writeText / files.appendText.
+export const REQUIRED_BRIDGE_FEATURES = ["localAiProxy", "textFileWrite"] as const;
 export type RequiredBridgeFeature = (typeof REQUIRED_BRIDGE_FEATURES)[number];
 export const PROTOCOL_VERSION = "v1";
 export const DEFAULT_BRIDGE_PORT = 47824;
 
 export type CapabilityId =
   | "system.status" | "files.list" | "files.search" | "files.readText"
-  | "files.createFolder" | "files.rename" | "files.copy" | "files.move" | "files.recycle"
+  | "files.createFolder" | "files.writeText" | "files.appendText"
+  | "files.rename" | "files.copy" | "files.move" | "files.recycle"
   | "launch.explorer" | "launch.url" | "launch.program" | "screenshot.capture";
 
 export interface CapabilitySpec { risk: "low" | "medium" | "high"; requiresApproval: boolean; category: string; disabled?: boolean; }
