@@ -1,0 +1,366 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { useRah } from "@/lib/rah/context";
+import { getDB, type CouncilJobRow, type CouncilJobStepRow } from "@/lib/rah/db";
+import {
+  createJob, transitionJob, transitionStep, canTransition,
+  synthesizeProjectReview, seedCouncilJobsIfEmpty,
+  COUNCIL_ROLES,
+} from "@/lib/rah/councilJobs";
+import { listSessions, listCheckpoints, saveCheckpoint } from "@/lib/rah/sessions";
+import { toast } from "sonner";
+import { Play, Pause, RotateCcw, XCircle, ShieldAlert, ChevronRight, Cpu, Sparkles } from "lucide-react";
+
+export const Route = createFileRoute("/council")({
+  head: () => ({
+    meta: [
+      { title: "AI Council — Raven Command" },
+      { name: "description", content: "Orchestrated multi-role AI jobs: Project Review, planning, and governance." },
+    ],
+  }),
+  component: CouncilPage,
+});
+
+const ROLE_LABEL: Record<string, string> = {
+  orchestrator: "Orchestrator / Master Brain",
+  researcher: "Researcher",
+  designer: "Designer",
+  builder: "Builder",
+  tester: "Tester",
+  memory_governance: "Memory & Governance",
+};
+
+function StatusPill({ s }: { s: string }) {
+  const map: Record<string, string> = {
+    draft: "border-border/60",
+    queued: "border-border/60 text-muted-foreground",
+    running: "border-primary/40 bg-primary/10 text-primary",
+    awaiting_approval: "border-yellow-500/40 bg-yellow-500/10 text-yellow-400",
+    testing: "border-blue-500/40 bg-blue-500/10 text-blue-300",
+    completed: "border-primary/30 bg-primary/10 text-primary",
+    blocked: "border-orange-500/40 bg-orange-500/10 text-orange-300",
+    failed: "border-destructive/40 bg-destructive/10 text-destructive",
+    cancelled: "border-border/60 text-muted-foreground",
+  };
+  return (
+    <span className={"inline-flex rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-widest " + (map[s] ?? "border-border/60")}>
+      {s.replace(/_/g, " ")}
+    </span>
+  );
+}
+
+function CouncilPage() {
+  const rah = useRah();
+  const [jobs, setJobs] = useState<CouncilJobRow[]>([]);
+  const [steps, setSteps] = useState<CouncilJobStepRow[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [objective, setObjective] = useState("");
+
+  const reload = useCallback(async () => {
+    try {
+      const db = await getDB();
+      const [j, s] = await Promise.all([db.getAll("councilJobs"), db.getAll("councilJobSteps")]);
+      j.sort((a, b) => b.updatedAt - a.updatedAt);
+      s.sort((a, b) => a.order - b.order);
+      setJobs(j); setSteps(s);
+    } catch (e) { console.error(e); }
+  }, []);
+
+  useEffect(() => { void reload(); }, [reload]);
+
+  // First-run seed (never overwrites user data).
+  useEffect(() => {
+    (async () => {
+      const db = await getDB();
+      const existing = await db.getAll("councilJobs");
+      const seeded = seedCouncilJobsIfEmpty(existing);
+      if (seeded) {
+        await db.put("councilJobs", seeded.job);
+        for (const st of seeded.steps) await db.put("councilJobSteps", st);
+        await reload();
+      }
+    })().catch(console.error);
+  }, [reload]);
+
+  const selected = useMemo(() => jobs.find((j) => j.id === selectedId) ?? jobs[0] ?? null, [jobs, selectedId]);
+  const selectedSteps = useMemo(
+    () => steps.filter((s) => s.jobId === selected?.id).sort((a, b) => a.order - b.order),
+    [steps, selected?.id],
+  );
+
+  const onCreate = useCallback(async () => {
+    const { job, steps: newSteps } = createJob({
+      projectId: rah.activeProject?.id ?? null,
+      sessionId: null,
+      objective: objective.trim() || `Project Review — ${rah.activeProject?.name ?? "workspace"}`,
+      provider: "deterministic",
+    });
+    const db = await getDB();
+    await db.put("councilJobs", job);
+    for (const s of newSteps) await db.put("councilJobSteps", s);
+    setObjective(""); setCreating(false); setSelectedId(job.id);
+    await reload();
+    toast.success("Council job created (draft).");
+  }, [rah.activeProject, objective, reload]);
+
+  const persistJob = useCallback(async (patch: CouncilJobRow) => {
+    const db = await getDB(); await db.put("councilJobs", patch); await reload();
+  }, [reload]);
+  const persistStep = useCallback(async (patch: CouncilJobStepRow) => {
+    const db = await getDB(); await db.put("councilJobSteps", patch); await reload();
+  }, [reload]);
+
+  /** Deterministic Project Review runner. Advances each step in order. */
+  const runJob = useCallback(async (job: CouncilJobRow) => {
+    try {
+      let currentJob = job;
+      if (currentJob.status === "draft") {
+        currentJob = transitionJob(currentJob, "queued");
+        await persistJob(currentJob);
+      }
+      if (currentJob.status === "queued") {
+        currentJob = transitionJob(currentJob, "running");
+        await persistJob(currentJob);
+      }
+      // Build local context packet.
+      const sessions = listSessions();
+      const checkpoints = listCheckpoints();
+      const activeProject = rah.projects.find((p) => p.id === currentJob.projectId) ?? rah.activeProject ?? null;
+      const memoryRows = rah.projectMemory.filter((m) => !m.archived && (!currentJob.projectId || m.projectId === currentJob.projectId || m.projectId === null));
+      const commandRows = rah.commands.filter((c) => !currentJob.projectId || c.projectId === currentJob.projectId);
+      const decisions = rah.decisions.filter((d) => !currentJob.projectId || d.projectId === currentJob.projectId);
+      const roadmap = rah.roadmapMilestones.filter((r) => !currentJob.projectId || r.projectId === currentJob.projectId);
+      const synth = synthesizeProjectReview({
+        project: activeProject ? { name: activeProject.name, description: activeProject.description, status: activeProject.status, currentTask: activeProject.currentTask, nextTask: activeProject.nextTask } : null,
+        sessions, checkpoints, memory: memoryRows, decisions, commands: commandRows, roadmap,
+      });
+      const orderedSteps = steps.filter((s) => s.jobId === currentJob.status && false).length === 0
+        ? steps.filter((s) => s.jobId === currentJob.id).sort((a, b) => a.order - b.order)
+        : [];
+      for (const st of orderedSteps) {
+        if (st.status === "completed") continue;
+        // Governance step requires approval.
+        if (st.requiresApproval) {
+          const running = transitionStep(st, "running");
+          await persistStep(running);
+          const awaiting = transitionStep(running, "awaiting_approval");
+          await persistStep(awaiting);
+          currentJob = transitionJob(currentJob, "awaiting_approval", { currentStepId: st.id });
+          await persistJob(currentJob);
+          toast.info("Governance step requires approval. Approve below to complete the job.");
+          return;
+        }
+        const running = transitionStep(st, "running");
+        await persistStep(running);
+        const output = synth.outputByStepOrder[st.order] ?? "(no output)";
+        const done = transitionStep(running, "completed", { output });
+        await persistStep(done);
+      }
+      currentJob = transitionJob(currentJob, "completed", { currentStepId: null, reason: "All steps completed (deterministic synthesis)." });
+      await persistJob(currentJob);
+      toast.success("Council job completed.");
+    } catch (e) {
+      toast.error("Council run failed: " + (e instanceof Error ? e.message : String(e)));
+    }
+  }, [rah.activeProject, rah.projects, rah.projectMemory, rah.commands, rah.decisions, rah.roadmapMilestones, steps, persistJob, persistStep]);
+
+  const approveGovernance = useCallback(async () => {
+    if (!selected || selected.status !== "awaiting_approval") return;
+    const step = selectedSteps.find((s) => s.id === selected.currentStepId);
+    if (!step) return;
+    const done = transitionStep(step, "completed", { output: "Approved by user; memory + checkpoint saved." });
+    await persistStep(done);
+    // Save a checkpoint so Continue Yesterday can resume the review outcome.
+    try {
+      const activeSession = listSessions().find((s) => s.status === "active");
+      if (activeSession) {
+        saveCheckpoint({
+          sessionId: activeSession.id,
+          projectId: activeSession.projectId,
+          note: `Council Project Review completed: ${selected.objective}`,
+          resumeRoute: "/council",
+          nextAction: "Review Builder task list from Council job",
+        });
+      }
+    } catch { /* non-fatal */ }
+    const next = transitionJob(selected, "completed", { currentStepId: null, reason: "User approved governance step." });
+    await persistJob(next);
+    toast.success("Council job completed and checkpoint saved.");
+  }, [selected, selectedSteps, persistJob, persistStep]);
+
+  const controlPause = useCallback(async () => {
+    if (!selected || !canTransition(selected.status, "blocked")) return;
+    await persistJob(transitionJob(selected, "blocked", { reason: "Paused by user." }));
+  }, [selected, persistJob]);
+  const controlResume = useCallback(async () => {
+    if (!selected || !canTransition(selected.status, "running")) return;
+    await persistJob(transitionJob(selected, "running", { reason: "Resumed by user." }));
+    await runJob(transitionJob(selected, "running"));
+  }, [selected, persistJob, runJob]);
+  const controlCancel = useCallback(async () => {
+    if (!selected || !canTransition(selected.status, "cancelled")) return;
+    await persistJob(transitionJob(selected, "cancelled", { reason: "Cancelled by user." }));
+  }, [selected, persistJob]);
+  const controlRetry = useCallback(async () => {
+    if (!selected || !canTransition(selected.status, "queued")) return;
+    await persistJob(transitionJob(selected, "queued", { reason: "Retried by user." }));
+    // Reset failed steps.
+    for (const st of selectedSteps) {
+      if (st.status === "failed" || st.status === "blocked") {
+        await persistStep({ ...st, status: "draft", output: undefined, reason: undefined, updatedAt: Date.now() });
+      }
+    }
+  }, [selected, selectedSteps, persistJob, persistStep]);
+
+  return (
+    <div className="space-y-6">
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="display text-3xl gold-text">AI Council</h1>
+          <p className="text-muted-foreground">
+            Orchestrated multi-role jobs over your local Raven data. Deterministic today; AI-assisted synthesis when a provider is available.
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button onClick={() => setCreating((c) => !c)}>
+            <Sparkles className="h-4 w-4" /> New Project Review
+          </Button>
+        </div>
+      </header>
+
+      {creating && (
+        <section className="glass-panel gold-border p-4 space-y-2">
+          <label className="text-sm font-medium">Objective</label>
+          <input
+            className="w-full rounded border border-border/60 bg-background px-3 py-2 text-sm"
+            value={objective}
+            onChange={(e) => setObjective(e.target.value)}
+            placeholder={`Project Review — ${rah.activeProject?.name ?? "workspace"}`}
+            aria-label="Council job objective"
+          />
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setCreating(false)}>Cancel</Button>
+            <Button onClick={onCreate}>Create Job</Button>
+          </div>
+        </section>
+      )}
+
+      <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
+        <aside className="glass-panel p-3 space-y-2">
+          <h2 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground">Jobs</h2>
+          {jobs.length === 0 && <p className="text-sm text-muted-foreground">No jobs yet.</p>}
+          <ul className="space-y-1">
+            {jobs.map((j) => (
+              <li key={j.id}>
+                <button
+                  className={"w-full rounded border px-2 py-2 text-left text-sm " + (selected?.id === j.id ? "border-primary/60 bg-primary/10" : "border-border/60 hover:bg-accent")}
+                  onClick={() => setSelectedId(j.id)}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="truncate">{j.objective}</span>
+                    <StatusPill s={j.status} />
+                  </div>
+                  <div className="text-[11px] text-muted-foreground mt-0.5">
+                    {new Date(j.updatedAt).toLocaleString()}
+                  </div>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </aside>
+
+        <section className="glass-panel gold-border p-4 space-y-4">
+          {!selected ? (
+            <p className="text-sm text-muted-foreground">Select or create a job.</p>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-xl font-semibold">{selected.objective}</h2>
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <StatusPill s={selected.status} />
+                    <span>· kind: {selected.kind}</span>
+                    <span>· provider: {selected.provider}</span>
+                    {selected.projectId && <span>· project bound</span>}
+                  </div>
+                  {selected.reason && (
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      <ShieldAlert className="inline h-3 w-3" /> {selected.reason}
+                    </div>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {selected.status === "draft" || selected.status === "queued" || selected.status === "running" ? (
+                    <Button size="sm" onClick={() => runJob(selected)}>
+                      <Play className="h-4 w-4" /> Run
+                    </Button>
+                  ) : null}
+                  {selected.status === "awaiting_approval" && (
+                    <Button size="sm" onClick={approveGovernance}>
+                      <ShieldAlert className="h-4 w-4" /> Approve governance step
+                    </Button>
+                  )}
+                  {canTransition(selected.status, "blocked") && (
+                    <Button size="sm" variant="outline" onClick={controlPause}>
+                      <Pause className="h-4 w-4" /> Pause
+                    </Button>
+                  )}
+                  {canTransition(selected.status, "running") && selected.status !== "draft" && (
+                    <Button size="sm" variant="outline" onClick={controlResume}>
+                      <Play className="h-4 w-4" /> Resume
+                    </Button>
+                  )}
+                  {canTransition(selected.status, "queued") && (
+                    <Button size="sm" variant="outline" onClick={controlRetry}>
+                      <RotateCcw className="h-4 w-4" /> Retry
+                    </Button>
+                  )}
+                  {canTransition(selected.status, "cancelled") && (
+                    <Button size="sm" variant="ghost" onClick={controlCancel}>
+                      <XCircle className="h-4 w-4" /> Cancel
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              <ol className="space-y-2">
+                {selectedSteps.map((s) => (
+                  <li key={s.id} className="rounded border border-border/60 p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                          <span className="text-xs uppercase tracking-widest text-muted-foreground">{ROLE_LABEL[s.role] ?? s.role}</span>
+                          <StatusPill s={s.status} />
+                          {s.requiresApproval && (
+                            <span className="rounded border border-yellow-500/40 bg-yellow-500/10 px-1.5 py-0 text-[10px] uppercase tracking-widest text-yellow-400">approval</span>
+                          )}
+                        </div>
+                        <div className="font-medium">{s.order}. {s.title}</div>
+                        {s.dependencies.length > 0 && (
+                          <div className="text-[11px] text-muted-foreground mt-0.5">
+                            depends on step{s.dependencies.length > 1 ? "s" : ""} above
+                          </div>
+                        )}
+                        {s.output && (
+                          <pre className="mt-2 whitespace-pre-wrap rounded bg-background/60 p-2 text-xs">{s.output}</pre>
+                        )}
+                        {s.reason && <div className="mt-1 text-xs text-destructive">{s.reason}</div>}
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+              <div className="text-[10px] text-muted-foreground flex items-center gap-1">
+                <Cpu className="h-3 w-3" />
+                Roles: {COUNCIL_ROLES.join(" · ")}
+              </div>
+            </>
+          )}
+        </section>
+      </div>
+    </div>
+  );
+}
