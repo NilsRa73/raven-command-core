@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Mic, MonitorPlay, Users, FolderKanban, Workflow, FileText,
   History as HistoryIcon, Brain, Cable, ShieldCheck, Settings as SettingsIcon,
   Menu, X, StopCircle, ClipboardCheck, MonitorSmartphone, BookMarked, RefreshCw,
-  Sparkles, AppWindow, ListChecks, ScrollText,
+  Sparkles, AppWindow, ListChecks, ScrollText, HeartPulse,
 } from "lucide-react";
 import { RavenMark } from "./RavenMark";
 import { useRah } from "@/lib/rah/context";
@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 
 const nav = [
   { to: "/", label: "Raven Home", icon: LayoutDashboard },
+  { to: "/system-check", label: "System Check", icon: HeartPulse },
   { to: "/applications", label: "Applications", icon: AppWindow },
   { to: "/tasks", label: "Tasks", icon: ListChecks },
   { to: "/rethink", label: "Raven Re-think", icon: Sparkles },
