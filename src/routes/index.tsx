@@ -251,6 +251,7 @@ function CommandCenter() {
 
       {/* ── Current mission summary ────────────────────────────────── */}
       <section className="glass-panel p-4" aria-label="Current mission">
+        <div className="mb-3"><SystemCheckWidget /></div>
         <div className="grid gap-2 md:grid-cols-3">
           <KeyVal label="Next action" value={mission.nextAction?.title ?? "—"} />
           <KeyVal
