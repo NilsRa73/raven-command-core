@@ -5,6 +5,7 @@ import {
   History as HistoryIcon, Brain, Cable, ShieldCheck, Settings as SettingsIcon,
   Menu, X, StopCircle, ClipboardCheck, MonitorSmartphone, BookMarked, RefreshCw,
   Sparkles, AppWindow, ListChecks, ScrollText, HeartPulse,
+  Landmark,
 } from "lucide-react";
 import { RavenMark } from "./RavenMark";
 import { useRah } from "@/lib/rah/context";
@@ -21,6 +22,7 @@ const nav = [
   { to: "/vision", label: "Screen Vision", icon: MonitorPlay },
   { to: "/vision-history", label: "Vision History", icon: HistoryIcon },
   { to: "/agents", label: "Agent Team", icon: Users },
+  { to: "/council", label: "AI Council", icon: Landmark },
   { to: "/projects", label: "Projects", icon: FolderKanban },
   { to: "/devices", label: "Device Center", icon: MonitorSmartphone },
   { to: "/native", label: "Native Companion", icon: RefreshCw },
