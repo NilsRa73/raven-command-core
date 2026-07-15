@@ -132,8 +132,13 @@ function SystemCheckPage() {
       log("Bridge prepared job " + prep.job.id + " · approval required.");
       const approval = await requestApproval({
         title: "System Check safe test — create folder " + folderName,
-        details: "Creates a temporary folder in Documents, verifies it, and recycles it. Nothing else is touched.",
-        risk: "medium", requiresApproval: true, tokens: 0,
+        reason: "Creates a temporary folder in Documents, verifies it, and recycles it. Nothing else is touched.",
+        tools: ["files.createFolder"],
+        dataShared: [targetPath],
+        expectedResult: "New empty folder " + folderName + " under Documents.",
+        risk: "medium",
+        category: "files",
+        undo: "Recycle the folder from the Recycle Bin.",
       });
       log("Awaiting your approval in Approvals: " + approval.id);
       log("Once approved, re-run this test to execute the creation and recycle steps.");
@@ -164,8 +169,13 @@ function SystemCheckPage() {
       const recyclePrep = await bridgePrepare("files.recycle", { path: targetPath });
       const recycleAppr = await requestApproval({
         title: "System Check cleanup — recycle " + folderName,
-        details: "Recycles the temporary folder created by the safe test.",
-        risk: "medium", requiresApproval: true, tokens: 0,
+        reason: "Recycles the temporary folder created by the safe test.",
+        tools: ["files.recycle"],
+        dataShared: [targetPath],
+        expectedResult: "Folder moved to Recycle Bin.",
+        risk: "medium",
+        category: "files",
+        undo: "Restore from the Recycle Bin.",
       });
       log("Awaiting cleanup approval in Approvals: " + recycleAppr.id);
       toast.success("Cleanup staged. Approve in Approvals to finish.");
