@@ -7,7 +7,6 @@ import { Card } from "@/components/ui/card";
 import { Markdown } from "@/components/rah/Markdown";
 import { RETHINK_MODES, rethink, loadRethinkHistory, saveRethinkHistory, type RethinkMode, type RethinkHistoryEntry } from "@/lib/rah/rethink";
 import { useRah } from "@/lib/rah/context";
-import { addProjectMemory } from "@/lib/rah/projectMemory";
 
 export const Route = createFileRoute("/rethink")({
   head: () => ({ meta: [
@@ -53,12 +52,12 @@ function RethinkPage() {
   const saveToMemory = async () => {
     if (!result) return;
     if (!rah.activeProject) { toast.error("Set an active project first."); return; }
-    await addProjectMemory({
+    await rah.createProjectMemory({
       projectId: rah.activeProject.id,
       title: `Re-think · ${result.label}`,
       content: result.markdown,
       type: "note", tags: ["rethink", result.mode],
-      pinned: false, source: "user",
+      pinned: false, archived: false, source: "user",
     });
     toast.success("Saved to Project Memory.");
   };
@@ -115,7 +114,7 @@ function RethinkPage() {
             </div>
           </div>
           <div className="prose prose-invert max-w-none text-sm">
-            <Markdown text={result.markdown} />
+            <Markdown>{result.markdown}</Markdown>
           </div>
         </Card>
       )}
