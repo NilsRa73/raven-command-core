@@ -62,10 +62,10 @@ function assertWriteSafe(abs, content) {
   if (content.includes("\u0000")) throw new Error("Null byte in content is not allowed");
   const bytes = Buffer.byteLength(content, "utf8");
   if (bytes > WRITE_TEXT_MAX_BYTES) throw new Error(`Content too large (${bytes} bytes > ${WRITE_TEXT_MAX_BYTES})`);
-  if (!isReadableTextFile(abs)) throw new Error("Extension not in text-file allowlist");
   const base = path.basename(abs).toLowerCase();
   if (base.startsWith(".") ) throw new Error("Hidden dotfiles are not allowed");
   if (BLOCKED_TEXT_BASENAMES.includes(base)) throw new Error("Basename is blocked (credential/system file)");
+  if (!isReadableTextFile(abs)) throw new Error("Extension not in text-file allowlist");
   return bytes;
 }
 
