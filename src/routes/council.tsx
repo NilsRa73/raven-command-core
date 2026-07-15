@@ -189,6 +189,7 @@ function CouncilPage() {
     if (!selected || selected.status !== "awaiting_approval") return;
     const step = selectedSteps.find((s) => s.id === selected.currentStepId);
     if (!step) return;
+    if (step.status === "completed") return;
     const done = transitionStep(step, "completed", { output: "Approved by user; memory + checkpoint saved." });
     await persistStep(done);
     // Save a checkpoint so Continue Yesterday can resume the review outcome.
@@ -215,8 +216,9 @@ function CouncilPage() {
   }, [selected, persistJob]);
   const controlResume = useCallback(async () => {
     if (!selected || !canTransition(selected.status, "running")) return;
-    await persistJob(transitionJob(selected, "running", { reason: "Resumed by user." }));
-    await runJob(transitionJob(selected, "running"));
+    const resumed = transitionJob(selected, "running", { reason: "Resumed by user." });
+    await persistJob(resumed);
+    await runJob(resumed);
   }, [selected, persistJob, runJob]);
   const controlCancel = useCallback(async () => {
     if (!selected || !canTransition(selected.status, "cancelled")) return;
