@@ -13,8 +13,10 @@ import { Route as VoiceProfilesRouteImport } from './routes/voice-profiles'
 import { Route as VoiceRouteImport } from './routes/voice'
 import { Route as VisionHistoryRouteImport } from './routes/vision-history'
 import { Route as VisionRouteImport } from './routes/vision'
+import { Route as TasksRouteImport } from './routes/tasks'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as RethinkRouteImport } from './routes/rethink'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
@@ -26,7 +28,9 @@ import { Route as DevicesRouteImport } from './routes/devices'
 import { Route as ConnectionsRouteImport } from './routes/connections'
 import { Route as ChronicleRouteImport } from './routes/chronicle'
 import { Route as AutomationsRouteImport } from './routes/automations'
+import { Route as AuditRouteImport } from './routes/audit'
 import { Route as ApprovalsRouteImport } from './routes/approvals'
+import { Route as ApplicationsRouteImport } from './routes/applications'
 import { Route as AgentsRouteImport } from './routes/agents'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ProjectsIdRouteImport } from './routes/projects.$id'
@@ -54,6 +58,11 @@ const VisionRoute = VisionRouteImport.update({
   path: '/vision',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TasksRoute = TasksRouteImport.update({
+  id: '/tasks',
+  path: '/tasks',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
   path: '/sitemap.xml',
@@ -62,6 +71,11 @@ const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RethinkRoute = RethinkRouteImport.update({
+  id: '/rethink',
+  path: '/rethink',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProjectsRoute = ProjectsRouteImport.update({
@@ -119,9 +133,19 @@ const AutomationsRoute = AutomationsRouteImport.update({
   path: '/automations',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuditRoute = AuditRouteImport.update({
+  id: '/audit',
+  path: '/audit',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApprovalsRoute = ApprovalsRouteImport.update({
   id: '/approvals',
   path: '/approvals',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApplicationsRoute = ApplicationsRouteImport.update({
+  id: '/applications',
+  path: '/applications',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AgentsRoute = AgentsRouteImport.update({
@@ -158,7 +182,9 @@ const ApiRahChatRoute = ApiRahChatRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/agents': typeof AgentsRoute
+  '/applications': typeof ApplicationsRoute
   '/approvals': typeof ApprovalsRoute
+  '/audit': typeof AuditRoute
   '/automations': typeof AutomationsRoute
   '/chronicle': typeof ChronicleRoute
   '/connections': typeof ConnectionsRoute
@@ -170,8 +196,10 @@ export interface FileRoutesByFullPath {
   '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
   '/projects': typeof ProjectsRouteWithChildren
+  '/rethink': typeof RethinkRoute
   '/settings': typeof SettingsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/tasks': typeof TasksRoute
   '/vision': typeof VisionRoute
   '/vision-history': typeof VisionHistoryRoute
   '/voice': typeof VoiceRoute
@@ -184,7 +212,9 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/agents': typeof AgentsRoute
+  '/applications': typeof ApplicationsRoute
   '/approvals': typeof ApprovalsRoute
+  '/audit': typeof AuditRoute
   '/automations': typeof AutomationsRoute
   '/chronicle': typeof ChronicleRoute
   '/connections': typeof ConnectionsRoute
@@ -196,8 +226,10 @@ export interface FileRoutesByTo {
   '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
   '/projects': typeof ProjectsRouteWithChildren
+  '/rethink': typeof RethinkRoute
   '/settings': typeof SettingsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/tasks': typeof TasksRoute
   '/vision': typeof VisionRoute
   '/vision-history': typeof VisionHistoryRoute
   '/voice': typeof VoiceRoute
@@ -211,7 +243,9 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/agents': typeof AgentsRoute
+  '/applications': typeof ApplicationsRoute
   '/approvals': typeof ApprovalsRoute
+  '/audit': typeof AuditRoute
   '/automations': typeof AutomationsRoute
   '/chronicle': typeof ChronicleRoute
   '/connections': typeof ConnectionsRoute
@@ -223,8 +257,10 @@ export interface FileRoutesById {
   '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
   '/projects': typeof ProjectsRouteWithChildren
+  '/rethink': typeof RethinkRoute
   '/settings': typeof SettingsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/tasks': typeof TasksRoute
   '/vision': typeof VisionRoute
   '/vision-history': typeof VisionHistoryRoute
   '/voice': typeof VoiceRoute
@@ -239,7 +275,9 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/agents'
+    | '/applications'
     | '/approvals'
+    | '/audit'
     | '/automations'
     | '/chronicle'
     | '/connections'
@@ -251,8 +289,10 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/privacy'
     | '/projects'
+    | '/rethink'
     | '/settings'
     | '/sitemap.xml'
+    | '/tasks'
     | '/vision'
     | '/vision-history'
     | '/voice'
@@ -265,7 +305,9 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/agents'
+    | '/applications'
     | '/approvals'
+    | '/audit'
     | '/automations'
     | '/chronicle'
     | '/connections'
@@ -277,8 +319,10 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/privacy'
     | '/projects'
+    | '/rethink'
     | '/settings'
     | '/sitemap.xml'
+    | '/tasks'
     | '/vision'
     | '/vision-history'
     | '/voice'
@@ -291,7 +335,9 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/agents'
+    | '/applications'
     | '/approvals'
+    | '/audit'
     | '/automations'
     | '/chronicle'
     | '/connections'
@@ -303,8 +349,10 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/privacy'
     | '/projects'
+    | '/rethink'
     | '/settings'
     | '/sitemap.xml'
+    | '/tasks'
     | '/vision'
     | '/vision-history'
     | '/voice'
@@ -318,7 +366,9 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AgentsRoute: typeof AgentsRoute
+  ApplicationsRoute: typeof ApplicationsRoute
   ApprovalsRoute: typeof ApprovalsRoute
+  AuditRoute: typeof AuditRoute
   AutomationsRoute: typeof AutomationsRoute
   ChronicleRoute: typeof ChronicleRoute
   ConnectionsRoute: typeof ConnectionsRoute
@@ -330,8 +380,10 @@ export interface RootRouteChildren {
   OnboardingRoute: typeof OnboardingRoute
   PrivacyRoute: typeof PrivacyRoute
   ProjectsRoute: typeof ProjectsRouteWithChildren
+  RethinkRoute: typeof RethinkRoute
   SettingsRoute: typeof SettingsRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
+  TasksRoute: typeof TasksRoute
   VisionRoute: typeof VisionRoute
   VisionHistoryRoute: typeof VisionHistoryRoute
   VoiceRoute: typeof VoiceRoute
@@ -371,6 +423,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof VisionRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/tasks': {
+      id: '/tasks'
+      path: '/tasks'
+      fullPath: '/tasks'
+      preLoaderRoute: typeof TasksRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/sitemap.xml': {
       id: '/sitemap.xml'
       path: '/sitemap.xml'
@@ -383,6 +442,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/rethink': {
+      id: '/rethink'
+      path: '/rethink'
+      fullPath: '/rethink'
+      preLoaderRoute: typeof RethinkRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/projects': {
@@ -462,11 +528,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AutomationsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/audit': {
+      id: '/audit'
+      path: '/audit'
+      fullPath: '/audit'
+      preLoaderRoute: typeof AuditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/approvals': {
       id: '/approvals'
       path: '/approvals'
       fullPath: '/approvals'
       preLoaderRoute: typeof ApprovalsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/applications': {
+      id: '/applications'
+      path: '/applications'
+      fullPath: '/applications'
+      preLoaderRoute: typeof ApplicationsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/agents': {
@@ -529,7 +609,9 @@ const ProjectsRouteWithChildren = ProjectsRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AgentsRoute: AgentsRoute,
+  ApplicationsRoute: ApplicationsRoute,
   ApprovalsRoute: ApprovalsRoute,
+  AuditRoute: AuditRoute,
   AutomationsRoute: AutomationsRoute,
   ChronicleRoute: ChronicleRoute,
   ConnectionsRoute: ConnectionsRoute,
@@ -541,8 +623,10 @@ const rootRouteChildren: RootRouteChildren = {
   OnboardingRoute: OnboardingRoute,
   PrivacyRoute: PrivacyRoute,
   ProjectsRoute: ProjectsRouteWithChildren,
+  RethinkRoute: RethinkRoute,
   SettingsRoute: SettingsRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
+  TasksRoute: TasksRoute,
   VisionRoute: VisionRoute,
   VisionHistoryRoute: VisionHistoryRoute,
   VoiceRoute: VoiceRoute,

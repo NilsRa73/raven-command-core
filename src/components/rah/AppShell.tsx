@@ -4,6 +4,7 @@ import {
   LayoutDashboard, Mic, MonitorPlay, Users, FolderKanban, Workflow, FileText,
   History as HistoryIcon, Brain, Cable, ShieldCheck, Settings as SettingsIcon,
   Menu, X, StopCircle, ClipboardCheck, MonitorSmartphone, BookMarked, RefreshCw,
+  Sparkles, AppWindow, ListChecks, ScrollText,
 } from "lucide-react";
 import { RavenMark } from "./RavenMark";
 import { useRah } from "@/lib/rah/context";
@@ -11,6 +12,9 @@ import { Button } from "@/components/ui/button";
 
 const nav = [
   { to: "/", label: "Raven Home", icon: LayoutDashboard },
+  { to: "/applications", label: "Applications", icon: AppWindow },
+  { to: "/tasks", label: "Tasks", icon: ListChecks },
+  { to: "/rethink", label: "Raven Re-think", icon: Sparkles },
   { to: "/voice", label: "Voice Assistant", icon: Mic },
   { to: "/voice-profiles", label: "Voice Profiles", icon: Mic },
   { to: "/vision", label: "Screen Vision", icon: MonitorPlay },
@@ -22,6 +26,7 @@ const nav = [
   { to: "/automations", label: "Automations", icon: Workflow },
   { to: "/files", label: "Files & Knowledge", icon: FileText },
   { to: "/history", label: "Command History", icon: HistoryIcon },
+  { to: "/audit", label: "Audit Log", icon: ScrollText },
   { to: "/memory", label: "Memory", icon: Brain },
   { to: "/chronicle", label: "Chronicle", icon: BookMarked },
   { to: "/approvals", label: "Approvals", icon: ClipboardCheck },
