@@ -130,9 +130,18 @@ function CouncilPage() {
       const activeProject = rah.projects.find((p) => p.id === currentJob.projectId) ?? rah.activeProject ?? null;
       const memoryRows = rah.projectMemory.filter((m) => !m.archived && (!currentJob.projectId || m.projectId === currentJob.projectId || m.projectId === null));
       const commandRows = rah.commands.filter((c) => !currentJob.projectId || c.projectId === currentJob.projectId);
-      const decisions = rah.decisions
-        .filter((d) => !currentJob.projectId || d.projectId === currentJob.projectId)
-        .map((d) => ({ id: d.id, title: d.title }));
+      const projectDecisions = new Set(
+        rah.decisions
+          .filter((d) => !currentJob.projectId || d.projectId === currentJob.projectId)
+          .map((d) => d.id),
+      );
+      const latestByDecision = new Map<string, { id: string; title: string }>();
+      for (const v of rah.decisionVersions) {
+        if (!projectDecisions.has(v.decisionId)) continue;
+        const existing = latestByDecision.get(v.decisionId);
+        if (!existing) latestByDecision.set(v.decisionId, { id: v.decisionId, title: v.title });
+      }
+      const decisions = Array.from(latestByDecision.values());
       const roadmap = rah.roadmapMilestones
         .filter((r) => !currentJob.projectId || r.projectId === currentJob.projectId)
         .map((r) => ({ id: r.id, title: r.title, status: r.status }));
