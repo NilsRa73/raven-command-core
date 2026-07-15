@@ -130,8 +130,12 @@ function CouncilPage() {
       const activeProject = rah.projects.find((p) => p.id === currentJob.projectId) ?? rah.activeProject ?? null;
       const memoryRows = rah.projectMemory.filter((m) => !m.archived && (!currentJob.projectId || m.projectId === currentJob.projectId || m.projectId === null));
       const commandRows = rah.commands.filter((c) => !currentJob.projectId || c.projectId === currentJob.projectId);
-      const decisions = rah.decisions.filter((d) => !currentJob.projectId || d.projectId === currentJob.projectId);
-      const roadmap = rah.roadmapMilestones.filter((r) => !currentJob.projectId || r.projectId === currentJob.projectId);
+      const decisions = rah.decisions
+        .filter((d) => !currentJob.projectId || d.projectId === currentJob.projectId)
+        .map((d) => ({ id: d.id, title: d.title }));
+      const roadmap = rah.roadmapMilestones
+        .filter((r) => !currentJob.projectId || r.projectId === currentJob.projectId)
+        .map((r) => ({ id: r.id, title: r.title, status: r.status }));
       const synth = synthesizeProjectReview({
         project: activeProject ? { name: activeProject.name, description: activeProject.description, status: activeProject.status, currentTask: activeProject.currentTask, nextTask: activeProject.nextTask } : null,
         sessions, checkpoints, memory: memoryRows, decisions, commands: commandRows, roadmap,
