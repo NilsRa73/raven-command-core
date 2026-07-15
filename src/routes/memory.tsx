@@ -13,6 +13,7 @@ import {
 } from "@/lib/rah/projectMemory";
 import type { MemoryType, ProjectMemoryRecord } from "@/lib/rah/projectMemory";
 import { Pin, Archive, ArchiveRestore, Trash2, Pencil, Plus, X } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/memory")({
   head: () => ({ meta: [{ title: "Project Memory — Raven Command" }] }),
@@ -55,6 +56,12 @@ function MemoryPage() {
         <Button className="ml-auto" onClick={() => { setEditing(null); setShowNew(true); }}>
           <Plus className="h-4 w-4" /> New memory
         </Button>
+        <Link
+          to="/backup"
+          className="rounded border border-border/60 px-3 py-2 text-sm hover:bg-muted/40"
+        >
+          Backup & Restore
+        </Link>
       </header>
 
       <div className="glass-panel gold-border p-3 grid gap-2 md:grid-cols-[1fr_180px_220px]">

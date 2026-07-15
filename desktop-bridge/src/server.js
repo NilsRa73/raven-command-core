@@ -127,6 +127,15 @@ const CAP_NORMALIZERS = {
     to:   assertContained(String(p?.to   ?? ""), roots),
   }),
   "files.recycle":      (p, roots) => ({ target: assertContained(String(p?.target ?? ""), roots) }),
+  "files.writeText":    (p, roots) => ({
+    target:  assertContained(String(p?.target ?? ""), roots),
+    content: String(p?.content ?? ""),
+    mode:    p?.mode === "overwrite" ? "overwrite" : "createOnly",
+  }),
+  "files.appendText":   (p, roots) => ({
+    target:  assertContained(String(p?.target ?? ""), roots),
+    content: String(p?.content ?? ""),
+  }),
   "launch.explorer":    (p, roots) => ({ target: assertContained(String(p?.target ?? ""), roots) }),
   "launch.url":         (p) => {
     const url = String(p?.url ?? "");
@@ -335,6 +344,8 @@ async function handleRoute(req, res, url, rawBody, cfg, origin) {
       try {
         switch (j.capability) {
           case "files.createFolder": result = files.createFolder(params.target, cfg.approvedRoots); break;
+          case "files.writeText":    result = files.writeTextFile(params.target, params.content, cfg.approvedRoots, { mode: params.mode }); break;
+          case "files.appendText":   result = files.appendTextFile(params.target, params.content, cfg.approvedRoots); break;
           case "files.rename":       result = files.renameEntry(params.from, params.to, cfg.approvedRoots); break;
           case "files.copy":         result = files.copyEntry(params.from, params.to, cfg.approvedRoots); break;
           case "files.move":         result = files.moveEntry(params.from, params.to, cfg.approvedRoots); break;
