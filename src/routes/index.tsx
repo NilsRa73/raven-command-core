@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { CommandBar } from "@/components/rah/CommandBar";
 import { FocusBlockCard } from "@/components/rah/FocusBlockCard";
 import { SystemCheckWidget } from "@/components/rah/SystemCheckWidget";
+import { MissionControlPanel } from "@/components/rah/MissionControlPanel";
 import { useRah } from "@/lib/rah/context";
 import { RavenMark } from "@/components/rah/RavenMark";
 import {
@@ -293,6 +294,9 @@ function CommandCenter() {
 
       {/* ── Command Bar (always immediately reachable) ─────────────── */}
       <CommandBar />
+
+      {/* ── Mission Control: sessions, checkpoints, task queue ──────── */}
+      <MissionControlPanel />
 
       {/* ── Focus block (mission timer + explicit workflow) ─────────── */}
       <FocusBlockCard />
