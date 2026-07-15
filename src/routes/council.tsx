@@ -83,6 +83,27 @@ function CouncilPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [objective, setObjective] = useState("");
+  const [aiSynthEnabled, setAiSynthEnabledState] = useState<boolean>(() => readAiSynthToggle());
+  const setAiSynthEnabled = useCallback((v: boolean) => { writeAiSynthToggle(v); setAiSynthEnabledState(v); }, []);
+  const [detectedProvider, setDetectedProvider] = useState<string>("");
+  const [lastProviderNote, setLastProviderNote] = useState<string>("");
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const s = getLocalAiSettings();
+      if (!isLocalEngine(s.engine)) { if (!cancelled) setDetectedProvider(engineLabel(s.engine)); return; }
+      try {
+        const h = await checkLocalHealth(s);
+        if (cancelled) return;
+        if (h.ok) setDetectedProvider(`${h.provider} · ${h.model}`);
+        else setDetectedProvider(`${engineLabel(s.engine)} — not reachable`);
+      } catch {
+        if (!cancelled) setDetectedProvider(`${engineLabel(s.engine)} — not reachable`);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [aiSynthEnabled]);
 
   const reload = useCallback(async () => {
     try {
