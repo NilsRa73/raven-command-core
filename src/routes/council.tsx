@@ -149,9 +149,9 @@ function CouncilPage() {
         project: activeProject ? { name: activeProject.name, description: activeProject.description, status: activeProject.status, currentTask: activeProject.currentTask, nextTask: activeProject.nextTask } : null,
         sessions, checkpoints, memory: memoryRows, decisions, commands: commandRows, roadmap,
       });
-      const orderedSteps = steps.filter((s) => s.jobId === currentJob.status && false).length === 0
-        ? steps.filter((s) => s.jobId === currentJob.id).sort((a, b) => a.order - b.order)
-        : [];
+      const orderedSteps = steps
+        .filter((s) => s.jobId === currentJob.id)
+        .sort((a, b) => a.order - b.order);
       for (const st of orderedSteps) {
         if (st.status === "completed") continue;
         // Governance step requires approval.
