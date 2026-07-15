@@ -1217,6 +1217,7 @@ function GoalsTab({ project, rah }: { project: any; rah: ReturnType<typeof useRa
           </ul>
         )}
       </section>
+      <ContinueProjectCard project={project} />
     </div>
   );
 }
