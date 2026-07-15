@@ -1368,7 +1368,11 @@ function ContinueProjectCard({ project }: { project: Project }) {
     // Request approval so the audit trail matches every other bridge write.
     const approval = await rah.requestApproval({
       title: `Write project status note to ${target}`,
-      description: `Continue Project: write ${note.length} bytes into ${target} (files.writeText).`,
+      reason: `Continue Project: write ${note.length} bytes into ${target} (files.writeText).`,
+      tools: ["files.writeText", "files.readText"],
+      dataShared: [target],
+      expectedResult: `${note.length}-byte Markdown status note in ${target}, verified via read-back.`,
+      category: "write",
       risk: "medium",
     });
     setLastRun((r) => [...r, { step: "approval", detail: `Approval ${approval.id} requested.`, at: Date.now() }]);
@@ -1386,13 +1390,13 @@ function ContinueProjectCard({ project }: { project: Project }) {
       const ok = read.text === note;
       setLastRun((r) => [...r, { step: "tester", detail: ok ? "Verified byte-exact." : "MISMATCH — file differs.", verifiedBytes: read.size, at: Date.now() }]);
       if (!ok) throw new Error("Read-back verification failed");
-      await rah.saveMemoryRecord({
-        id: uid(), projectId: project.id, type: "milestone",
+      await rah.createProjectMemory({
+        projectId: project.id, type: "milestone",
         title: "Continue Project handoff",
         content: `Wrote ${target} (${read.size} bytes) verified via bridge read-back.`,
         tags: ["continue-project"], pinned: false, archived: false,
-        createdAt: Date.now(), updatedAt: Date.now(), source: "continue-project",
-      } as ProjectMemoryRecord);
+        source: "continue-project",
+      } as Omit<ProjectMemoryRecord, "id" | "createdAt" | "updatedAt">);
       setLastRun((r) => [...r, { step: "memory", detail: "Saved milestone in Project Memory.", at: Date.now() }]);
       toast.success("Continue Project complete.");
     } catch (e) {
