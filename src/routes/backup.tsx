@@ -9,6 +9,7 @@ import {
   type BackupPayload, type ImportMode, type ValidationResult, type SnapshotMeta, type StoreDiff,
   BACKUP_STORES,
 } from "@/lib/rah/backup";
+import { syncSessionsFromIdb } from "@/lib/rah/sessions";
 import { Download, Upload, RefreshCw, Save, Trash2, ShieldCheck, AlertTriangle } from "lucide-react";
 
 const APP_VERSION = "0.3.0";
@@ -104,6 +105,7 @@ function BackupPage() {
       await saveSnapshot(pre, `pre-restore-${mode}`);
       const { imported } = await applyBackup(candidate, mode);
       const total = Object.values(imported).reduce((s, n) => s + n, 0);
+      try { await syncSessionsFromIdb(); } catch { /* non-fatal */ }
       toast.success(`Restored ${total} rows in ${mode} mode. A pre-restore snapshot was saved.`);
       setCandidate(null); setValidation(null); setDiff(null);
       await refreshSnapshots();

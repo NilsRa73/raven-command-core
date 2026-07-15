@@ -26,6 +26,7 @@ import { Route as MemoryRouteImport } from './routes/memory'
 import { Route as HistoryRouteImport } from './routes/history'
 import { Route as FilesRouteImport } from './routes/files'
 import { Route as DevicesRouteImport } from './routes/devices'
+import { Route as CouncilRouteImport } from './routes/council'
 import { Route as ConnectionsRouteImport } from './routes/connections'
 import { Route as ChronicleRouteImport } from './routes/chronicle'
 import { Route as BackupRouteImport } from './routes/backup'
@@ -125,6 +126,11 @@ const DevicesRoute = DevicesRouteImport.update({
   path: '/devices',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CouncilRoute = CouncilRouteImport.update({
+  id: '/council',
+  path: '/council',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ConnectionsRoute = ConnectionsRouteImport.update({
   id: '/connections',
   path: '/connections',
@@ -201,6 +207,7 @@ export interface FileRoutesByFullPath {
   '/backup': typeof BackupRoute
   '/chronicle': typeof ChronicleRoute
   '/connections': typeof ConnectionsRoute
+  '/council': typeof CouncilRoute
   '/devices': typeof DevicesRoute
   '/files': typeof FilesRoute
   '/history': typeof HistoryRoute
@@ -233,6 +240,7 @@ export interface FileRoutesByTo {
   '/backup': typeof BackupRoute
   '/chronicle': typeof ChronicleRoute
   '/connections': typeof ConnectionsRoute
+  '/council': typeof CouncilRoute
   '/devices': typeof DevicesRoute
   '/files': typeof FilesRoute
   '/history': typeof HistoryRoute
@@ -266,6 +274,7 @@ export interface FileRoutesById {
   '/backup': typeof BackupRoute
   '/chronicle': typeof ChronicleRoute
   '/connections': typeof ConnectionsRoute
+  '/council': typeof CouncilRoute
   '/devices': typeof DevicesRoute
   '/files': typeof FilesRoute
   '/history': typeof HistoryRoute
@@ -300,6 +309,7 @@ export interface FileRouteTypes {
     | '/backup'
     | '/chronicle'
     | '/connections'
+    | '/council'
     | '/devices'
     | '/files'
     | '/history'
@@ -332,6 +342,7 @@ export interface FileRouteTypes {
     | '/backup'
     | '/chronicle'
     | '/connections'
+    | '/council'
     | '/devices'
     | '/files'
     | '/history'
@@ -364,6 +375,7 @@ export interface FileRouteTypes {
     | '/backup'
     | '/chronicle'
     | '/connections'
+    | '/council'
     | '/devices'
     | '/files'
     | '/history'
@@ -397,6 +409,7 @@ export interface RootRouteChildren {
   BackupRoute: typeof BackupRoute
   ChronicleRoute: typeof ChronicleRoute
   ConnectionsRoute: typeof ConnectionsRoute
+  CouncilRoute: typeof CouncilRoute
   DevicesRoute: typeof DevicesRoute
   FilesRoute: typeof FilesRoute
   HistoryRoute: typeof HistoryRoute
@@ -540,6 +553,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DevicesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/council': {
+      id: '/council'
+      path: '/council'
+      fullPath: '/council'
+      preLoaderRoute: typeof CouncilRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/connections': {
       id: '/connections'
       path: '/connections'
@@ -656,6 +676,7 @@ const rootRouteChildren: RootRouteChildren = {
   BackupRoute: BackupRoute,
   ChronicleRoute: ChronicleRoute,
   ConnectionsRoute: ConnectionsRoute,
+  CouncilRoute: CouncilRoute,
   DevicesRoute: DevicesRoute,
   FilesRoute: FilesRoute,
   HistoryRoute: HistoryRoute,

@@ -58,3 +58,5 @@ export function deriveTaskQueue(input: {
   approvals?: Array<{ id: string; title?: string; status?: string; createdAt?: number }>;
   limit?: number;
 }): TaskQueueRow[];
+export function migrateSessionsToIdb(opts?: { force?: boolean }): Promise<{ migrated: boolean; hydrated: boolean }>;
+export function syncSessionsFromIdb(): Promise<boolean>;

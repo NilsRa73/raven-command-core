@@ -44,6 +44,10 @@ export const BACKUP_STORES = [
   "visionEvidence",
   "visionEvidenceVersions",
   "visionResults",
+  "sessions",
+  "checkpoints",
+  "councilJobs",
+  "councilJobSteps",
 ] as const;
 export type BackupStore = (typeof BACKUP_STORES)[number];
 

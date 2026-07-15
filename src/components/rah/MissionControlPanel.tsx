@@ -4,7 +4,7 @@ import { useRah } from "@/lib/rah/context";
 import {
   createSession, deleteSession, deriveTaskQueue, findResumable,
   listCheckpoints, listSessions, saveCheckpoint, setSessionStatus,
-  seedSessionsIfEmpty, subscribeSessions,
+  seedSessionsIfEmpty, subscribeSessions, migrateSessionsToIdb,
   type WorkSession, type Checkpoint,
 } from "@/lib/rah/sessions";
 import { toast } from "sonner";
@@ -44,6 +44,9 @@ export function MissionControlPanel() {
     const byName: Record<string, string> = {};
     for (const p of rah.projects) byName[p.name] = p.id;
     seedSessionsIfEmpty({ byName });
+    // One-shot LS→IDB migration (idempotent). Also hydrates IDB→LS when
+    // localStorage is empty after a JSON restore.
+    void migrateSessionsToIdb().catch(() => { /* non-fatal */ });
   }, [rah.ready, rah.projects]);
 
   const resumable = useMemo(() => findResumable(), [sessions, checkpoints]);

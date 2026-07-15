@@ -8,6 +8,7 @@
 const SESSIONS_KEY = "rah:sessions:v1";
 const CHECKPOINTS_KEY = "rah:checkpoints:v1";
 const SEED_MARKER = "rah:sessions:seeded:v1";
+const IDB_MIGRATED_MARKER = "rah:sessions:idb-migrated:v1";
 
 function safeLS() {
   try { return typeof window !== "undefined" ? window.localStorage : null; } catch { return null; }
@@ -19,7 +20,89 @@ function readAll(key) {
 function writeAll(key, rows) {
   const ls = safeLS(); if (!ls) return;
   try { ls.setItem(key, JSON.stringify(rows)); } catch { /* quota */ }
+  // Fire-and-forget write-through to IndexedDB so unified stores + JSON
+  // backup include the freshest data. Runs only in the browser.
+  void mirrorToIdb(key, rows).catch(() => { /* ignore */ });
   emit();
+}
+
+// ── IndexedDB mirror (unified storage) ────────────────────────────────
+// This is a fire-and-forget mirror. localStorage remains the sync source
+// of truth for React reads (useSyncExternalStore); IDB is the durable,
+// backup-included copy.
+async function mirrorToIdb(key, rows) {
+  if (typeof indexedDB === "undefined") return;
+  const { getDB } = await import("./db");
+  const db = await getDB();
+  const store = key === SESSIONS_KEY ? "sessions"
+              : key === CHECKPOINTS_KEY ? "checkpoints" : null;
+  if (!store) return;
+  const tx = db.transaction(store, "readwrite");
+  await tx.store.clear();
+  for (const r of rows) { try { await tx.store.put(r); } catch { /* skip bad row */ } }
+  await tx.done;
+}
+
+/**
+ * One-shot migration + hydration.
+ * - If IDB stores are empty and localStorage has rows, push LS → IDB.
+ * - If localStorage is empty and IDB has rows (e.g. after Restore), pull
+ *   IDB → LS so the sync UI sees them.
+ * - Idempotent via `rah:sessions:idb-migrated:v1` marker; force=true skips
+ *   the marker (used after Restore).
+ */
+export async function migrateSessionsToIdb(opts) {
+  const force = !!(opts && opts.force);
+  const ls = safeLS();
+  if (typeof indexedDB === "undefined") return { migrated: false, hydrated: false };
+  if (!force && ls && ls.getItem(IDB_MIGRATED_MARKER)) {
+    // Still hydrate if LS is empty but IDB is not.
+  }
+  const { getDB } = await import("./db");
+  const db = await getDB();
+  const lsSessions = readAll(SESSIONS_KEY);
+  const lsCheckpoints = readAll(CHECKPOINTS_KEY);
+  const idbSessions = await db.getAll("sessions");
+  const idbCheckpoints = await db.getAll("checkpoints");
+
+  let migrated = false;
+  let hydrated = false;
+
+  // LS → IDB (initial migration or write-through catch-up)
+  if (lsSessions.length > 0 && (idbSessions.length === 0 || force)) {
+    const tx = db.transaction(["sessions", "checkpoints"], "readwrite");
+    await tx.objectStore("sessions").clear();
+    await tx.objectStore("checkpoints").clear();
+    for (const s of lsSessions) await tx.objectStore("sessions").put(s);
+    for (const c of lsCheckpoints) await tx.objectStore("checkpoints").put(c);
+    await tx.done;
+    migrated = true;
+  }
+  // IDB → LS (post-restore hydration)
+  else if (lsSessions.length === 0 && idbSessions.length > 0) {
+    if (ls) {
+      ls.setItem(SESSIONS_KEY, JSON.stringify(idbSessions));
+      ls.setItem(CHECKPOINTS_KEY, JSON.stringify(idbCheckpoints));
+      hydrated = true;
+      emit();
+    }
+  }
+  if (ls) ls.setItem(IDB_MIGRATED_MARKER, "1");
+  return { migrated, hydrated };
+}
+
+/** Post-restore: force IDB → LS. */
+export async function syncSessionsFromIdb() {
+  if (typeof indexedDB === "undefined") return false;
+  const { getDB } = await import("./db");
+  const db = await getDB();
+  const s = await db.getAll("sessions");
+  const c = await db.getAll("checkpoints");
+  const ls = safeLS(); if (!ls) return false;
+  ls.setItem(SESSIONS_KEY, JSON.stringify(s));
+  ls.setItem(CHECKPOINTS_KEY, JSON.stringify(c));
+  emit();
+  return true;
 }
 
 // ── Subscription (mission control refresh) ────────────────────────────
