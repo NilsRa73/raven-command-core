@@ -60,6 +60,8 @@ export interface Project {
   nextTask?: string;
   blocker?: string;
   estimatedCompletionAt?: number;
+  /** Local Workspace v1 — absolute path (must be inside an approved bridge root). */
+  workspacePath?: string;
 }
 
 export interface CommandRecord {
