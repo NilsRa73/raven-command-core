@@ -1,4 +1,4 @@
-RAH Desktop Bridge v0.2.1
+RAH Desktop Bridge v0.2.2
 =========================
 
 What this is
@@ -37,6 +37,16 @@ Local AI proxy (v0.2.1)
 The bridge can proxy authenticated calls from Raven Command to LM Studio
 and Ollama running on THIS PC, so the browser does not need to talk to
 those local ports directly (no CORS setup required).
+
+Safe text-file writes (v0.2.2)
+------------------------------
+Raven Command's "Continue Project" workflow can, with a per-run approval,
+write and append small UTF-8 text files inside an approved root
+(files.writeText / files.appendText). Limits:
+  - max 256 KB per write
+  - extension must be in the read-text allowlist (.md, .txt, .json, …)
+  - hidden dotfiles and known credential/system basenames are refused
+  - overwrites first create a ".rah-backup-<timestamp>" sidecar
 
 - LM Studio: http://127.0.0.1:1234/v1     (start its Local Server)
 - Ollama:    http://127.0.0.1:11434        (installed and running)
