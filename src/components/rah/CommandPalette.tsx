@@ -100,6 +100,21 @@ export function CommandPalette() {
         setOpen(false);
         window.dispatchEvent(new CustomEvent("rah:shortcut-help-toggle"));
         break;
+      case "present_workstream":
+        setOpen(false);
+        await nav({ to: "/workstream" });
+        break;
+      case "add_routine":
+        setOpen(false);
+        await nav({ to: "/routines" });
+        break;
+      case "toggle_theme": {
+        setOpen(false);
+        const next = rah.prefs.theme === "raven" ? "kraakeby" : "raven";
+        await rah.updatePrefs({ theme: next });
+        toast.success(`Theme: ${next === "raven" ? "Raven Gold" : "Kråkeby"}`);
+        break;
+      }
       default:
         toast.error("Unknown action: " + action);
     }
