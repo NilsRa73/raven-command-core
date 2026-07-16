@@ -20,6 +20,7 @@ import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as ShoppingRouteImport } from './routes/shopping'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as RoutinesRouteImport } from './routes/routines'
+import { Route as RetroRouteImport } from './routes/retro'
 import { Route as RethinkRouteImport } from './routes/rethink'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as PrivacyRouteImport } from './routes/privacy'
@@ -100,6 +101,11 @@ const SettingsRoute = SettingsRouteImport.update({
 const RoutinesRoute = RoutinesRouteImport.update({
   id: '/routines',
   path: '/routines',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RetroRoute = RetroRouteImport.update({
+  id: '/retro',
+  path: '/retro',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RethinkRoute = RethinkRouteImport.update({
@@ -256,6 +262,7 @@ export interface FileRoutesByFullPath {
   '/privacy': typeof PrivacyRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/rethink': typeof RethinkRoute
+  '/retro': typeof RetroRoute
   '/routines': typeof RoutinesRoute
   '/settings': typeof SettingsRoute
   '/shopping': typeof ShoppingRoute
@@ -295,6 +302,7 @@ export interface FileRoutesByTo {
   '/privacy': typeof PrivacyRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/rethink': typeof RethinkRoute
+  '/retro': typeof RetroRoute
   '/routines': typeof RoutinesRoute
   '/settings': typeof SettingsRoute
   '/shopping': typeof ShoppingRoute
@@ -335,6 +343,7 @@ export interface FileRoutesById {
   '/privacy': typeof PrivacyRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/rethink': typeof RethinkRoute
+  '/retro': typeof RetroRoute
   '/routines': typeof RoutinesRoute
   '/settings': typeof SettingsRoute
   '/shopping': typeof ShoppingRoute
@@ -376,6 +385,7 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/projects'
     | '/rethink'
+    | '/retro'
     | '/routines'
     | '/settings'
     | '/shopping'
@@ -415,6 +425,7 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/projects'
     | '/rethink'
+    | '/retro'
     | '/routines'
     | '/settings'
     | '/shopping'
@@ -454,6 +465,7 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/projects'
     | '/rethink'
+    | '/retro'
     | '/routines'
     | '/settings'
     | '/shopping'
@@ -494,6 +506,7 @@ export interface RootRouteChildren {
   PrivacyRoute: typeof PrivacyRoute
   ProjectsRoute: typeof ProjectsRouteWithChildren
   RethinkRoute: typeof RethinkRoute
+  RetroRoute: typeof RetroRoute
   RoutinesRoute: typeof RoutinesRoute
   SettingsRoute: typeof SettingsRoute
   ShoppingRoute: typeof ShoppingRoute
@@ -587,6 +600,13 @@ declare module '@tanstack/react-router' {
       path: '/routines'
       fullPath: '/routines'
       preLoaderRoute: typeof RoutinesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/retro': {
+      id: '/retro'
+      path: '/retro'
+      fullPath: '/retro'
+      preLoaderRoute: typeof RetroRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/rethink': {
@@ -809,6 +829,7 @@ const rootRouteChildren: RootRouteChildren = {
   PrivacyRoute: PrivacyRoute,
   ProjectsRoute: ProjectsRouteWithChildren,
   RethinkRoute: RethinkRoute,
+  RetroRoute: RetroRoute,
   RoutinesRoute: RoutinesRoute,
   SettingsRoute: SettingsRoute,
   ShoppingRoute: ShoppingRoute,
