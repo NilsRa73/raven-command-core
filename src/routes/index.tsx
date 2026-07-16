@@ -204,6 +204,27 @@ function CommandCenter() {
         </div>
       )}
 
+      {/* ── Hub Overview strip ─────────────────────────────────────── */}
+      <section aria-label="Raven Hub" className="rune-tile p-3">
+        <div className="flex items-center justify-between gap-3 mb-2">
+          <div className="text-[11px] uppercase tracking-widest text-muted-foreground">Raven Hub</div>
+          <Link to="/modules" className="text-[11px] text-primary hover:underline">All modules →</Link>
+        </div>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {[
+            { to: "/routines",   label: "Routines",  glyph: "🜍" },
+            { to: "/shopping",   label: "Shopping",  glyph: "🜚" },
+            { to: "/workstream", label: "Workstream", glyph: "🜛" },
+            { to: "/vision",     label: "Vision",    glyph: "👁" },
+          ].map((it) => (
+            <Link key={it.to} to={it.to as any} className="flex items-center gap-2 rounded-md border border-primary/25 bg-background/40 px-3 py-2 text-sm hover:bg-accent/60">
+              <span className="text-primary">{it.glyph}</span>
+              <span className="truncate">{it.label}</span>
+            </Link>
+          ))}
+        </div>
+      </section>
+
       {/* ── Greeting / header ───────────────────────────────────────── */}
       <header className="glass-panel gold-border p-4">
         <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4 sm:flex sm:flex-wrap sm:items-center">
