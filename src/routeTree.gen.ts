@@ -16,6 +16,7 @@ import { Route as VisionRouteImport } from './routes/vision'
 import { Route as TasksRouteImport } from './routes/tasks'
 import { Route as SystemCheckRouteImport } from './routes/system-check'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
+import { Route as ShoppingRouteImport } from './routes/shopping'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as RoutinesRouteImport } from './routes/routines'
 import { Route as RethinkRouteImport } from './routes/rethink'
@@ -76,6 +77,11 @@ const SystemCheckRoute = SystemCheckRouteImport.update({
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
   path: '/sitemap.xml',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ShoppingRoute = ShoppingRouteImport.update({
+  id: '/shopping',
+  path: '/shopping',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsRoute = SettingsRouteImport.update({
@@ -232,6 +238,7 @@ export interface FileRoutesByFullPath {
   '/rethink': typeof RethinkRoute
   '/routines': typeof RoutinesRoute
   '/settings': typeof SettingsRoute
+  '/shopping': typeof ShoppingRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/system-check': typeof SystemCheckRoute
   '/tasks': typeof TasksRoute
@@ -267,6 +274,7 @@ export interface FileRoutesByTo {
   '/rethink': typeof RethinkRoute
   '/routines': typeof RoutinesRoute
   '/settings': typeof SettingsRoute
+  '/shopping': typeof ShoppingRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/system-check': typeof SystemCheckRoute
   '/tasks': typeof TasksRoute
@@ -303,6 +311,7 @@ export interface FileRoutesById {
   '/rethink': typeof RethinkRoute
   '/routines': typeof RoutinesRoute
   '/settings': typeof SettingsRoute
+  '/shopping': typeof ShoppingRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/system-check': typeof SystemCheckRoute
   '/tasks': typeof TasksRoute
@@ -340,6 +349,7 @@ export interface FileRouteTypes {
     | '/rethink'
     | '/routines'
     | '/settings'
+    | '/shopping'
     | '/sitemap.xml'
     | '/system-check'
     | '/tasks'
@@ -375,6 +385,7 @@ export interface FileRouteTypes {
     | '/rethink'
     | '/routines'
     | '/settings'
+    | '/shopping'
     | '/sitemap.xml'
     | '/system-check'
     | '/tasks'
@@ -410,6 +421,7 @@ export interface FileRouteTypes {
     | '/rethink'
     | '/routines'
     | '/settings'
+    | '/shopping'
     | '/sitemap.xml'
     | '/system-check'
     | '/tasks'
@@ -446,6 +458,7 @@ export interface RootRouteChildren {
   RethinkRoute: typeof RethinkRoute
   RoutinesRoute: typeof RoutinesRoute
   SettingsRoute: typeof SettingsRoute
+  ShoppingRoute: typeof ShoppingRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   SystemCheckRoute: typeof SystemCheckRoute
   TasksRoute: typeof TasksRoute
@@ -507,6 +520,13 @@ declare module '@tanstack/react-router' {
       path: '/sitemap.xml'
       fullPath: '/sitemap.xml'
       preLoaderRoute: typeof SitemapDotxmlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/shopping': {
+      id: '/shopping'
+      path: '/shopping'
+      fullPath: '/shopping'
+      preLoaderRoute: typeof ShoppingRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings': {
@@ -729,6 +749,7 @@ const rootRouteChildren: RootRouteChildren = {
   RethinkRoute: RethinkRoute,
   RoutinesRoute: RoutinesRoute,
   SettingsRoute: SettingsRoute,
+  ShoppingRoute: ShoppingRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   SystemCheckRoute: SystemCheckRoute,
   TasksRoute: TasksRoute,
