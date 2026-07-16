@@ -149,7 +149,7 @@ export function RahProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!prefs || typeof document === "undefined") return;
     const html = document.documentElement;
-    html.classList.remove("raven", "forest", "arctic", "hc");
+    html.classList.remove("raven", "forest", "arctic", "hc", "kraakeby");
     html.classList.add(prefs.theme === "raven" ? "raven" : prefs.theme);
     html.style.fontSize = prefs.textSize === "sm" ? "14px" : prefs.textSize === "lg" ? "18px" : "16px";
     html.classList.toggle("reduce-motion", prefs.reducedMotion);
