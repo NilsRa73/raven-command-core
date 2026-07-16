@@ -33,6 +33,7 @@ import { Route as DevicesRouteImport } from './routes/devices'
 import { Route as CouncilRouteImport } from './routes/council'
 import { Route as ConnectionsRouteImport } from './routes/connections'
 import { Route as ChronicleRouteImport } from './routes/chronicle'
+import { Route as BrowserRouteImport } from './routes/browser'
 import { Route as BackupRouteImport } from './routes/backup'
 import { Route as AutomationsRouteImport } from './routes/automations'
 import { Route as AuditRouteImport } from './routes/audit'
@@ -165,6 +166,11 @@ const ChronicleRoute = ChronicleRouteImport.update({
   path: '/chronicle',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BrowserRoute = BrowserRouteImport.update({
+  id: '/browser',
+  path: '/browser',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const BackupRoute = BackupRouteImport.update({
   id: '/backup',
   path: '/backup',
@@ -229,6 +235,7 @@ export interface FileRoutesByFullPath {
   '/audit': typeof AuditRoute
   '/automations': typeof AutomationsRoute
   '/backup': typeof BackupRoute
+  '/browser': typeof BrowserRoute
   '/chronicle': typeof ChronicleRoute
   '/connections': typeof ConnectionsRoute
   '/council': typeof CouncilRoute
@@ -266,6 +273,7 @@ export interface FileRoutesByTo {
   '/audit': typeof AuditRoute
   '/automations': typeof AutomationsRoute
   '/backup': typeof BackupRoute
+  '/browser': typeof BrowserRoute
   '/chronicle': typeof ChronicleRoute
   '/connections': typeof ConnectionsRoute
   '/council': typeof CouncilRoute
@@ -304,6 +312,7 @@ export interface FileRoutesById {
   '/audit': typeof AuditRoute
   '/automations': typeof AutomationsRoute
   '/backup': typeof BackupRoute
+  '/browser': typeof BrowserRoute
   '/chronicle': typeof ChronicleRoute
   '/connections': typeof ConnectionsRoute
   '/council': typeof CouncilRoute
@@ -343,6 +352,7 @@ export interface FileRouteTypes {
     | '/audit'
     | '/automations'
     | '/backup'
+    | '/browser'
     | '/chronicle'
     | '/connections'
     | '/council'
@@ -380,6 +390,7 @@ export interface FileRouteTypes {
     | '/audit'
     | '/automations'
     | '/backup'
+    | '/browser'
     | '/chronicle'
     | '/connections'
     | '/council'
@@ -417,6 +428,7 @@ export interface FileRouteTypes {
     | '/audit'
     | '/automations'
     | '/backup'
+    | '/browser'
     | '/chronicle'
     | '/connections'
     | '/council'
@@ -455,6 +467,7 @@ export interface RootRouteChildren {
   AuditRoute: typeof AuditRoute
   AutomationsRoute: typeof AutomationsRoute
   BackupRoute: typeof BackupRoute
+  BrowserRoute: typeof BrowserRoute
   ChronicleRoute: typeof ChronicleRoute
   ConnectionsRoute: typeof ConnectionsRoute
   CouncilRoute: typeof CouncilRoute
@@ -654,6 +667,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChronicleRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/browser': {
+      id: '/browser'
+      path: '/browser'
+      fullPath: '/browser'
+      preLoaderRoute: typeof BrowserRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/backup': {
       id: '/backup'
       path: '/backup'
@@ -754,6 +774,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuditRoute: AuditRoute,
   AutomationsRoute: AutomationsRoute,
   BackupRoute: BackupRoute,
+  BrowserRoute: BrowserRoute,
   ChronicleRoute: ChronicleRoute,
   ConnectionsRoute: ConnectionsRoute,
   CouncilRoute: CouncilRoute,
