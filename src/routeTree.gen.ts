@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as WorkstreamRouteImport } from './routes/workstream'
 import { Route as VoiceProfilesRouteImport } from './routes/voice-profiles'
 import { Route as VoiceRouteImport } from './routes/voice'
 import { Route as VisionHistoryRouteImport } from './routes/vision-history'
@@ -44,6 +45,11 @@ import { Route as ApiRahVisionTestRouteImport } from './routes/api/rah-vision-te
 import { Route as ApiRahHealthRouteImport } from './routes/api/rah-health'
 import { Route as ApiRahChatRouteImport } from './routes/api/rah-chat'
 
+const WorkstreamRoute = WorkstreamRouteImport.update({
+  id: '/workstream',
+  path: '/workstream',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const VoiceProfilesRoute = VoiceProfilesRouteImport.update({
   id: '/voice-profiles',
   path: '/voice-profiles',
@@ -246,6 +252,7 @@ export interface FileRoutesByFullPath {
   '/vision-history': typeof VisionHistoryRoute
   '/voice': typeof VoiceRoute
   '/voice-profiles': typeof VoiceProfilesRoute
+  '/workstream': typeof WorkstreamRoute
   '/api/rah-chat': typeof ApiRahChatRoute
   '/api/rah-health': typeof ApiRahHealthRoute
   '/api/rah-vision-test': typeof ApiRahVisionTestRoute
@@ -282,6 +289,7 @@ export interface FileRoutesByTo {
   '/vision-history': typeof VisionHistoryRoute
   '/voice': typeof VoiceRoute
   '/voice-profiles': typeof VoiceProfilesRoute
+  '/workstream': typeof WorkstreamRoute
   '/api/rah-chat': typeof ApiRahChatRoute
   '/api/rah-health': typeof ApiRahHealthRoute
   '/api/rah-vision-test': typeof ApiRahVisionTestRoute
@@ -319,6 +327,7 @@ export interface FileRoutesById {
   '/vision-history': typeof VisionHistoryRoute
   '/voice': typeof VoiceRoute
   '/voice-profiles': typeof VoiceProfilesRoute
+  '/workstream': typeof WorkstreamRoute
   '/api/rah-chat': typeof ApiRahChatRoute
   '/api/rah-health': typeof ApiRahHealthRoute
   '/api/rah-vision-test': typeof ApiRahVisionTestRoute
@@ -357,6 +366,7 @@ export interface FileRouteTypes {
     | '/vision-history'
     | '/voice'
     | '/voice-profiles'
+    | '/workstream'
     | '/api/rah-chat'
     | '/api/rah-health'
     | '/api/rah-vision-test'
@@ -393,6 +403,7 @@ export interface FileRouteTypes {
     | '/vision-history'
     | '/voice'
     | '/voice-profiles'
+    | '/workstream'
     | '/api/rah-chat'
     | '/api/rah-health'
     | '/api/rah-vision-test'
@@ -429,6 +440,7 @@ export interface FileRouteTypes {
     | '/vision-history'
     | '/voice'
     | '/voice-profiles'
+    | '/workstream'
     | '/api/rah-chat'
     | '/api/rah-health'
     | '/api/rah-vision-test'
@@ -466,6 +478,7 @@ export interface RootRouteChildren {
   VisionHistoryRoute: typeof VisionHistoryRoute
   VoiceRoute: typeof VoiceRoute
   VoiceProfilesRoute: typeof VoiceProfilesRoute
+  WorkstreamRoute: typeof WorkstreamRoute
   ApiRahChatRoute: typeof ApiRahChatRoute
   ApiRahHealthRoute: typeof ApiRahHealthRoute
   ApiRahVisionTestRoute: typeof ApiRahVisionTestRoute
@@ -473,6 +486,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/workstream': {
+      id: '/workstream'
+      path: '/workstream'
+      fullPath: '/workstream'
+      preLoaderRoute: typeof WorkstreamRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/voice-profiles': {
       id: '/voice-profiles'
       path: '/voice-profiles'
@@ -757,6 +777,7 @@ const rootRouteChildren: RootRouteChildren = {
   VisionHistoryRoute: VisionHistoryRoute,
   VoiceRoute: VoiceRoute,
   VoiceProfilesRoute: VoiceProfilesRoute,
+  WorkstreamRoute: WorkstreamRoute,
   ApiRahChatRoute: ApiRahChatRoute,
   ApiRahHealthRoute: ApiRahHealthRoute,
   ApiRahVisionTestRoute: ApiRahVisionTestRoute,

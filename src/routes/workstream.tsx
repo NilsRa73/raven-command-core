@@ -30,8 +30,8 @@ function WorkstreamPage() {
 
   const goal = activeProject?.name ?? "Raven overview";
   const step = events[0]?.prompt ?? "Awaiting next command…";
-  const completed = events.filter((e) => e.status === "completed").length;
-  const failing = events.filter((e) => e.status === "failed").length;
+  const completed = events.filter((e) => e.status === "done").length;
+  const failing = events.filter((e) => e.status === "error").length;
   const pending = approvals.filter((a) => a.status === "pending").length;
 
   useEffect(() => {
@@ -99,7 +99,7 @@ function WorkstreamPage() {
                   </div>
                   <div className="text-sm mt-1 truncate">{e.prompt}</div>
                 </div>
-                {e.status === "failed" && <span className="text-[10px] uppercase tracking-widest text-destructive">error</span>}
+                {e.status === "error" && <span className="text-[10px] uppercase tracking-widest text-destructive">error</span>}
               </div>
             </Card>
           ))}
