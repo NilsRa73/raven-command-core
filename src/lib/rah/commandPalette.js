@@ -14,6 +14,15 @@
 export const PALETTE_COMMANDS = /** @type {PaletteCommand[]} */ ([
   // Navigation
   { id: "nav:home",         section: "Navigate", title: "Raven Home",        to: "/",            keywords: ["dashboard", "welcome"] },
+  { id: "nav:modules",      section: "Navigate", title: "Module Registry",   to: "/modules",     keywords: ["apps", "registry", "hub"] },
+  { id: "nav:routines",     section: "Navigate", title: "Routine Mode",      to: "/routines",    keywords: ["schedule", "timer"] },
+  { id: "nav:shopping",     section: "Navigate", title: "Shopping",          to: "/shopping",    keywords: ["gear", "compare"] },
+  { id: "nav:workstream",   section: "Navigate", title: "Raven Workstream",  to: "/workstream",  keywords: ["monitor", "execute", "log"] },
+  { id: "nav:homeMesh",     section: "Navigate", title: "Home Mesh",         to: "/home-mesh",   keywords: ["rooms", "devices"] },
+  { id: "nav:browser",      section: "Navigate", title: "Raven Browser",     to: "/browser",     keywords: ["web", "bookmarks"] },
+  { id: "nav:retro",        section: "Navigate", title: "Retro / Games",     to: "/retro",       keywords: ["games", "score"] },
+  { id: "nav:vr",           section: "Navigate", title: "VR Room",           to: "/vr",          keywords: ["quest"] },
+  { id: "nav:health",       section: "Navigate", title: "Health Dashboard",  to: "/health",      keywords: ["metrics", "wellness"] },
   { id: "nav:projects",     section: "Navigate", title: "Projects",          to: "/projects" },
   { id: "nav:devices",      section: "Navigate", title: "Device Center",     to: "/devices",     keywords: ["cluster", "bridge", "hardware"] },
   { id: "nav:agents",       section: "Navigate", title: "Agent Team",        to: "/agents",      keywords: ["council", "team"] },
@@ -35,6 +44,9 @@ export const PALETTE_COMMANDS = /** @type {PaletteCommand[]} */ ([
   { id: "act:emergency_stop",     section: "Actions", title: "Emergency stop",          action: "emergency_stop",     shortcut: "Alt+Shift+X" },
   { id: "act:test_bridge",        section: "Actions", title: "Test Desktop Bridge",     action: "test_bridge" },
   { id: "act:toggle_focus_mode",  section: "Actions", title: "Toggle Focus mode",       action: "toggle_focus_mode" },
+  { id: "act:present_workstream", section: "Actions", title: "Present Workstream (full screen)", action: "present_workstream", keywords: ["monitor", "full", "screen"] },
+  { id: "act:toggle_theme",       section: "Actions", title: "Toggle theme (Raven Gold / Kråkeby)", action: "toggle_theme", keywords: ["skin", "appearance"] },
+  { id: "act:add_routine",        section: "Actions", title: "Add a routine",           action: "add_routine",    keywords: ["schedule", "new"] },
 
   // Focus block (mission timer)
   { id: "focus:start",    section: "Focus", title: "Start focus block",    action: "focus_start",    shortcut: "Alt+F", keywords: ["timer", "mission"] },

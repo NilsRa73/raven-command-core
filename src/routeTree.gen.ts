@@ -9,6 +9,8 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as WorkstreamRouteImport } from './routes/workstream'
+import { Route as VrRouteImport } from './routes/vr'
 import { Route as VoiceProfilesRouteImport } from './routes/voice-profiles'
 import { Route as VoiceRouteImport } from './routes/voice'
 import { Route as VisionHistoryRouteImport } from './routes/vision-history'
@@ -16,19 +18,26 @@ import { Route as VisionRouteImport } from './routes/vision'
 import { Route as TasksRouteImport } from './routes/tasks'
 import { Route as SystemCheckRouteImport } from './routes/system-check'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
+import { Route as ShoppingRouteImport } from './routes/shopping'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as RoutinesRouteImport } from './routes/routines'
+import { Route as RetroRouteImport } from './routes/retro'
 import { Route as RethinkRouteImport } from './routes/rethink'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as NativeRouteImport } from './routes/native'
+import { Route as ModulesRouteImport } from './routes/modules'
 import { Route as MemoryRouteImport } from './routes/memory'
+import { Route as HomeMeshRouteImport } from './routes/home-mesh'
 import { Route as HistoryRouteImport } from './routes/history'
+import { Route as HealthRouteImport } from './routes/health'
 import { Route as FilesRouteImport } from './routes/files'
 import { Route as DevicesRouteImport } from './routes/devices'
 import { Route as CouncilRouteImport } from './routes/council'
 import { Route as ConnectionsRouteImport } from './routes/connections'
 import { Route as ChronicleRouteImport } from './routes/chronicle'
+import { Route as BrowserRouteImport } from './routes/browser'
 import { Route as BackupRouteImport } from './routes/backup'
 import { Route as AutomationsRouteImport } from './routes/automations'
 import { Route as AuditRouteImport } from './routes/audit'
@@ -41,6 +50,16 @@ import { Route as ApiRahVisionTestRouteImport } from './routes/api/rah-vision-te
 import { Route as ApiRahHealthRouteImport } from './routes/api/rah-health'
 import { Route as ApiRahChatRouteImport } from './routes/api/rah-chat'
 
+const WorkstreamRoute = WorkstreamRouteImport.update({
+  id: '/workstream',
+  path: '/workstream',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const VrRoute = VrRouteImport.update({
+  id: '/vr',
+  path: '/vr',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const VoiceProfilesRoute = VoiceProfilesRouteImport.update({
   id: '/voice-profiles',
   path: '/voice-profiles',
@@ -76,9 +95,24 @@ const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   path: '/sitemap.xml',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ShoppingRoute = ShoppingRouteImport.update({
+  id: '/shopping',
+  path: '/shopping',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RoutinesRoute = RoutinesRouteImport.update({
+  id: '/routines',
+  path: '/routines',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RetroRoute = RetroRouteImport.update({
+  id: '/retro',
+  path: '/retro',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RethinkRoute = RethinkRouteImport.update({
@@ -106,14 +140,29 @@ const NativeRoute = NativeRouteImport.update({
   path: '/native',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ModulesRoute = ModulesRouteImport.update({
+  id: '/modules',
+  path: '/modules',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const MemoryRoute = MemoryRouteImport.update({
   id: '/memory',
   path: '/memory',
   getParentRoute: () => rootRouteImport,
 } as any)
+const HomeMeshRoute = HomeMeshRouteImport.update({
+  id: '/home-mesh',
+  path: '/home-mesh',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const HistoryRoute = HistoryRouteImport.update({
   id: '/history',
   path: '/history',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HealthRoute = HealthRouteImport.update({
+  id: '/health',
+  path: '/health',
   getParentRoute: () => rootRouteImport,
 } as any)
 const FilesRoute = FilesRouteImport.update({
@@ -139,6 +188,11 @@ const ConnectionsRoute = ConnectionsRouteImport.update({
 const ChronicleRoute = ChronicleRouteImport.update({
   id: '/chronicle',
   path: '/chronicle',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BrowserRoute = BrowserRouteImport.update({
+  id: '/browser',
+  path: '/browser',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BackupRoute = BackupRouteImport.update({
@@ -205,19 +259,26 @@ export interface FileRoutesByFullPath {
   '/audit': typeof AuditRoute
   '/automations': typeof AutomationsRoute
   '/backup': typeof BackupRoute
+  '/browser': typeof BrowserRoute
   '/chronicle': typeof ChronicleRoute
   '/connections': typeof ConnectionsRoute
   '/council': typeof CouncilRoute
   '/devices': typeof DevicesRoute
   '/files': typeof FilesRoute
+  '/health': typeof HealthRoute
   '/history': typeof HistoryRoute
+  '/home-mesh': typeof HomeMeshRoute
   '/memory': typeof MemoryRoute
+  '/modules': typeof ModulesRoute
   '/native': typeof NativeRoute
   '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/rethink': typeof RethinkRoute
+  '/retro': typeof RetroRoute
+  '/routines': typeof RoutinesRoute
   '/settings': typeof SettingsRoute
+  '/shopping': typeof ShoppingRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/system-check': typeof SystemCheckRoute
   '/tasks': typeof TasksRoute
@@ -225,6 +286,8 @@ export interface FileRoutesByFullPath {
   '/vision-history': typeof VisionHistoryRoute
   '/voice': typeof VoiceRoute
   '/voice-profiles': typeof VoiceProfilesRoute
+  '/vr': typeof VrRoute
+  '/workstream': typeof WorkstreamRoute
   '/api/rah-chat': typeof ApiRahChatRoute
   '/api/rah-health': typeof ApiRahHealthRoute
   '/api/rah-vision-test': typeof ApiRahVisionTestRoute
@@ -238,19 +301,26 @@ export interface FileRoutesByTo {
   '/audit': typeof AuditRoute
   '/automations': typeof AutomationsRoute
   '/backup': typeof BackupRoute
+  '/browser': typeof BrowserRoute
   '/chronicle': typeof ChronicleRoute
   '/connections': typeof ConnectionsRoute
   '/council': typeof CouncilRoute
   '/devices': typeof DevicesRoute
   '/files': typeof FilesRoute
+  '/health': typeof HealthRoute
   '/history': typeof HistoryRoute
+  '/home-mesh': typeof HomeMeshRoute
   '/memory': typeof MemoryRoute
+  '/modules': typeof ModulesRoute
   '/native': typeof NativeRoute
   '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/rethink': typeof RethinkRoute
+  '/retro': typeof RetroRoute
+  '/routines': typeof RoutinesRoute
   '/settings': typeof SettingsRoute
+  '/shopping': typeof ShoppingRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/system-check': typeof SystemCheckRoute
   '/tasks': typeof TasksRoute
@@ -258,6 +328,8 @@ export interface FileRoutesByTo {
   '/vision-history': typeof VisionHistoryRoute
   '/voice': typeof VoiceRoute
   '/voice-profiles': typeof VoiceProfilesRoute
+  '/vr': typeof VrRoute
+  '/workstream': typeof WorkstreamRoute
   '/api/rah-chat': typeof ApiRahChatRoute
   '/api/rah-health': typeof ApiRahHealthRoute
   '/api/rah-vision-test': typeof ApiRahVisionTestRoute
@@ -272,19 +344,26 @@ export interface FileRoutesById {
   '/audit': typeof AuditRoute
   '/automations': typeof AutomationsRoute
   '/backup': typeof BackupRoute
+  '/browser': typeof BrowserRoute
   '/chronicle': typeof ChronicleRoute
   '/connections': typeof ConnectionsRoute
   '/council': typeof CouncilRoute
   '/devices': typeof DevicesRoute
   '/files': typeof FilesRoute
+  '/health': typeof HealthRoute
   '/history': typeof HistoryRoute
+  '/home-mesh': typeof HomeMeshRoute
   '/memory': typeof MemoryRoute
+  '/modules': typeof ModulesRoute
   '/native': typeof NativeRoute
   '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/rethink': typeof RethinkRoute
+  '/retro': typeof RetroRoute
+  '/routines': typeof RoutinesRoute
   '/settings': typeof SettingsRoute
+  '/shopping': typeof ShoppingRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/system-check': typeof SystemCheckRoute
   '/tasks': typeof TasksRoute
@@ -292,6 +371,8 @@ export interface FileRoutesById {
   '/vision-history': typeof VisionHistoryRoute
   '/voice': typeof VoiceRoute
   '/voice-profiles': typeof VoiceProfilesRoute
+  '/vr': typeof VrRoute
+  '/workstream': typeof WorkstreamRoute
   '/api/rah-chat': typeof ApiRahChatRoute
   '/api/rah-health': typeof ApiRahHealthRoute
   '/api/rah-vision-test': typeof ApiRahVisionTestRoute
@@ -307,19 +388,26 @@ export interface FileRouteTypes {
     | '/audit'
     | '/automations'
     | '/backup'
+    | '/browser'
     | '/chronicle'
     | '/connections'
     | '/council'
     | '/devices'
     | '/files'
+    | '/health'
     | '/history'
+    | '/home-mesh'
     | '/memory'
+    | '/modules'
     | '/native'
     | '/onboarding'
     | '/privacy'
     | '/projects'
     | '/rethink'
+    | '/retro'
+    | '/routines'
     | '/settings'
+    | '/shopping'
     | '/sitemap.xml'
     | '/system-check'
     | '/tasks'
@@ -327,6 +415,8 @@ export interface FileRouteTypes {
     | '/vision-history'
     | '/voice'
     | '/voice-profiles'
+    | '/vr'
+    | '/workstream'
     | '/api/rah-chat'
     | '/api/rah-health'
     | '/api/rah-vision-test'
@@ -340,19 +430,26 @@ export interface FileRouteTypes {
     | '/audit'
     | '/automations'
     | '/backup'
+    | '/browser'
     | '/chronicle'
     | '/connections'
     | '/council'
     | '/devices'
     | '/files'
+    | '/health'
     | '/history'
+    | '/home-mesh'
     | '/memory'
+    | '/modules'
     | '/native'
     | '/onboarding'
     | '/privacy'
     | '/projects'
     | '/rethink'
+    | '/retro'
+    | '/routines'
     | '/settings'
+    | '/shopping'
     | '/sitemap.xml'
     | '/system-check'
     | '/tasks'
@@ -360,6 +457,8 @@ export interface FileRouteTypes {
     | '/vision-history'
     | '/voice'
     | '/voice-profiles'
+    | '/vr'
+    | '/workstream'
     | '/api/rah-chat'
     | '/api/rah-health'
     | '/api/rah-vision-test'
@@ -373,19 +472,26 @@ export interface FileRouteTypes {
     | '/audit'
     | '/automations'
     | '/backup'
+    | '/browser'
     | '/chronicle'
     | '/connections'
     | '/council'
     | '/devices'
     | '/files'
+    | '/health'
     | '/history'
+    | '/home-mesh'
     | '/memory'
+    | '/modules'
     | '/native'
     | '/onboarding'
     | '/privacy'
     | '/projects'
     | '/rethink'
+    | '/retro'
+    | '/routines'
     | '/settings'
+    | '/shopping'
     | '/sitemap.xml'
     | '/system-check'
     | '/tasks'
@@ -393,6 +499,8 @@ export interface FileRouteTypes {
     | '/vision-history'
     | '/voice'
     | '/voice-profiles'
+    | '/vr'
+    | '/workstream'
     | '/api/rah-chat'
     | '/api/rah-health'
     | '/api/rah-vision-test'
@@ -407,19 +515,26 @@ export interface RootRouteChildren {
   AuditRoute: typeof AuditRoute
   AutomationsRoute: typeof AutomationsRoute
   BackupRoute: typeof BackupRoute
+  BrowserRoute: typeof BrowserRoute
   ChronicleRoute: typeof ChronicleRoute
   ConnectionsRoute: typeof ConnectionsRoute
   CouncilRoute: typeof CouncilRoute
   DevicesRoute: typeof DevicesRoute
   FilesRoute: typeof FilesRoute
+  HealthRoute: typeof HealthRoute
   HistoryRoute: typeof HistoryRoute
+  HomeMeshRoute: typeof HomeMeshRoute
   MemoryRoute: typeof MemoryRoute
+  ModulesRoute: typeof ModulesRoute
   NativeRoute: typeof NativeRoute
   OnboardingRoute: typeof OnboardingRoute
   PrivacyRoute: typeof PrivacyRoute
   ProjectsRoute: typeof ProjectsRouteWithChildren
   RethinkRoute: typeof RethinkRoute
+  RetroRoute: typeof RetroRoute
+  RoutinesRoute: typeof RoutinesRoute
   SettingsRoute: typeof SettingsRoute
+  ShoppingRoute: typeof ShoppingRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   SystemCheckRoute: typeof SystemCheckRoute
   TasksRoute: typeof TasksRoute
@@ -427,6 +542,8 @@ export interface RootRouteChildren {
   VisionHistoryRoute: typeof VisionHistoryRoute
   VoiceRoute: typeof VoiceRoute
   VoiceProfilesRoute: typeof VoiceProfilesRoute
+  VrRoute: typeof VrRoute
+  WorkstreamRoute: typeof WorkstreamRoute
   ApiRahChatRoute: typeof ApiRahChatRoute
   ApiRahHealthRoute: typeof ApiRahHealthRoute
   ApiRahVisionTestRoute: typeof ApiRahVisionTestRoute
@@ -434,6 +551,20 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/workstream': {
+      id: '/workstream'
+      path: '/workstream'
+      fullPath: '/workstream'
+      preLoaderRoute: typeof WorkstreamRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/vr': {
+      id: '/vr'
+      path: '/vr'
+      fullPath: '/vr'
+      preLoaderRoute: typeof VrRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/voice-profiles': {
       id: '/voice-profiles'
       path: '/voice-profiles'
@@ -483,11 +614,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SitemapDotxmlRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/shopping': {
+      id: '/shopping'
+      path: '/shopping'
+      fullPath: '/shopping'
+      preLoaderRoute: typeof ShoppingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/settings': {
       id: '/settings'
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/routines': {
+      id: '/routines'
+      path: '/routines'
+      fullPath: '/routines'
+      preLoaderRoute: typeof RoutinesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/retro': {
+      id: '/retro'
+      path: '/retro'
+      fullPath: '/retro'
+      preLoaderRoute: typeof RetroRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/rethink': {
@@ -525,6 +677,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof NativeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/modules': {
+      id: '/modules'
+      path: '/modules'
+      fullPath: '/modules'
+      preLoaderRoute: typeof ModulesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/memory': {
       id: '/memory'
       path: '/memory'
@@ -532,11 +691,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MemoryRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/home-mesh': {
+      id: '/home-mesh'
+      path: '/home-mesh'
+      fullPath: '/home-mesh'
+      preLoaderRoute: typeof HomeMeshRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/history': {
       id: '/history'
       path: '/history'
       fullPath: '/history'
       preLoaderRoute: typeof HistoryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/health': {
+      id: '/health'
+      path: '/health'
+      fullPath: '/health'
+      preLoaderRoute: typeof HealthRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/files': {
@@ -572,6 +745,13 @@ declare module '@tanstack/react-router' {
       path: '/chronicle'
       fullPath: '/chronicle'
       preLoaderRoute: typeof ChronicleRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/browser': {
+      id: '/browser'
+      path: '/browser'
+      fullPath: '/browser'
+      preLoaderRoute: typeof BrowserRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/backup': {
@@ -674,19 +854,26 @@ const rootRouteChildren: RootRouteChildren = {
   AuditRoute: AuditRoute,
   AutomationsRoute: AutomationsRoute,
   BackupRoute: BackupRoute,
+  BrowserRoute: BrowserRoute,
   ChronicleRoute: ChronicleRoute,
   ConnectionsRoute: ConnectionsRoute,
   CouncilRoute: CouncilRoute,
   DevicesRoute: DevicesRoute,
   FilesRoute: FilesRoute,
+  HealthRoute: HealthRoute,
   HistoryRoute: HistoryRoute,
+  HomeMeshRoute: HomeMeshRoute,
   MemoryRoute: MemoryRoute,
+  ModulesRoute: ModulesRoute,
   NativeRoute: NativeRoute,
   OnboardingRoute: OnboardingRoute,
   PrivacyRoute: PrivacyRoute,
   ProjectsRoute: ProjectsRouteWithChildren,
   RethinkRoute: RethinkRoute,
+  RetroRoute: RetroRoute,
+  RoutinesRoute: RoutinesRoute,
   SettingsRoute: SettingsRoute,
+  ShoppingRoute: ShoppingRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   SystemCheckRoute: SystemCheckRoute,
   TasksRoute: TasksRoute,
@@ -694,6 +881,8 @@ const rootRouteChildren: RootRouteChildren = {
   VisionHistoryRoute: VisionHistoryRoute,
   VoiceRoute: VoiceRoute,
   VoiceProfilesRoute: VoiceProfilesRoute,
+  VrRoute: VrRoute,
+  WorkstreamRoute: WorkstreamRoute,
   ApiRahChatRoute: ApiRahChatRoute,
   ApiRahHealthRoute: ApiRahHealthRoute,
   ApiRahVisionTestRoute: ApiRahVisionTestRoute,

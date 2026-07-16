@@ -101,7 +101,7 @@ export interface VisionResultRecord {
 }
 
 export type ApprovalMode = "advisory" | "ask_every" | "trusted_low_risk";
-export type Theme = "raven" | "forest" | "arctic" | "hc";
+export type Theme = "raven" | "forest" | "arctic" | "hc" | "kraakeby";
 export type ExecutionMode = "fast" | "expert" | "debate" | "deep_project";
 
 export interface Project {

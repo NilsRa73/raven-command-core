@@ -10,11 +10,16 @@ import {
 import { RavenMark } from "./RavenMark";
 import { useRah } from "@/lib/rah/context";
 import { Button } from "@/components/ui/button";
+import { HUB_MODULES, HUB_GROUP_LABEL, type ModuleGroup } from "@/lib/rah/moduleRegistry";
 
 const nav = [
   { to: "/", label: "Raven Home", icon: LayoutDashboard },
   { to: "/system-check", label: "System Check", icon: HeartPulse },
   { to: "/applications", label: "Applications", icon: AppWindow },
+  { to: "/modules", label: "Module Registry", icon: AppWindow },
+  { to: "/routines", label: "Routine Mode", icon: ListChecks },
+  { to: "/shopping", label: "Shopping", icon: FolderKanban },
+  { to: "/workstream", label: "Workstream", icon: MonitorPlay },
   { to: "/tasks", label: "Tasks", icon: ListChecks },
   { to: "/rethink", label: "Raven Re-think", icon: Sparkles },
   { to: "/voice", label: "Voice Assistant", icon: Mic },
@@ -58,17 +63,26 @@ export function AppShell({ children }: { children: ReactNode }) {
         <Link to="/" className="flex items-center gap-2">
           <RavenMark size={30} />
           <div className="leading-tight">
-            <div className="display text-lg gold-text">RAH Listen Key</div>
-            <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">RAH AI Studios</div>
+            <div className="display text-lg gold-text">RAH Raven Hub</div>
+            <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">RAH AI Studios · Raven One</div>
           </div>
         </Link>
         <span
           className="hidden sm:inline-flex items-center rounded-full border border-primary/60 bg-primary/10 px-2 py-0.5 text-[10px] uppercase tracking-widest text-primary"
-          title="Raven One product line — Alpha 0.1"
+          title="Raven One product line — Hub 1.0"
         >
-          Raven One · Alpha 0.1
+          Raven Hub · 1.0
         </span>
         <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new CustomEvent("rah:command-palette-toggle"))}
+            className="hidden md:inline-flex items-center gap-2 rounded-md border border-border/70 px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent"
+            aria-label="Open command palette (Ctrl+K)"
+            title="Open command palette (Ctrl+K)"
+          >
+            <span className="text-primary">⌘</span> Search · <kbd className="rounded bg-muted px-1">Ctrl</kbd>+<kbd className="rounded bg-muted px-1">K</kbd>
+          </button>
           {activeProject && (
             <div className="hidden md:flex items-center gap-2 rounded-full border border-border/70 px-3 py-1 text-xs">
               <span>{activeProject.icon}</span>
@@ -110,6 +124,10 @@ export function AppShell({ children }: { children: ReactNode }) {
           }
         >
           <nav className="p-3 flex flex-col gap-1" aria-label="Primary">
+            <HubRail pathname={pathname} onNavigate={() => setMobileOpen(false)} />
+            <div className="mt-4 mb-2 px-2 text-[10px] uppercase tracking-[0.25em] text-muted-foreground">
+              Studio
+            </div>
             {nav.map((item) => {
               const active = pathname === item.to || (item.to !== "/" && pathname.startsWith(item.to));
               const Icon = item.icon;
@@ -170,6 +188,53 @@ export function AppShell({ children }: { children: ReactNode }) {
           );
         })}
       </nav>
+    </div>
+  );
+}
+
+function HubRail({ pathname, onNavigate }: { pathname: string; onNavigate: () => void }) {
+  const groups: ModuleGroup[] = ["core", "environment", "play", "system"];
+  return (
+    <div className="flex flex-col gap-2">
+      {groups.map((g) => {
+        const items = HUB_MODULES.filter((m) => m.group === g);
+        if (items.length === 0) return null;
+        return (
+          <div key={g}>
+            <div className="px-2 pt-1 pb-1 text-[10px] uppercase tracking-[0.25em] text-muted-foreground">
+              {HUB_GROUP_LABEL[g]}
+            </div>
+            {items.map((m) => {
+              const active = pathname === m.to || (m.to !== "/" && pathname.startsWith(m.to));
+              const dim = m.status === "planned";
+              return (
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                <Link
+                  key={m.id}
+                  to={m.to as any}
+                  onClick={onNavigate}
+                  className={
+                    "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors " +
+                    (active
+                      ? "bg-accent text-foreground gold-border"
+                      : "text-muted-foreground hover:text-foreground hover:bg-accent/60") +
+                    (dim ? " opacity-70" : "")
+                  }
+                  title={m.description}
+                >
+                  <span className="grid h-5 w-5 place-items-center text-[13px] text-primary">{m.glyph}</span>
+                  <span className="truncate">{m.name}</span>
+                  {m.status !== "active" && (
+                    <span className="ml-auto text-[9px] uppercase tracking-widest text-muted-foreground">
+                      {m.status === "prototype" ? "PROTO" : "SOON"}
+                    </span>
+                  )}
+                </Link>
+              );
+            })}
+          </div>
+        );
+      })}
     </div>
   );
 }

@@ -75,47 +75,50 @@
 :root {
   /* RAH Raven Gold — default theme (dark by nature) */
   --radius: 0.75rem;
-  --obsidian: oklch(0.14 0.01 60);
-  --glass: oklch(0.2 0.012 60 / 0.72);
-  --rune: oklch(0.42 0.04 70 / 0.35);
-  --gold: oklch(0.82 0.15 82);
-  --gold-soft: oklch(0.72 0.11 82);
-  --gold-glow: oklch(0.9 0.18 88);
-  --background: oklch(0.11 0.008 60);
-  --foreground: oklch(0.94 0.02 82);
-  --card: oklch(0.16 0.01 60);
-  --card-foreground: oklch(0.94 0.02 82);
-  --popover: oklch(0.15 0.01 60);
-  --popover-foreground: oklch(0.94 0.02 82);
+  /* Near-black obsidian surfaces (#050505 / #0A0A0A / #111111). */
+  --obsidian: oklch(0.08 0.005 60);
+  --glass: oklch(0.12 0.008 60 / 0.72);
+  --rune: oklch(0.44 0.06 75 / 0.38);
+  /* Antique gold (#B8860B) + brighter gold (#D4AF37). */
+  --gold: oklch(0.78 0.14 82);
+  --gold-soft: oklch(0.66 0.11 78);
+  --gold-glow: oklch(0.88 0.16 86);
+  --gold-antique: oklch(0.62 0.13 76);
+  --background: oklch(0.06 0.004 60);
+  --foreground: oklch(0.93 0.02 82);
+  --card: oklch(0.09 0.006 60);
+  --card-foreground: oklch(0.93 0.02 82);
+  --popover: oklch(0.08 0.005 60);
+  --popover-foreground: oklch(0.93 0.02 82);
   --primary: var(--gold);
-  --primary-foreground: oklch(0.12 0.01 60);
-  --secondary: oklch(0.22 0.012 60);
+  --primary-foreground: oklch(0.08 0.005 60);
+  --secondary: oklch(0.12 0.008 60);
   --secondary-foreground: oklch(0.9 0.03 82);
-  --muted: oklch(0.2 0.01 60);
-  --muted-foreground: oklch(0.68 0.02 82);
-  --accent: oklch(0.26 0.03 70);
-  --accent-foreground: oklch(0.94 0.02 82);
-  --destructive: oklch(0.6 0.22 25);
+  --muted: oklch(0.11 0.006 60);
+  --muted-foreground: oklch(0.66 0.03 82);
+  --accent: oklch(0.16 0.02 70);
+  --accent-foreground: oklch(0.93 0.02 82);
+  --destructive: oklch(0.58 0.22 25);
   --destructive-foreground: oklch(0.98 0.01 60);
-  --border: oklch(0.35 0.04 75 / 0.35);
-  --input: oklch(0.25 0.02 60);
+  --border: oklch(0.42 0.06 75 / 0.28);
+  --input: oklch(0.14 0.01 60);
   --ring: var(--gold);
   --chart-1: var(--gold);
   --chart-2: oklch(0.7 0.12 40);
   --chart-3: oklch(0.55 0.1 200);
   --chart-4: oklch(0.65 0.14 140);
   --chart-5: oklch(0.6 0.2 320);
-  --sidebar: oklch(0.09 0.006 60);
-  --sidebar-foreground: oklch(0.9 0.02 82);
+  --sidebar: oklch(0.04 0.003 60);
+  --sidebar-foreground: oklch(0.88 0.02 82);
   --sidebar-primary: var(--gold);
-  --sidebar-primary-foreground: oklch(0.12 0.01 60);
-  --sidebar-accent: oklch(0.18 0.012 60);
-  --sidebar-accent-foreground: oklch(0.94 0.02 82);
-  --sidebar-border: oklch(0.3 0.03 75 / 0.4);
+  --sidebar-primary-foreground: oklch(0.08 0.005 60);
+  --sidebar-accent: oklch(0.11 0.008 60);
+  --sidebar-accent-foreground: oklch(0.93 0.02 82);
+  --sidebar-border: oklch(0.4 0.05 75 / 0.32);
   --sidebar-ring: var(--gold);
-  --shadow-gold: 0 0 0 1px oklch(0.7 0.14 82 / 0.25), 0 12px 40px -12px oklch(0.7 0.14 82 / 0.35);
-  --gradient-gold: linear-gradient(135deg, oklch(0.9 0.17 88), oklch(0.65 0.12 70));
-  --gradient-obsidian: linear-gradient(180deg, oklch(0.14 0.008 60), oklch(0.09 0.006 60));
+  --shadow-gold: 0 0 0 1px oklch(0.7 0.14 82 / 0.22), 0 18px 50px -18px oklch(0.7 0.14 82 / 0.35);
+  --gradient-gold: linear-gradient(135deg, oklch(0.88 0.16 86), oklch(0.6 0.12 74));
+  --gradient-obsidian: linear-gradient(180deg, oklch(0.09 0.006 60), oklch(0.04 0.003 60));
 }
 
 .forest {
@@ -145,6 +148,34 @@
   --primary: var(--gold);
   --ring: var(--gold);
   --muted-foreground: oklch(0.9 0 0);
+}
+
+/* Kråkeby — warm, storybook cartoon skin. Still polished, no white
+   surfaces; deep aubergine background with berry + cream accents. */
+.kraakeby {
+  --background: oklch(0.16 0.03 320);
+  --foreground: oklch(0.96 0.03 85);
+  --card: oklch(0.2 0.04 320);
+  --card-foreground: oklch(0.96 0.03 85);
+  --popover: oklch(0.18 0.035 320);
+  --popover-foreground: oklch(0.96 0.03 85);
+  --sidebar: oklch(0.13 0.03 320);
+  --sidebar-foreground: oklch(0.94 0.03 85);
+  --sidebar-accent: oklch(0.24 0.05 320);
+  --sidebar-border: oklch(0.55 0.14 30 / 0.35);
+  --muted: oklch(0.22 0.04 320);
+  --muted-foreground: oklch(0.82 0.05 60);
+  --accent: oklch(0.34 0.09 20);
+  --accent-foreground: oklch(0.98 0.02 85);
+  --border: oklch(0.55 0.14 30 / 0.35);
+  --input: oklch(0.2 0.04 320);
+  --gold: oklch(0.82 0.15 55);
+  --gold-soft: oklch(0.7 0.13 45);
+  --gold-glow: oklch(0.9 0.17 65);
+  --primary: var(--gold);
+  --primary-foreground: oklch(0.14 0.02 320);
+  --ring: var(--gold);
+  --gradient-gold: linear-gradient(135deg, oklch(0.9 0.16 65), oklch(0.68 0.14 30));
 }
 
 @utility glass-panel {
@@ -198,3 +229,15 @@
   50% { box-shadow: 0 0 0 8px oklch(0.82 0.15 82 / 0); }
 }
 @utility pulse-gold { animation: gold-pulse 1.8s ease-in-out infinite; }
+
+@utility rune-tile {
+  background:
+    linear-gradient(180deg, color-mix(in oklab, var(--card) 92%, transparent), color-mix(in oklab, var(--background) 92%, transparent));
+  border: 1px solid color-mix(in oklab, var(--gold) 22%, transparent);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 40px -20px oklch(0 0 0 / 0.6);
+}
+
+@utility gold-hairline {
+  border: 1px solid color-mix(in oklab, var(--gold) 28%, transparent);
+}
