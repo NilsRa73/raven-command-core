@@ -27,6 +27,7 @@ import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as NativeRouteImport } from './routes/native'
 import { Route as ModulesRouteImport } from './routes/modules'
 import { Route as MemoryRouteImport } from './routes/memory'
+import { Route as HomeMeshRouteImport } from './routes/home-mesh'
 import { Route as HistoryRouteImport } from './routes/history'
 import { Route as FilesRouteImport } from './routes/files'
 import { Route as DevicesRouteImport } from './routes/devices'
@@ -136,6 +137,11 @@ const MemoryRoute = MemoryRouteImport.update({
   path: '/memory',
   getParentRoute: () => rootRouteImport,
 } as any)
+const HomeMeshRoute = HomeMeshRouteImport.update({
+  id: '/home-mesh',
+  path: '/home-mesh',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const HistoryRoute = HistoryRouteImport.update({
   id: '/history',
   path: '/history',
@@ -242,6 +248,7 @@ export interface FileRoutesByFullPath {
   '/devices': typeof DevicesRoute
   '/files': typeof FilesRoute
   '/history': typeof HistoryRoute
+  '/home-mesh': typeof HomeMeshRoute
   '/memory': typeof MemoryRoute
   '/modules': typeof ModulesRoute
   '/native': typeof NativeRoute
@@ -280,6 +287,7 @@ export interface FileRoutesByTo {
   '/devices': typeof DevicesRoute
   '/files': typeof FilesRoute
   '/history': typeof HistoryRoute
+  '/home-mesh': typeof HomeMeshRoute
   '/memory': typeof MemoryRoute
   '/modules': typeof ModulesRoute
   '/native': typeof NativeRoute
@@ -319,6 +327,7 @@ export interface FileRoutesById {
   '/devices': typeof DevicesRoute
   '/files': typeof FilesRoute
   '/history': typeof HistoryRoute
+  '/home-mesh': typeof HomeMeshRoute
   '/memory': typeof MemoryRoute
   '/modules': typeof ModulesRoute
   '/native': typeof NativeRoute
@@ -359,6 +368,7 @@ export interface FileRouteTypes {
     | '/devices'
     | '/files'
     | '/history'
+    | '/home-mesh'
     | '/memory'
     | '/modules'
     | '/native'
@@ -397,6 +407,7 @@ export interface FileRouteTypes {
     | '/devices'
     | '/files'
     | '/history'
+    | '/home-mesh'
     | '/memory'
     | '/modules'
     | '/native'
@@ -435,6 +446,7 @@ export interface FileRouteTypes {
     | '/devices'
     | '/files'
     | '/history'
+    | '/home-mesh'
     | '/memory'
     | '/modules'
     | '/native'
@@ -474,6 +486,7 @@ export interface RootRouteChildren {
   DevicesRoute: typeof DevicesRoute
   FilesRoute: typeof FilesRoute
   HistoryRoute: typeof HistoryRoute
+  HomeMeshRoute: typeof HomeMeshRoute
   MemoryRoute: typeof MemoryRoute
   ModulesRoute: typeof ModulesRoute
   NativeRoute: typeof NativeRoute
@@ -623,6 +636,13 @@ declare module '@tanstack/react-router' {
       path: '/memory'
       fullPath: '/memory'
       preLoaderRoute: typeof MemoryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/home-mesh': {
+      id: '/home-mesh'
+      path: '/home-mesh'
+      fullPath: '/home-mesh'
+      preLoaderRoute: typeof HomeMeshRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/history': {
@@ -781,6 +801,7 @@ const rootRouteChildren: RootRouteChildren = {
   DevicesRoute: DevicesRoute,
   FilesRoute: FilesRoute,
   HistoryRoute: HistoryRoute,
+  HomeMeshRoute: HomeMeshRoute,
   MemoryRoute: MemoryRoute,
   ModulesRoute: ModulesRoute,
   NativeRoute: NativeRoute,
