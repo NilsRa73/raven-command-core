@@ -31,6 +31,7 @@ function SettingsPage() {
             <SelectTrigger className="w-56"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="raven">RAH Raven Gold</SelectItem>
+              <SelectItem value="kraakeby">Kråkeby (warm cartoon)</SelectItem>
               <SelectItem value="forest">Yggdrasil Forest Gold</SelectItem>
               <SelectItem value="arctic">Arctic Blue Raven</SelectItem>
               <SelectItem value="hc">High-Contrast Accessibility</SelectItem>
