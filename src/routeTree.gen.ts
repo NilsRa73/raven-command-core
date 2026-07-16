@@ -31,6 +31,7 @@ import { Route as ModulesRouteImport } from './routes/modules'
 import { Route as MemoryRouteImport } from './routes/memory'
 import { Route as HomeMeshRouteImport } from './routes/home-mesh'
 import { Route as HistoryRouteImport } from './routes/history'
+import { Route as HealthRouteImport } from './routes/health'
 import { Route as FilesRouteImport } from './routes/files'
 import { Route as DevicesRouteImport } from './routes/devices'
 import { Route as CouncilRouteImport } from './routes/council'
@@ -159,6 +160,11 @@ const HistoryRoute = HistoryRouteImport.update({
   path: '/history',
   getParentRoute: () => rootRouteImport,
 } as any)
+const HealthRoute = HealthRouteImport.update({
+  id: '/health',
+  path: '/health',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const FilesRoute = FilesRouteImport.update({
   id: '/files',
   path: '/files',
@@ -259,6 +265,7 @@ export interface FileRoutesByFullPath {
   '/council': typeof CouncilRoute
   '/devices': typeof DevicesRoute
   '/files': typeof FilesRoute
+  '/health': typeof HealthRoute
   '/history': typeof HistoryRoute
   '/home-mesh': typeof HomeMeshRoute
   '/memory': typeof MemoryRoute
@@ -300,6 +307,7 @@ export interface FileRoutesByTo {
   '/council': typeof CouncilRoute
   '/devices': typeof DevicesRoute
   '/files': typeof FilesRoute
+  '/health': typeof HealthRoute
   '/history': typeof HistoryRoute
   '/home-mesh': typeof HomeMeshRoute
   '/memory': typeof MemoryRoute
@@ -342,6 +350,7 @@ export interface FileRoutesById {
   '/council': typeof CouncilRoute
   '/devices': typeof DevicesRoute
   '/files': typeof FilesRoute
+  '/health': typeof HealthRoute
   '/history': typeof HistoryRoute
   '/home-mesh': typeof HomeMeshRoute
   '/memory': typeof MemoryRoute
@@ -385,6 +394,7 @@ export interface FileRouteTypes {
     | '/council'
     | '/devices'
     | '/files'
+    | '/health'
     | '/history'
     | '/home-mesh'
     | '/memory'
@@ -426,6 +436,7 @@ export interface FileRouteTypes {
     | '/council'
     | '/devices'
     | '/files'
+    | '/health'
     | '/history'
     | '/home-mesh'
     | '/memory'
@@ -467,6 +478,7 @@ export interface FileRouteTypes {
     | '/council'
     | '/devices'
     | '/files'
+    | '/health'
     | '/history'
     | '/home-mesh'
     | '/memory'
@@ -509,6 +521,7 @@ export interface RootRouteChildren {
   CouncilRoute: typeof CouncilRoute
   DevicesRoute: typeof DevicesRoute
   FilesRoute: typeof FilesRoute
+  HealthRoute: typeof HealthRoute
   HistoryRoute: typeof HistoryRoute
   HomeMeshRoute: typeof HomeMeshRoute
   MemoryRoute: typeof MemoryRoute
@@ -692,6 +705,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HistoryRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/health': {
+      id: '/health'
+      path: '/health'
+      fullPath: '/health'
+      preLoaderRoute: typeof HealthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/files': {
       id: '/files'
       path: '/files'
@@ -840,6 +860,7 @@ const rootRouteChildren: RootRouteChildren = {
   CouncilRoute: CouncilRoute,
   DevicesRoute: DevicesRoute,
   FilesRoute: FilesRoute,
+  HealthRoute: HealthRoute,
   HistoryRoute: HistoryRoute,
   HomeMeshRoute: HomeMeshRoute,
   MemoryRoute: MemoryRoute,
