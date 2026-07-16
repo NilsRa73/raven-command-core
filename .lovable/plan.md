@@ -1,56 +1,84 @@
-This is a huge scope — a full AI OS-layer app with 28 sections of requirements. I can't ship all of it in one turn credibly. Here's how I propose to deliver it as a strong **v1 foundation** that honors the "no fake buttons, no fake AI" rule, then expand in follow-ups.
+## RAH Raven Hub 1.0 — Central Shell Milestone
 
-## v1 scope (this build)
+Turn the existing Raven Command app into the RAH Raven Hub with a premium black/gold visual system, persistent module rail, and 5 new functional modules. All existing features preserved.
 
-Foundation everything else plugs into, all real and working locally:
+### Scope
 
-1. **Design system & shell** — RAH Raven Gold black/gold theme in `styles.css` (deep black, charcoal glass, metallic gold, subtle raven emblem, gold-border glow). Left nav rail (collapsible), central workspace, right intelligence panel, bottom activity dock, responsive to mobile bottom nav.
-2. **Routing** — TanStack routes: Command Center, Voice Assistant, Screen Vision, Agent Team, Projects, Automations, Files, History, Memory, Connections (Desktop Bridge), Privacy, Settings, Onboarding.
-3. **Local persistence (IndexedDB via idb)** — projects, conversations, commands, memory (3 layers), files, approvals, preferences. Survives refresh. Storage usage meter. Export/delete-all.
-4. **Text commands + history** — send text, store to history with project/agent/status, search, filter, re-run, favorite, delete, export.
-5. **Voice assistant** — Web Speech API with all states (permission, ready, listening, transcribing, error), live partial transcript, editable before send, language selector (EN/NO/BN), mic device selector where supported, MediaRecorder for audio recording + waveform + playback. Honest fallback to text when unsupported.
-6. **Screen Vision** — `getDisplayMedia` real screen share (tab/window/screen), live indicator, capture frame, add to command. Screenshot upload (picker/drag/paste). Annotator (rect/arrow/numbered markers/text/undo-redo) on canvas. Honest "Vision API not configured" state.
-7. **Agents** — 10 agents defined with real prompts/capabilities metadata. Selector, 4 execution modes (Fast/Expert/Debate/Deep Project). Routing layer is a typed service; without an AI provider configured, results are clearly marked "Local demonstration — configure a provider for real analysis."
-8. **Approval queue** — 3 modes (Advisory / Ask Every / Trusted Low-Risk). Approval cards with what/why/tools/data/risk/undo. Emergency Stop clears queue.
-9. **Projects** — CRUD, archive, duplicate, export, tags, favorites. 7 preloaded example projects.
-10. **Memory** — 3 layers, save/search/edit/delete/disable, export.
-11. **Files** — IndexedDB storage, drag-drop, preview (images/text/pdf-link/audio), tags, folders, notes, project assignment.
-12. **Privacy Center** — permission dashboard (real live states via Permissions API where available), delete/export/local-only-mode/clear-all.
-13. **Settings** — theme (4 themes), text size, reduced motion, language, TTS voice/speed (off by default), shortcuts toggle, approval mode default, provider config (URL + secret-name reference, never raw key in client), reset.
-14. **Keyboard shortcuts** — Ctrl+Alt+R focus, Space PTT, Esc cancel, Ctrl+Enter send, Ctrl+Shift+S share, Ctrl+Shift+A approvals, Ctrl+Shift+M memory. Honest note about global-shortcut limits.
-15. **Desktop Bridge page** — designed connection UI with real "Not installed / Disconnected / Connected / Error" state via localhost WS probe, disabled controls with honest explanation.
-16. **Dashboard** — real counts from IndexedDB only.
-17. **Onboarding** — multi-step flow with skip option.
-18. **PWA** — manifest + icons only (per PWA skill: installability without SW unless offline explicitly requested — I'll include a guarded SW for the offline requirement in section 24, using vite-plugin-pwa with all preview guards).
-19. **Accessibility** — keyboard nav, focus rings, ARIA, high-contrast theme, reduced-motion, large touch targets.
-20. **Head metadata / SEO** — real title/description per route; sitemap.xml + robots.txt.
+**Preserve:** All existing routes (Home/Mission Control, Command Bar, Voice, Vision, Memory, Council, Devices, Chronicle, Projects, Approvals, Workflows, Backup, System Check, etc.), Bridge integration, Local AI, voice, vision, existing IndexedDB stores.
 
-## Explicitly deferred to follow-ups (with honest UI stubs in v1)
+**Add / Change:**
 
-- Real vision AI / chat AI provider calls (v1 shows "Configure provider" state; wiring uses a typed `AIProvider` interface ready for Lovable AI Gateway).
-- Supabase sync (v1 is fully local; architecture leaves a `SyncProvider` seam).
-- Real TTS voice synthesis beyond Web Speech Synthesis API (which I will wire).
-- Actual Desktop Bridge binary.
+1. **Visual System Refresh** (`src/styles.css`)
+   - Push background to near-black (#050505 / #0A0A0A / #111111)
+   - Tighten gold tokens (`--gold` #D4AF37, `--gold-antique` #B8860B)
+   - Add subtle gold hairline borders, restrained glass surfaces
+   - Warm off-white text tokens; remove any pale gray surfaces
+   - Add Kråkeby alt theme (warm original cartoon skin, still polished)
+   - Theme picker persists in localStorage (extend existing `prefs` theme system)
 
-## Technical details
+2. **Persistent Left Rail** (`src/components/rah/AppShell.tsx`)
+   - Replace/augment current sidebar with an app rail listing the 13 Hub modules
+   - Group: Core (Command, Home, Vision, Memory, Council, Studio), Environment (Home Mesh, Routines, Shopping, Health), Play (Browser, Retro, VR), System (Settings)
+   - Collapsible; active-state gold rune indicator
 
-- Stack: existing TanStack Start + Tailwind v4 + shadcn.
-- Add deps: `idb`, `framer-motion`, `wavesurfer.js` (waveform), `vite-plugin-pwa`.
-- New routes under `src/routes/`: `index.tsx` (Command Center), `voice.tsx`, `vision.tsx`, `agents.tsx`, `projects.tsx` + `projects.$id.tsx`, `automations.tsx`, `files.tsx`, `history.tsx`, `memory.tsx`, `connections.tsx`, `privacy.tsx`, `settings.tsx`, `onboarding.tsx`, `sitemap[.]xml.ts`.
-- Shared shell in `__root.tsx` with `<Outlet />`, providers (QueryClient, RahProvider with IndexedDB context, ApprovalProvider, ShortcutsProvider).
-- `src/lib/rah/` — `db.ts` (idb schema v1: projects, conversations, commands, files, memory, approvals, preferences, agent_configs), `agents.ts`, `provider.ts` (AIProvider interface), `speech.ts`, `screen.ts`, `annotate.ts`, `shortcuts.ts`, `permissions.ts`, `bridge.ts`.
-- Design tokens: add `--raven-gold`, `--raven-gold-glow`, `--obsidian`, `--charcoal-glass`, `--rune-line`, gradient + shadow tokens. Introduce `shadcn` button variants `gold`, `glass`, `danger-quiet`.
-- Fonts via `<link>` in `__root.tsx` head: `Cinzel` (display, raven/Norse feel without being fantasy-kitsch) + `Inter` (body).
+3. **Module Registry** (`src/lib/rah/moduleRegistry.ts` + `src/routes/modules.tsx`)
+   - Central typed registry (id, name, icon, status: active|prototype|planned, progress, route, tags, description)
+   - Registry page: cards, filter/search, pin favorites (localStorage `rah.modules.pins`), status badges, progress bar, Open button
+   - Rail and Command Palette read from this registry
 
-## Non-negotiable rules I'll follow
+4. **Home / Overview Dashboard** (extend `src/routes/index.tsx`)
+   - Keep Mission Control content but wrap in new Hub overview: Raven status tile, active agents, connected devices, routines due today, recent projects, memory vault status, quick commands, system activity
+   - Pull real data from existing stores (bridgeStatus, agents, devices, projectMemory, chronicle, sessions) + new routines store
+   - Editable quick commands persisted to localStorage
 
-- No button ships that only shows a toast. Every control performs its stated local action.
-- No fabricated numbers, no fake AI responses. Anything requiring an unconfigured provider shows an honest empty state with a "Configure provider" link to Settings.
-- API keys never in client code. Provider config stores only names/URLs client-side; secrets are referenced by name and would be resolved server-side later.
-- All state persists across refresh via IndexedDB.
+5. **Routine Mode** (`src/lib/rah/routines.ts` + `src/routes/routines.tsx`)
+   - CRUD: id, name, time (HH:MM), days[], room, deviceId, action, requireConfirmation, enabled
+   - localStorage persistence, seed examples (Runtime Funtime 17:00, News Reframe 19:00, Raven sleep)
+   - "Run Now" with confirmation modal for `requireConfirmation`
+   - "Due today" derivation used by Home
+   - Basic in-tab scheduler that logs to Chronicle when a routine fires (no background workers)
 
-## Deliverable
+6. **Raven Workstream** (`src/routes/workstream.tsx` + panel component)
+   - Curated execution log: goal, current step, completed steps, files/events, agent activity, errors
+   - Reads from existing orchestrator runs, workflow executor events, audit log
+   - Full-screen presentation mode (Fullscreen API), calm gold pulse, mute-by-default sound toggle
 
-One turn, one large batch of file writes. It won't ship 100% of 28 sections at production polish, but it will ship a real, honest, expandable foundation with every listed page reachable and functional to the level above.
+7. **Shopping** (`src/lib/rah/shopping.ts` + `src/routes/shopping.tsx`)
+   - Luxury card grid with local demo products (10-12 seeded items with realistic RAH-flavored gear)
+   - Fields: name, image (placeholder gradient), quality score, review summary, landed cost, compatibility, risk flags, supplier/origin
+   - Shortlist (localStorage `rah.shopping.shortlist`)
+   - Comparison drawer for 2–4 products (side-by-side)
+   - "View in Room" placeholder button (opens toast: "Room preview coming in VR module")
+   - Transparency banner: nothing purchased automatically
 
-If you'd rather I narrow v1 further (e.g. skip Automations, ship a single theme) or expand it (attempt real provider wiring against Lovable AI Gateway now), tell me and I'll adjust before building.
+8. **Placeholder-but-real routes** for Browser, Home Mesh, Retro/Games, VR, Health Dashboard
+   - Each is a real routed page with a themed hero, status ("Prototype"/"Planned"), a real functional element (Health: manual metric log persisted to localStorage; Home Mesh: manual room+device list persisted; Browser: bookmark list persisted; Retro: local score log; VR: connection checklist)
+   - Not dead — small but useful local functionality so no fake buttons
+
+9. **Global Command Palette** (extend existing `CommandPalette.tsx`)
+   - Ensure Ctrl/Cmd+K opens (already works); add: modules registry entries, routines, quick actions (Open Routine Mode, Start Workstream Fullscreen, Toggle Theme, Add Routine)
+
+10. **Quality gates**
+    - Update tests where needed; add `routines.test.js` and `shopping.test.js` and `module-registry.test.js`
+    - Typecheck + production build; fix errors
+    - No white surfaces anywhere; audit `bg-white`, `bg-gray-*`, `text-black` usages and replace with tokens
+
+### Technical Details
+
+- No new deps; use existing shadcn/ui, tanstack router, IndexedDB via existing db.ts is not extended (routines/shopping/modules use localStorage per spec)
+- Route files use flat dot naming: `routines.tsx`, `shopping.tsx`, `workstream.tsx`, `modules.tsx`, `browser.tsx`, `home-mesh.tsx`, `retro.tsx`, `vr.tsx`, `health.tsx`
+- Rail data source = moduleRegistry; single source of truth
+- Theme skins: `raven-gold` (default), `kraakeby` — applied as class on `<html>` alongside existing dark/hc classes; extend `styles.css` with `.kraakeby` variant tokens
+- Confirmation modals reuse existing shadcn AlertDialog
+- All new components typed TS; small focused files under 200 LOC where possible
+
+### Out of scope (explicit)
+
+- No database, auth, payments, external APIs
+- No real e-commerce transactions
+- No background service workers for routines (in-tab scheduler only, chronicled)
+- No new bridge endpoints or bridge version bump
+
+### Deliverable
+
+Coherent Hub milestone: black/gold shell, 13 addressable modules, functional Routine Mode + Shopping + Workstream + Registry, revamped Home overview, extended Command Palette, Kråkeby alt theme. All existing features intact, tests + build green.
