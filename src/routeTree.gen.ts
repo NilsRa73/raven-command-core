@@ -17,6 +17,7 @@ import { Route as TasksRouteImport } from './routes/tasks'
 import { Route as SystemCheckRouteImport } from './routes/system-check'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as RoutinesRouteImport } from './routes/routines'
 import { Route as RethinkRouteImport } from './routes/rethink'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as PrivacyRouteImport } from './routes/privacy'
@@ -80,6 +81,11 @@ const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RoutinesRoute = RoutinesRouteImport.update({
+  id: '/routines',
+  path: '/routines',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RethinkRoute = RethinkRouteImport.update({
@@ -224,6 +230,7 @@ export interface FileRoutesByFullPath {
   '/privacy': typeof PrivacyRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/rethink': typeof RethinkRoute
+  '/routines': typeof RoutinesRoute
   '/settings': typeof SettingsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/system-check': typeof SystemCheckRoute
@@ -258,6 +265,7 @@ export interface FileRoutesByTo {
   '/privacy': typeof PrivacyRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/rethink': typeof RethinkRoute
+  '/routines': typeof RoutinesRoute
   '/settings': typeof SettingsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/system-check': typeof SystemCheckRoute
@@ -293,6 +301,7 @@ export interface FileRoutesById {
   '/privacy': typeof PrivacyRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/rethink': typeof RethinkRoute
+  '/routines': typeof RoutinesRoute
   '/settings': typeof SettingsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/system-check': typeof SystemCheckRoute
@@ -329,6 +338,7 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/projects'
     | '/rethink'
+    | '/routines'
     | '/settings'
     | '/sitemap.xml'
     | '/system-check'
@@ -363,6 +373,7 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/projects'
     | '/rethink'
+    | '/routines'
     | '/settings'
     | '/sitemap.xml'
     | '/system-check'
@@ -397,6 +408,7 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/projects'
     | '/rethink'
+    | '/routines'
     | '/settings'
     | '/sitemap.xml'
     | '/system-check'
@@ -432,6 +444,7 @@ export interface RootRouteChildren {
   PrivacyRoute: typeof PrivacyRoute
   ProjectsRoute: typeof ProjectsRouteWithChildren
   RethinkRoute: typeof RethinkRoute
+  RoutinesRoute: typeof RoutinesRoute
   SettingsRoute: typeof SettingsRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   SystemCheckRoute: typeof SystemCheckRoute
@@ -501,6 +514,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/routines': {
+      id: '/routines'
+      path: '/routines'
+      fullPath: '/routines'
+      preLoaderRoute: typeof RoutinesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/rethink': {
@@ -707,6 +727,7 @@ const rootRouteChildren: RootRouteChildren = {
   PrivacyRoute: PrivacyRoute,
   ProjectsRoute: ProjectsRouteWithChildren,
   RethinkRoute: RethinkRoute,
+  RoutinesRoute: RoutinesRoute,
   SettingsRoute: SettingsRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   SystemCheckRoute: SystemCheckRoute,
