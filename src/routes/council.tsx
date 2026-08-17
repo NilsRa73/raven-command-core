@@ -9,6 +9,7 @@ import {
   COUNCIL_ROLES,
   buildCouncilPrompt, parseAiSynthesisResponse, mergeAiSynthesis,
   councilApprovalDescriptor, buildCouncilMemoryPayload, decideFinalization,
+  COUNCIL_VERSION, enforceCouncilBridgeSettings,
 } from "@/lib/rah/councilJobs";
 import { listSessions, listCheckpoints, saveCheckpoint } from "@/lib/rah/sessions";
 import {
@@ -94,7 +95,7 @@ function CouncilPage() {
       const s = getLocalAiSettings();
       if (!isLocalEngine(s.engine)) { if (!cancelled) setDetectedProvider(engineLabel(s.engine)); return; }
       try {
-        const h = await checkLocalHealth(s);
+        const h = await checkLocalHealth(enforceCouncilBridgeSettings(s));
         if (cancelled) return;
         if (h.ok) setDetectedProvider(`${h.provider} · ${h.model}`);
         else setDetectedProvider(`${engineLabel(s.engine)} — not reachable`);
@@ -231,7 +232,7 @@ function CouncilPage() {
             const streamer = s.engine === "lmstudio" ? streamLmStudio : streamOllama;
             const raw = await streamer(
               { prompt, agents: ["brain"], mode: "fast" as const, context: {} },
-              s,
+              enforceCouncilBridgeSettings(s),
               cb,
             );
             const parsed = parseAiSynthesisResponse(raw || full);
@@ -406,7 +407,10 @@ function CouncilPage() {
     <div className="space-y-6">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="display text-3xl gold-text">AI Council</h1>
+          <h1 className="display text-3xl gold-text flex items-center gap-2">
+            AI Council
+            <span className="rounded border border-primary/40 px-1.5 py-0.5 text-[10px] font-mono text-primary/80">v{COUNCIL_VERSION}</span>
+          </h1>
           <p className="text-muted-foreground">
             Orchestrated multi-role jobs over your local Raven data. Deterministic today; AI-assisted synthesis when a provider is available.
           </p>

@@ -10,6 +10,8 @@ import {
   decideFinalization,
   synthesizeProjectReview,
   createJob,
+  COUNCIL_VERSION,
+  enforceCouncilBridgeSettings,
 } from "../../src/lib/rah/councilJobs.js";
 
 test("buildCouncilPrompt grounds in the packet and forbids external facts", () => {
@@ -129,4 +131,19 @@ test("decideFinalization: job not awaiting → noop even if approved", () => {
 test("decideFinalization: no approval → noop", () => {
   const job = { status: "awaiting_approval", approvalIds: [] };
   assert.equal(decideFinalization({ job, approval: null, memoryAlreadyExists: false }), "noop");
+});
+test("COUNCIL_VERSION is the canonical 0.3.0", () => {
+  assert.equal(COUNCIL_VERSION, "0.3.0");
+});
+
+test("enforceCouncilBridgeSettings forces bridge transport without mutating input", () => {
+  const input = { engine: "lmstudio", transport: "direct", model: "m" };
+  const out = enforceCouncilBridgeSettings(input);
+  assert.equal(out.transport, "bridge");
+  assert.equal(out.engine, "lmstudio");
+  assert.equal(out.model, "m");
+  assert.equal(input.transport, "direct", "original settings must be unchanged");
+  assert.notEqual(out, input);
+  assert.equal(enforceCouncilBridgeSettings({ transport: "bridge" }).transport, "bridge");
+  assert.equal(enforceCouncilBridgeSettings(undefined).transport, "bridge");
 });

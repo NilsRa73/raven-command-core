@@ -418,3 +418,14 @@ export function decideFinalization(opts) {
   if (approval.status === "rejected" || approval.status === "cancelled") return "reject";
   return "noop";
 }
+/** Canonical Council module version. The UI must import this, never hard-code it. */
+export const COUNCIL_VERSION = "0.3.0";
+
+/**
+ * Council transport policy: Council AI synthesis always goes through the
+ * authenticated RAH Desktop Bridge, never LocalAi transport 'direct'.
+ * Returns a copy; the input object is never mutated.
+ */
+export function enforceCouncilBridgeSettings(settings) {
+  return { ...(settings || {}), transport: "bridge" };
+}
