@@ -91,3 +91,8 @@ export function decideFinalization(opts: {
   approval: { status: "pending" | "approved" | "rejected" | "cancelled" } | null | undefined;
   memoryAlreadyExists?: boolean;
 }): "complete" | "reject" | "noop";
+export const COUNCIL_VERSION: string;
+
+export function enforceCouncilBridgeSettings<T extends { transport?: string }>(
+  settings: T,
+): T & { transport: "bridge" };
