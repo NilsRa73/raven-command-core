@@ -302,7 +302,7 @@ function CommandCenter() {
           <Link to="/devices" className="inline-flex h-8 items-center rounded-md border border-border/70 px-3 hover:border-primary/60">
             Device Center
           </Link>
-          <Link to="/chronicle" search={{}} className="inline-flex h-8 items-center rounded-md border border-border/70 px-3 hover:border-primary/60">
+          <Link to="/chronicle" search={{ projectId: "__all__", week: "", view: "timeline" }} className="inline-flex h-8 items-center rounded-md border border-border/70 px-3 hover:border-primary/60">
             Chronicle
           </Link>
           {pendingApprovals > 0 && (
@@ -492,7 +492,7 @@ function CommandCenter() {
           {/* Chronicle preview */}
           <Card
             title="Recent Chronicle"
-            action={<Link to="/chronicle" search={{}} className="text-[11px] text-primary hover:underline">Open Chronicle</Link>}
+            action={<Link to="/chronicle" search={{ projectId: "__all__", week: "", view: "timeline" }} className="text-[11px] text-primary hover:underline">Open Chronicle</Link>}
           >
             {chronicle.length === 0 ? (
               <p className="text-xs text-muted-foreground">Your Chronicle will fill as you run commands, save memory, or resolve approvals.</p>
