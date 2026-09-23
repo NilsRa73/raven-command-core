@@ -81,14 +81,14 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with: { workspaces: "desktop-bridge-native/src-tauri -> target" }
 
-      - name: Install Tauri CLI
-        run: cargo install tauri-cli --version "^2" --locked
+      - name: Verify pinned Tauri CLI
+        run: npx --yes @tauri-apps/cli@2.11.5 --version
 
       - name: Generate app icons from repo-owned SVG
         shell: pwsh
         working-directory: desktop-bridge-native/src-tauri
         run: |
-          cargo tauri icon ../assets/raven-mark.svg -o icons
+          npx --yes @tauri-apps/cli@2.11.5 icon ../assets/raven-mark.svg -o icons
           Copy-Item icons/128x128.png icons/tray.png -Force
           if (-not (Test-Path icons/icon.ico)) { throw "Tauri icon generation did not create icons/icon.ico" }
 
@@ -108,7 +108,7 @@ jobs:
 
       - name: Build + sign Tauri installer
         working-directory: desktop-bridge-native/src-tauri
-        run: cargo tauri build --target x86_64-pc-windows-msvc --bundles nsis
+        run: npx --yes @tauri-apps/cli@2.11.5 build --target x86_64-pc-windows-msvc --bundles nsis
 
       - name: Stage installer + generate updater manifest
         shell: pwsh
