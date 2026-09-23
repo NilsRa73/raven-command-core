@@ -40,19 +40,16 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with: { workspaces: "desktop-bridge-native/src-tauri -> target" }
 
-      - name: Rust fmt check
-        working-directory: desktop-bridge-native/src-tauri
-        run: cargo fmt --all -- --check
-        continue-on-error: true
+      - name: Verify pinned Tauri CLI
+        run: npx --yes @tauri-apps/cli@2.11.5 --version
 
-      - name: Rust unit tests (supervisor + redact + pairing + healthcheck)
+      - name: Generate app icons from repo-owned SVG
+        shell: pwsh
         working-directory: desktop-bridge-native/src-tauri
-        run: cargo test --lib --release
-
-      - name: Rust clippy (lib only)
-        working-directory: desktop-bridge-native/src-tauri
-        run: cargo clippy --lib --release -- -D warnings
-        continue-on-error: true
+        run: |
+          npx --yes @tauri-apps/cli@2.11.5 icon ../assets/raven-mark.svg -o icons
+          Copy-Item icons/128x128.png icons/tray.png -Force
+          if (-not (Test-Path icons/icon.ico)) { throw "Tauri icon generation did not create icons/icon.ico" }
 
       - name: Bundle sidecar (esbuild -> CJS -> SEA config)
         run: node desktop-bridge-native/package-sidecar.mjs
@@ -70,19 +67,23 @@ jobs:
           if (-not (Test-Path $exe)) { throw "sidecar exe missing" }
           if ((Get-Item $exe).Length -lt 20000000) { throw "sidecar exe suspiciously small ($((Get-Item $exe).Length) bytes)" }
 
-      - name: Install Tauri CLI
-        run: cargo install tauri-cli --version "^2" --locked
-
-      - name: Generate app icons from repo-owned SVG
-        shell: pwsh
+      - name: Rust fmt check
         working-directory: desktop-bridge-native/src-tauri
-        run: |
-          cargo tauri icon ../assets/raven-mark.svg -o icons
-          Copy-Item icons/128x128.png icons/tray.png -Force
+        run: cargo fmt --all -- --check
+        continue-on-error: true
+
+      - name: Rust unit tests (supervisor + redact + pairing + healthcheck)
+        working-directory: desktop-bridge-native/src-tauri
+        run: cargo test --lib --release
+
+      - name: Rust clippy (lib only)
+        working-directory: desktop-bridge-native/src-tauri
+        run: cargo clippy --lib --release -- -D warnings
+        continue-on-error: true
 
       - name: Build Tauri Windows installer (NSIS)
         working-directory: desktop-bridge-native/src-tauri
-        run: cargo tauri build --target x86_64-pc-windows-msvc --bundles nsis
+        run: npx --yes @tauri-apps/cli@2.11.5 build --target x86_64-pc-windows-msvc --bundles nsis
 
       - name: Verify + collect artifacts
         shell: pwsh

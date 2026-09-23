@@ -10,7 +10,7 @@ user-approved actions on THIS PC. It listens only on 127.0.0.1
 What you need
 -------------
 - Windows 10 or 11
-- Node.js 20 or later (https://nodejs.org)
+- Node.js 22 or later (https://nodejs.org)
 
 How to start
 ------------
