@@ -44,10 +44,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with: { workspaces: "desktop-bridge-native/src-tauri -> target" }
 
-      - name: Rust unit tests
-        working-directory: desktop-bridge-native/src-tauri
-        run: cargo test --lib --release
-
+      # Tauri's build script validates externalBin even for cargo test.
+      # Build the SEA sidecar before invoking Rust so the configured
+      # binaries/rah-bridge-sidecar-<target>.exe exists at build-script time.
       - name: Build SEA sidecar exe
         shell: pwsh
         working-directory: desktop-bridge-native/src-tauri/binaries
@@ -56,6 +55,13 @@ jobs:
           Copy-Item (Get-Command node).Source rah-bridge-sidecar-x86_64-pc-windows-msvc.exe
           npx --yes postject rah-bridge-sidecar-x86_64-pc-windows-msvc.exe NODE_SEA_BLOB sea-prep.blob `
             --sentinel-fuse NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2
+          if (-not (Test-Path rah-bridge-sidecar-x86_64-pc-windows-msvc.exe)) {
+            throw "SEA sidecar executable was not created"
+          }
+
+      - name: Rust unit tests
+        working-directory: desktop-bridge-native/src-tauri
+        run: cargo test --lib --release
 
       - name: Build Tauri installer (UNSIGNED)
         working-directory: desktop-bridge-native/src-tauri
