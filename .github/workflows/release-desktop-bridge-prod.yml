@@ -81,9 +81,16 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with: { workspaces: "desktop-bridge-native/src-tauri -> target" }
 
-      - name: Rust unit tests
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version "^2" --locked
+
+      - name: Generate app icons from repo-owned SVG
+        shell: pwsh
         working-directory: desktop-bridge-native/src-tauri
-        run: cargo test --lib --release
+        run: |
+          cargo tauri icon ../assets/raven-mark.svg -o icons
+          Copy-Item icons/128x128.png icons/tray.png -Force
+          if (-not (Test-Path icons/icon.ico)) { throw "Tauri icon generation did not create icons/icon.ico" }
 
       - name: Build SEA sidecar exe
         shell: pwsh
@@ -93,6 +100,11 @@ jobs:
           Copy-Item (Get-Command node).Source rah-bridge-sidecar-x86_64-pc-windows-msvc.exe
           npx --yes postject rah-bridge-sidecar-x86_64-pc-windows-msvc.exe NODE_SEA_BLOB sea-prep.blob `
             --sentinel-fuse NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2
+          if (-not (Test-Path rah-bridge-sidecar-x86_64-pc-windows-msvc.exe)) { throw "SEA sidecar executable was not created" }
+
+      - name: Rust unit tests
+        working-directory: desktop-bridge-native/src-tauri
+        run: cargo test --lib --release
 
       - name: Build + sign Tauri installer
         working-directory: desktop-bridge-native/src-tauri
